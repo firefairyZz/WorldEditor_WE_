@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --splash-bg: #2d2d2d;
+    --splash-text: #ccc;
+    --splash-sub: #aaa;
+    --splash-track: rgba(255,255,255,0.1);
+    --splash-fill: #0078d4;
+  }
+  body.light {
+    --splash-bg: #f3f3f3;
+    --splash-text: #333;
+    --splash-sub: #555;
+    --splash-track: rgba(0,0,0,0.08);
+  }
+  body { margin:0; height:100vh; display:flex; background:transparent; font-family: 'Segoe UI', sans-serif; }
+  .container { display:flex; width:100%; height:100%; border-radius:12px; overflow:hidden; background:var(--splash-bg); color:var(--splash-text); }
+  .left { width:130px; background: url('../resources/Load_image.png') center/cover; }
+  .right { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px; }
+  h1 { font-size:18px; margin:0 0 10px; color:var(--splash-text); }
+  .version { color:var(--splash-sub); font-size:12px; }
+  .status-container { margin-top:20px; width:200px; }
+  .status { color:var(--splash-sub); font-size:12px; margin-bottom:8px; text-align:center; transition: opacity 0.3s; }
+  .progress-bar { width:100%; height:3px; background: var(--splash-track); border-radius:2px; overflow:hidden; }
+  .progress-fill { height:100%; background: var(--splash-fill); width:0%; transition: width 0.3s ease; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="left"></div>
+  <div class="right">
+    <h1>WE - World Editor</h1>
+    <span class="version">版本 <span id="version">...</span></span>
+    <div class="status-container">
+      <div class="status" id="status">正在初始化...</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  const statusEl = document.getElementById('status');
+  const progressEl = document.getElementById('progress-fill');
+
+  function updateStatus(text, progress) {
+    if (text) statusEl.textContent = text;
+    if (typeof progress === 'number') {
+      progressEl.style.width = progress + '%';
+    }
+  }
+
+  // 获取版本号
+  window.weAPI.getVersion().then(v => document.getElementById('version').textContent = v);
+
+  // 获取主题并应用
+  window.weAPI.getSettings().then(settings => {
+    if (settings.theme === 'light') {
+      document.body.classList.add('light');
+    }
+  });
+
+  // 接收主进程发送的状态更新
+  if (window.weAPI.onSplashStatus) {
+    window.weAPI.onSplashStatus((text, progress) => {
+      updateStatus(text, progress);
+    });
+  }
+
+  // 默认加载步骤（用于没有 IPC 通信的场景）
+  const defaultSteps = [
+    { text: '正在检查项目文件...', progress: 20 },
+    { text: '正在加载配置...', progress: 50 },
+    { text: '正在初始化界面...', progress: 80 },
+    { text: '正在启动...', progress: 95 },
+    { text: '加载完成', progress: 100 }
+  ];
+  let defaultStep = 0;
+  const defaultInterval = setInterval(() => {
+    if (defaultStep < defaultSteps.length) {
+      const step = defaultSteps[defaultStep++];
+      updateStatus(step.text, step.progress);
+    } else {
+      clearInterval(defaultInterval);
+    }
+  }, 600);
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+"build": {
+  "appId": "com.we.world-editor",
+  "productName": "WE",
+  "directories": { "output": "dist" },
+  "win": {
+    "target": "nsis",
+    "icon": "resources/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "your-github-username",
+    "repo": "we-releases"
+  }
+}

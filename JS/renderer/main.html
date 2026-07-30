@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;">
+    <link rel="stylesheet" href="css/style.css">
+    <!-- 本地 Quill -->
+    <link rel="stylesheet" href="lib/quill.snow.css">
+    <script src="lib/quill.js"></script>
+    <title>WE - World Editor</title>
+</head>
+<body>
+    <header id="title-bar">
+        <div class="title-left">
+            <img id="title-icon" src="../resources/White.png" class="title-icon" />
+            <div class="title-separator"></div>
+            <button id="btn-file-menu" class="file-menu-btn">文件</button>
+        </div>
+        <div class="title-drag"></div>
+        <button id="btn-always-on-top" class="win-btn pin-btn" data-i18n-title="ui.always_on_top" data-i18n-title-active="ui.always_on_top_off" title="窗口置顶">
+                <svg class="pin-icon" viewBox="0 0 18 18" width="16" height="16">
+                    <g transform="rotate(40 9 7)">
+                        <line x1="5.5" y1="2.5" x2="12.5" y2="2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+                        <rect x="7" y="2.3" width="4" height="6" fill="currentColor" rx="0.4"/>
+                        <line x1="9" y1="8.3" x2="9" y2="16.5" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/>
+                    </g>
+                </svg>
+            </button>
+        <div class="window-controls">
+            <button id="btn-minimize" class="win-btn">&#xE921;</button>
+            <button id="btn-maximize" class="win-btn">&#xE922;</button>
+            <button id="btn-close" class="win-btn">&#xE8BB;</button>
+        </div>
+    </header>
+
+    <div id="file-menu-popup" class="menu-popup"></div>
+    <div id="notification-bar"></div>
+
+    <div id="tab-bar">
+        <div class="tabs-container"></div>
+        <button id="btn-tab-settings" class="tab-action-btn" title="设置">&#xE713;</button>
+    </div>
+
+    <div id="content-container"></div>
+    <div id="status-bar">就绪</div>
+
+    <!-- 脚本加载顺序很重要 -->
+    <script src="js/tabs/globals.js"></script>
+    <script src="js/tabs/i18n.js"></script>
+    <script src="js/tabs/utils.js"></script>
+    <script src="js/tabs/tags.js"></script>
+    <script src="js/tabs/tab-manager.js"></script>
+    <script src="js/tabs/ui-refresh.js"></script>
+    <script src="js/tabs/welcome.js"></script>
+    <script src="js/tabs/project.js"></script>
+    <script src="js/tabs/filetree.js"></script>
+    <script src="js/tabs/editor.js"></script>
+    <script src="js/tabs/settings.js"></script>
+    <script src="js/tabs/shortcuts.js"></script>
+    <script src="js/tabs/tab-context-menu.js"></script>
+    <script src="js/tabs/file-drop.js"></script>
+    <script src="js/tabs/init.js"></script>
+</body>
+</html>

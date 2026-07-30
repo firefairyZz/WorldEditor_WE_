@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Quill 本地测试</title>
+    <!-- 本地文件路径（从 test 目录返回上级，再进入 renderer/lib） -->
+    <link rel="stylesheet" href="../renderer/lib/quill.snow.css">
+    <script src="../renderer/lib/quill.js"></script>
+    <style>
+        body { margin: 20px; background: #1e1e1e; color: #ccc; font-family: 'Segoe UI', sans-serif; }
+        #editor { height: 300px; background: #252526; color: #ccc; }
+    </style>
+</head>
+<body>
+    <h2>Quill 编辑器测试（本地文件）</h2>
+    <div id="editor"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                const quill = new Quill('#editor', {
+                    modules: {
+                        toolbar: [
+                            [{ header: [1, 2, false] }],
+                            ['bold', 'italic', 'underline'],
+                            ['image', 'code-block'],
+                        ],
+                    },
+                    placeholder: 'Compose an epic...',
+                    theme: 'snow',
+                });
+                console.log('Quill 初始化成功！');
+            } catch (e) {
+                alert('Quill 初始化失败: ' + e.message);
+                console.error(e);
+            }
+        });
+    </script>
+</body>
+</html>

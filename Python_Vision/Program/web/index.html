@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>WE - World Editor</title>
+    <link rel="icon" href="icon.png" type="image/png">
+    <link rel="stylesheet" href="style.css">
+    <!-- Quill -->
+    <link rel="stylesheet" href="quill.snow.css">
+    <script src="quill.js"></script>
+    <script type="text/javascript" src="/eel.js"></script>
+    <script>
+        window.APP_LANG = 'zh_CN';
+        window.LANG_DATA = {};
+        async function loadLanguage() {
+            try {
+                window.APP_LANG = await eel.get_default_lang()();
+                window.LANG_DATA = await eel.load_lang(window.APP_LANG)();
+                applyLanguage();
+            } catch(e) {
+                console.warn('Language load failed', e);
+            }
+        }
+        function t(key) { return window.LANG_DATA[key] || key; }
+        function applyLanguage() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+            });
+        }
+        window.addEventListener('load', loadLanguage);
+    </script>
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <!-- Adobe 风格启动小窗 -->
+    <div id="splash-screen" style="position:fixed;z-index:9999;top:0;left:0;width:100%;height:100%;background:#1e1e1e;display:flex;align-items:center;justify-content:center;">
+        <div style="background:#2d2d2d;border:1px solid #555;border-radius:8px;padding:30px 40px;text-align:center;color:#ccc;width:320px;">
+            <div style="font-size:48px;margin-bottom:10px;">🌍</div>
+            <div style="font-size:18px;font-weight:bold;margin-bottom:5px;">WE - World Editor</div>
+            <div style="font-size:13px;color:#888;margin-bottom:20px;">版本 0.1.0 (开发中)</div>
+            <div id="splash-status" style="font-size:13px;color:#aaa;">正在初始化...</div>
+        </div>
+    </div>
+
+    <!-- 欢迎页 -->
+    <div id="welcome-page" class="page">
+        <div class="welcome-container">
+            <h1>WE - World Editor</h1>
+            <p class="subtitle">管理你的世界观项目</p>
+            <div class="welcome-actions">
+                <button id="new-project-btn">新建项目</button>
+                <button id="open-project-btn">打开项目</button>
+            </div>
+            <div class="recent-section">
+                <h3>最近打开</h3>
+                <div id="recent-cards" class="recent-cards"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑器页 -->
+    <div id="editor-page" class="page">
+        <!-- 自定义标题栏（无边框窗口必须） -->
+        <header class="custom-titlebar">
+            <div class="titlebar-drag-region">
+                <span id="titlebar-project-name">WE - World Editor</span>
+            </div>
+            <div class="titlebar-controls">
+                <button id="minimize-btn" title="最小化">─</button>
+                <button id="maximize-btn" title="最大化">□</button>
+                <button id="close-window-btn" title="关闭">✕</button>
+            </div>
+        </header>
+        <div class="container">
+            <aside class="sidebar">
+                <div class="project-tabs" id="project-tabs"></div>
+                <div class="file-panel">
+                    <h3>文件</h3>
+                    <ul id="file-list"></ul>
+                    <button id="add-file-btn">新建文件</button>
+                </div>
+                <div class="sidebar-bottom">
+                    <button id="save-project-btn">保存项目</button>
+                    <button id="export-project-btn">导出</button>
+                    <button id="close-project-btn">关闭项目</button>
+                </div>
+            </aside>
+            <main class="editor-area">
+                <div class="toolbar">
+                    <span id="current-file-label">未打开文件</span>
+                    <button id="save-file-btn">保存文件</button>
+                </div>
+                <div id="editor"></div>
+                <div class="status-bar">
+                    <span id="project-status">就绪</span>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- 新建项目模态框 -->
+    <div id="new-project-modal" class="modal-overlay">
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2>创建新项目</h2>
+                <p class="modal-subtitle">创建一个新的 World Editor 项目来组织你的世界观文件。</p>
+                <span class="close-btn" id="close-modal-btn">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Owner</label>
+                    <div class="owner-display">
+                        <span class="owner-avatar">U</span>
+                        <span id="owner-name">本地用户</span>
+                    </div>
+                    <p class="field-hint">项目保存在你的本地计算机上。</p>
+                </div>
+                <hr>
+                <div class="form-group">
+                    <label for="project-name">项目名称 <span class="required">*</span></label>
+                    <input type="text" id="project-name" placeholder="我的世界观项目" autofocus>
+                    <p class="field-hint">给项目起一个简短、易记的名字。</p>
+                </div>
+                <div class="form-group">
+                    <label for="project-desc">描述 <span class="optional">(可选)</span></label>
+                    <textarea id="project-desc" rows="3" placeholder="简短描述你的世界观..."></textarea>
+                </div>
+                <hr>
+                <div class="form-group">
+                    <label>可见性</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="visibility" value="local" checked>
+                            <strong>本地</strong>
+                            <span class="radio-desc">仅在这台计算机上访问。</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="visibility" value="shared" disabled>
+                            <strong>共享</strong>
+                            <span class="radio-desc">与他人同步（即将推出）。</span>
+                        </label>
+                    </div>
+                </div>
+                <hr>
+                <div class="form-group">
+                    <label>初始化此项目：</label>
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="init-readme" checked>
+                        添加 README 文件
+                    </label>
+                    <p class="field-hint">包含项目的基本描述。</p>
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="init-sample">
+                        添加示例世界观文件
+                    </label>
+                    <p class="field-hint">创建几个示例章节和角色以便开始。</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="create-project-btn" class="btn-primary">创建项目</button>
+                <button id="cancel-project-btn" class="btn-secondary">取消</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

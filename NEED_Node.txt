@@ -1,0 +1,196 @@
+# World Editor Environment Setup Guide
+
+> 中文版本见下方 / Chinese version below
+
+## Requirements
+
+| Software | Version | Notes |
+|----------|---------|-------|
+| Node.js | >= 16 | LTS version recommended (e.g. 18.x or 20.x) |
+| npm | >= 8 | Bundled with Node.js |
+
+---
+
+## 1. Install Node.js
+
+### Windows
+
+1. Visit [Node.js官网](https://nodejs.org/) to download the installer
+2. Choose the **LTS** version (Long Term Support, more stable)
+3. Run the installer, default options are fine
+4. After installation, open your terminal (PowerShell or CMD) and verify:
+
+```
+node --version
+npm --version
+```
+
+### Other Systems
+
+- **macOS**: `brew install node`
+- **Linux (Ubuntu/Debian)**: `sudo apt install nodejs npm`
+- **Linux (Fedora)**: `sudo dnf install nodejs npm`
+
+---
+
+## 2. Install Project Dependencies
+
+> ⚠️ The `node_modules` folder is large (~200MB+), so it is not included in the repository.
+> You need to run the following steps on first run or after code updates.
+
+```bash
+# 1. Navigate to the JS directory
+cd JS
+
+# 2. Install dependencies (only needs to be done once)
+npm install
+
+# 3. Start the application
+npm start
+```
+
+### If `npm install` is slow or fails
+
+```bash
+# Use a mirror registry for faster downloads (optional)
+npm config set registry https://registry.npmmirror.com
+
+# Then run again
+npm install
+```
+
+### If `npm install` shows permission errors
+
+```bash
+# Windows: Open terminal as Administrator, then run
+# Or clean npm cache
+npm cache clean --force
+npm install
+```
+
+---
+
+## 3. Build for Release (Optional)
+
+```bash
+# Install build tool (first time only)
+npm install --save-dev electron-builder
+
+# Build Windows installer
+npx electron-builder --win
+```
+
+Build output will be placed in the `JS/dist/` directory.
+
+---
+
+## 4. FAQ
+
+### Q: White screen on startup?
+A: Make sure `npm install` completed successfully and the `node_modules` folder was not deleted.
+
+### Q: Port already in use?
+A: This project is a desktop application (Electron) and does not use ports. If you need to run multiple instances, check your configuration.
+
+### Q: Do I need to reinstall after updating code?
+A: If only source files (.js / .css / .html) were modified, no reinstallation is needed.
+   If `package.json` was changed (dependencies added/removed), you need to run `npm install` again.
+
+### Q: How to clean and reinstall dependencies?
+A: Manually delete the `JS/node_modules` folder, then run `npm install` again.
+
+---
+
+---
+
+# World Editor 环境配置指南
+
+---
+
+## 一、安装 Node.js
+
+### Windows
+
+1. 访问 [Node.js 官网](https://nodejs.org/) 下载安装包
+2. 选择 **LTS** 版本（长期支持版本，更稳定）
+3. 运行安装程序，一路默认即可
+4. 安装完成后打开命令行（PowerShell 或 CMD），验证：
+
+```
+node --version
+npm --version
+```
+
+### 其他系统
+
+- **macOS**：`brew install node`
+- **Linux (Ubuntu/Debian)**：`sudo apt install nodejs npm`
+- **Linux (Fedora)**：`sudo dnf install nodejs npm`
+
+---
+
+## 二、安装项目依赖
+
+> ⚠️ node_modules 文件夹体积较大（约 200MB+），因此未包含在仓库中。
+> 首次运行或更新代码后需要执行以下步骤。
+
+```bash
+# 1. 进入 JS 目录
+cd JS
+
+# 2. 安装依赖（只需执行一次）
+npm install
+
+# 3. 启动应用
+npm start
+```
+
+### 如果 `npm install` 很慢或失败
+
+```bash
+# 使用国内镜像源加速（可选）
+npm config set registry https://registry.npmmirror.com
+
+# 然后重新执行
+npm install
+```
+
+### 如果 `npm install` 报权限错误
+
+```bash
+# Windows：以管理员身份打开命令行再执行
+# 或者修复 npm 缓存
+npm cache clean --force
+npm install
+```
+
+---
+
+## 三、构建发布版本（可选）
+
+```bash
+# 安装打包工具（首次）
+npm install --save-dev electron-builder
+
+# 构建 Windows 安装包
+npx electron-builder --win
+```
+
+构建产物将输出到 `JS/dist/` 目录。
+
+---
+
+## 四、常见问题
+
+### Q: 启动后白屏？
+A: 请确保 `npm install` 已成功执行，且没有删除 `node_modules` 文件夹。
+
+### Q: 端口被占用？
+A: 本项目是桌面应用（Electron），不涉及端口。如需同时运行多个实例请确认配置。
+
+### Q: 更新代码后需要重新安装吗？
+A: 如果只是修改源码（.js / .css / .html），不需要重新安装。
+   如果 `package.json` 发生变化（新增/删除了依赖），需要重新执行 `npm install`。
+
+### Q: 如何清理依赖重新安装？
+A: 手动删除 `JS/node_modules` 文件夹，然后重新执行 `npm install`。
