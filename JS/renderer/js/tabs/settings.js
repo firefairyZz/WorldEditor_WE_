@@ -1,4 +1,4 @@
-let APP_VERSION = '0.3.0';
+let APP_VERSION = '...'; // 由 weAPI.getVersion() 动态填充
 
 // 简易 Markdown 渲染器（无需外部依赖）
 let __mdAnchors = [];
@@ -9,6 +9,8 @@ function renderMarkdown(md) {
     let inCode = false, codeBuf = [], codeLang = '';
     let inList = false, listType = '', listBuf = [];
     let inQuote = false, quoteBuf = [];
+    // 空行暂存：列表/引用中的空行不立即结束列表，而是等待下一行判断
+    let pendingBlank = false;
 
     const flushList = () => {
         if (!listBuf.length) return;
@@ -23,8 +25,12 @@ function renderMarkdown(md) {
         out.push('<blockquote>' + quoteBuf.map(l => `<p>${inline(l)}</p>`).join('') + '</blockquote>');
         quoteBuf = []; inQuote = false;
     };
+    const flushPending = () => {
+        if (pendingBlank) { pendingBlank = false; }
+    };
 
-    for (const rawLine of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const rawLine = lines[i];
         const line = rawLine.trimEnd();
 
         if (inCode) {
@@ -38,15 +44,36 @@ function renderMarkdown(md) {
         }
 
         if (line.trim().startsWith('```')) {
-            flushList(); flushQuote();
+            flushList(); flushQuote(); flushPending();
             inCode = true;
             codeLang = line.trim().slice(3).trim();
             continue;
         }
 
+        // 空行处理：在列表/引用中暂存，等下一行判断是否继续同一列表/引用
         if (!line.trim()) {
-            flushList(); flushQuote();
+            if (inList || inQuote) {
+                pendingBlank = true;
+            } else {
+                flushList(); flushQuote();
+            }
             continue;
+        }
+
+        // 如果当前行不是列表/引用，且之前有暂存空行，则结束列表/引用
+        const isListItem = /^\s*(\d+\.|[-*+])\s+/.test(line);
+        const isQuoteLine = line.startsWith('>');
+
+        if (pendingBlank) {
+            if (inList && !isListItem) {
+                flushList();
+                pendingBlank = false;
+            } else if (inQuote && !isQuoteLine) {
+                flushQuote();
+                pendingBlank = false;
+            } else {
+                pendingBlank = false;
+            }
         }
 
         // heading
@@ -282,6 +309,206 @@ function collectCustomShortcuts(container) {
     return Object.keys(custom).length > 0 ? custom : null;
 }
 
+let settingsPanelRef = null;
+
+function refreshSettingsI18n() {
+    if (!settingsPanelRef) return;
+    const panel = settingsPanelRef;
+
+    // 导航项
+    const navItems = panel.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        const section = item.dataset.section;
+        let key = 'ui.' + section;
+        if (section === 'shortcuts') key = 'ui.shortcuts';
+        if (section === 'about') key = 'ui.about';
+        if (section === 'general') key = 'ui.general';
+        if (section === 'account') key = 'ui.account';
+        if (section === 'appearance') key = 'ui.appearance';
+        if (section === 'editor') key = 'ui.editor';
+        const translated = t(key);
+        if (translated) item.textContent = translated;
+    });
+
+    // Section 标题 (h3)
+    const sectionTitles = panel.querySelectorAll('.settings-section > h3');
+    sectionTitles.forEach(h3 => {
+        const section = h3.parentElement.id.replace('section-', '');
+        let key = 'ui.' + section;
+        if (section === 'shortcuts') key = 'ui.shortcuts';
+        const translated = t(key);
+        if (translated) h3.textContent = translated;
+    });
+
+    // General section
+    const generalSection = panel.querySelector('#section-general');
+    if (generalSection) {
+        const rows = generalSection.querySelectorAll('.setting-row > span');
+        if (rows[0]) rows[0].textContent = t('ui.language') || rows[0].textContent;
+        if (rows[1]) rows[1].textContent = t('ui.auto_save') || rows[1].textContent;
+        if (rows[2]) rows[2].textContent = t('ui.tab_close_confirm') || rows[2].textContent;
+        if (rows[3]) rows[3].textContent = t('ui.always_on_top') || rows[3].textContent;
+
+        const autoSaveSelect = generalSection.querySelector('#auto-save-select');
+        if (autoSaveSelect) {
+            const options = autoSaveSelect.options;
+            if (options[0]) options[0].textContent = t('ui.off') || 'Off';
+            const minLabel = t('ui.minutes') || 'min';
+            if (options[1]) options[1].textContent = `5 ${minLabel}`;
+            if (options[2]) options[2].textContent = `10 ${minLabel}`;
+            if (options[3]) options[3].textContent = `15 ${minLabel}`;
+        }
+    }
+
+    // Account section
+    const accountSection = panel.querySelector('#section-account');
+    if (accountSection) {
+        const uploadBtn = accountSection.querySelector('#btn-change-avatar');
+        if (uploadBtn) uploadBtn.textContent = t('ui.upload_avatar') || uploadBtn.textContent;
+        const removeBtn = accountSection.querySelector('#btn-remove-avatar');
+        if (removeBtn) removeBtn.textContent = t('ui.remove_avatar') || removeBtn.textContent;
+        const labels = accountSection.querySelectorAll('.settings-account-label');
+        if (labels[0]) labels[0].textContent = t('ui.account_name') || labels[0].textContent;
+        if (labels[1]) labels[1].textContent = t('ui.display_name') || labels[1].textContent;
+        const editBtns = accountSection.querySelectorAll('.settings-account-edit-btn');
+        editBtns.forEach(btn => { btn.textContent = t('ui.edit') || btn.textContent; });
+
+        // Update value displays if not being edited
+        const nameValue = accountSection.querySelector('#display-account-name');
+        if (nameValue && !nameValue.querySelector('input')) {
+            const val = tempAccountName || currentAccount?.name;
+            nameValue.textContent = val || t('ui.not_set') || 'Not set';
+        }
+        const displayValue = accountSection.querySelector('#display-account-display');
+        if (displayValue && !displayValue.querySelector('input')) {
+            const val = tempAccountDisplay || currentAccount?.displayName;
+            displayValue.textContent = val || t('ui.not_set') || 'Not set';
+        }
+    }
+
+    // Appearance section
+    const appearanceSection = panel.querySelector('#section-appearance');
+    if (appearanceSection) {
+        const firstRow = appearanceSection.querySelector('.setting-row > span');
+        if (firstRow) firstRow.textContent = t('ui.color_scheme') || firstRow.textContent;
+        const optgroups = appearanceSection.querySelectorAll('optgroup');
+        if (optgroups[0]) optgroups[0].label = t('ui.group_light') || optgroups[0].label;
+        if (optgroups[1]) optgroups[1].label = t('ui.group_dark') || optgroups[1].label;
+
+        // Color preset options
+        const options = appearanceSection.querySelectorAll('#color-preset-select > option');
+        if (options[1]) { const v = t('ui.theme_default_light'); if (v) options[1].textContent = v; }
+        if (options[5]) { const v = t('ui.theme_default_dark'); if (v) options[5].textContent = v; }
+        if (options[12]) { const v = t('ui.theme_custom'); if (v) options[12].textContent = v; }
+
+        // Reset button
+        const resetBtn = appearanceSection.querySelector('#btn-reset-colors');
+        if (resetBtn) resetBtn.textContent = t('ui.reset_colors') || resetBtn.textContent;
+
+        // Color labels
+        const colorLabels = appearanceSection.querySelectorAll('.color-picker-item > label');
+        const colorKeys = ['ui.color_bg_main', 'ui.color_bg_sidebar', 'ui.color_bg_toolbar',
+                          'ui.color_text', 'ui.color_text_secondary', 'ui.color_accent',
+                          'ui.color_border', 'ui.color_gap'];
+        colorLabels.forEach((lbl, i) => {
+            const translated = t(colorKeys[i]);
+            if (translated) lbl.textContent = translated;
+        });
+
+        // Group title "自定义颜色"
+        const customColorsTitle = appearanceSection.querySelector('#custom-colors-group .setting-group-title');
+        if (customColorsTitle) {
+            const v = t('ui.custom_colors');
+            if (v) customColorsTitle.textContent = v;
+        }
+
+        // Group title "主题配色"
+        const presetGroupTitle = appearanceSection.querySelector('.setting-group-title');
+        if (presetGroupTitle) {
+            const v = t('ui.color_preset');
+            if (v) presetGroupTitle.textContent = v;
+        }
+    }
+
+    // Editor section
+    const editorSection = panel.querySelector('#section-editor');
+    if (editorSection) {
+        const groupTitles = editorSection.querySelectorAll('.setting-group-title');
+        const gt0 = t('ui.font_group') || t('ui.fonts');
+        const gt1 = t('ui.tools_group') || t('ui.tools');
+        if (gt0 && groupTitles[0]) groupTitles[0].textContent = gt0;
+        if (gt1 && groupTitles[1]) groupTitles[1].textContent = gt1;
+
+        // Font label
+        const rows = editorSection.querySelectorAll('.setting-row');
+        if (rows[0]) {
+            const span = rows[0].querySelector('span');
+            if (span) { const v = t('ui.font'); if (v) span.textContent = v; }
+            // Font options
+            const fontSelect = rows[0].querySelector('#font-family-select');
+            if (fontSelect) {
+                const opts = fontSelect.options;
+                if (opts[0]) { const v = t('ui.yahei'); if (v) opts[0].textContent = v; }
+                if (opts[1]) { const v = t('ui.simsun'); if (v) opts[1].textContent = v; }
+                if (opts[2]) { const v = t('ui.simhei'); if (v) opts[2].textContent = v; }
+                if (opts[3]) { const v = t('ui.kaiti'); if (v) opts[3].textContent = v; }
+            }
+        }
+        if (rows[1]) {
+            const span = rows[1].querySelector('span');
+            if (span) { const v = t('ui.font_size'); if (v) span.textContent = v; }
+        }
+        if (rows[2]) {
+            const span = rows[2].querySelector('span');
+            if (span) { const v = t('ui.word_count'); if (v) span.textContent = v; }
+        }
+        if (rows[3]) {
+            const span = rows[3].querySelector('span');
+            if (span) { const v = t('ui.toolbar_show'); if (v) span.textContent = v; }
+        }
+        if (rows[4]) {
+            const span = rows[4].querySelector('span');
+            if (span) { const v = t('ui.markdown_render'); if (v) span.textContent = v; }
+        }
+    }
+
+    // Shortcuts section - rebuild from builder
+    const shortcutsSection = panel.querySelector('#section-shortcuts');
+    if (shortcutsSection) {
+        shortcutsSection.innerHTML = buildShortcutsSettingsHTML();
+        bindShortcutCapture(shortcutsSection);
+    }
+
+    // About section
+    const aboutSection = panel.querySelector('#section-about');
+    if (aboutSection) {
+        const desc = aboutSection.querySelector('.about-info p:nth-child(2)');
+        if (desc) { const v = t('ui.about_desc'); if (v) desc.textContent = v; }
+
+        const updateNotesHeader = aboutSection.querySelector('.update-notes-header h4');
+        if (updateNotesHeader) { const v = t('ui.update_notes'); if (v) updateNotesHeader.textContent = v; }
+
+        const tocTitle = aboutSection.querySelector('.toc-title');
+        if (tocTitle) { const v = t('ui.table_of_contents'); if (v) tocTitle.textContent = v; }
+
+        // Update notes placeholder text (if visible)
+        const placeholder = aboutSection.querySelector('.update-notes-placeholder .placeholder-text');
+        if (placeholder) {
+            const v = t('ui.update_notes_placeholder');
+            if (v) placeholder.textContent = v;
+        }
+    }
+
+    // Footer buttons
+    const footer = panel.querySelector('.settings-footer');
+    if (footer) {
+        const applyBtn = footer.querySelector('.settings-apply-btn');
+        if (applyBtn) { const v = t('ui.apply'); if (v) applyBtn.textContent = v; }
+        const deleteBtn = footer.querySelector('#footer-btn-delete-account');
+        if (deleteBtn) { const v = t('ui.delete_account'); if (v) deleteBtn.textContent = v; }
+    }
+}
+
 function createSettingsTab() {
     const id = 'settings';
     if (tabs[id]) { switchTab(id); return; }
@@ -292,12 +519,15 @@ function createSettingsTab() {
     nav.className = 'settings-nav';
     nav.innerHTML = `
         <div class="nav-item active" data-section="general">${t('ui.general')}</div>
+        <div class="nav-item" data-section="account">${t('ui.account') || '账户'}</div>
+        <div class="nav-item" data-section="appearance">${t('ui.appearance') || '外观'}</div>
         <div class="nav-item" data-section="editor">${t('ui.editor')}</div>
         <div class="nav-item" data-section="shortcuts">${t('ui.shortcuts') || '快捷键'}</div>
         <div class="nav-item" data-section="about">${t('ui.about')}</div>
     `;
     const panel = document.createElement('div');
     panel.className = 'settings-panel';
+    settingsPanelRef = panel;
     const contentArea = document.createElement('div');
     contentArea.className = 'settings-content';
 
@@ -314,11 +544,127 @@ function createSettingsTab() {
             </select>
         </div>
         <div class="setting-row">
-            <span>${t('ui.theme')}</span>
-            <select id="theme-select">
-                <option value="dark">${t('ui.dark')}</option>
-                <option value="light">${t('ui.light')}</option>
+            <span>${t('ui.auto_save') || '自动保存'}</span>
+            <select id="auto-save-select">
+                <option value="0">${t('ui.off') || '关'}</option>
+                <option value="5">5 ${t('ui.minutes') || '分钟'}</option>
+                <option value="10">10 ${t('ui.minutes') || '分钟'}</option>
+                <option value="15">15 ${t('ui.minutes') || '分钟'}</option>
             </select>
+        </div>
+        <div class="setting-row">
+            <span>${t('ui.tab_close_confirm') || '关闭标签确认'}</span>
+            <label class="toggle-switch"><input type="checkbox" id="tab-close-confirm" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+            <span>${t('ui.always_on_top') || '窗口置顶'}</span>
+            <label class="toggle-switch"><input type="checkbox" id="always-on-top-toggle"><span class="toggle-slider"></span></label>
+        </div>
+    `;
+
+    // 账户设置区域
+    const accountSection = document.createElement('div');
+    accountSection.className = 'settings-section';
+    accountSection.id = 'section-account';
+    const accountName = currentAccount?.name || '';
+    const accountDisplayName = currentAccount?.displayName || '';
+    const avatarUrl = currentAccount?.avatarDataUrl || '';
+    accountSection.innerHTML = `
+        <h3>${t('ui.account') || '账户'}</h3>
+        <div class="settings-account-layout">
+            <div class="settings-account-avatar-preview" id="settings-avatar-preview">
+                ${avatarUrl ? `<img src="${avatarUrl}" alt="avatar" />` : `<span>${accountName.charAt(0).toUpperCase() || '?'}</span>`}
+            </div>
+            <div class="settings-account-avatar-actions">
+                <button class="settings-account-link" id="btn-change-avatar">${t('ui.upload_avatar') || '上传头像'}</button>
+                <span class="settings-account-link-sep">|</span>
+                <button class="settings-account-link" id="btn-remove-avatar" ${avatarUrl ? '' : 'disabled'}>${t('ui.remove_avatar') || '移除头像'}</button>
+            </div>
+            <div class="settings-account-fields">
+                <div class="settings-account-row" data-field="name">
+                    <span class="settings-account-label">${t('ui.account_name') || '账户名称'}</span>
+                    <span class="settings-account-value" id="display-account-name">${accountName || (t('ui.not_set') || '未设置')}</span>
+                    <button class="settings-account-edit-btn" id="btn-edit-name">${t('ui.edit') || '修改'}</button>
+                </div>
+                <div class="settings-account-row" data-field="display">
+                    <span class="settings-account-label">${t('ui.display_name') || '显示名称'}</span>
+                    <span class="settings-account-value" id="display-account-display">${accountDisplayName || (t('ui.not_set') || '未设置')}</span>
+                    <button class="settings-account-edit-btn" id="btn-edit-display">${t('ui.edit') || '修改'}</button>
+                </div>
+            </div>
+        </div>
+        <input type="file" id="settings-avatar-file" accept="image/*" style="display:none" />
+    `;
+
+    const appearanceSection = document.createElement('div');
+    appearanceSection.className = 'settings-section';
+    appearanceSection.id = 'section-appearance';
+    appearanceSection.innerHTML = `
+        <h3>${t('ui.appearance') || '外观'}</h3>
+        <div class="setting-group">
+            <div class="setting-group-title">${t('ui.color_preset') || '主题配色'}</div>
+            <div class="setting-row">
+                <span>${t('ui.color_scheme') || '配色方案'}</span>
+                <select id="color-preset-select">
+                    <optgroup label="${t('ui.group_light') || '亮色主题'}">
+                        <option value="we-light">WE Exclusive</option>
+                        <option value="default-light">${t('ui.theme_default_light') || '默认亮色'}</option>
+                        <option value="github-light">GitHub Light</option>
+                        <option value="solarized-light">Solarized Light</option>
+                        <option value="nord-light">Nord Light</option>
+                    </optgroup>
+                    <optgroup label="${t('ui.group_dark') || '暗色主题'}">
+                        <option value="default-dark">${t('ui.theme_default_dark') || '默认暗色'}</option>
+                        <option value="dracula">Dracula</option>
+                        <option value="monokai">Monokai</option>
+                        <option value="solarized-dark">Solarized Dark</option>
+                        <option value="nord">Nord</option>
+                        <option value="github-dark">GitHub Dark</option>
+                        <option value="one-dark">One Dark</option>
+                    </optgroup>
+                    <option value="custom">${t('ui.theme_custom') || '自定义'}</option>
+                </select>
+            </div>
+        </div>
+        <div class="setting-group" id="custom-colors-group" style="display:none">
+            <div class="setting-group-title">${t('ui.custom_colors') || '自定义颜色'}</div>
+            <div class="color-picker-grid">
+                <div class="color-picker-item">
+                    <label>${t('ui.color_bg_main') || '主背景'}</label>
+                    <input type="color" id="color-bg-main" data-var="--bg-main">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_bg_sidebar') || '侧边栏'}</label>
+                    <input type="color" id="color-bg-sidebar" data-var="--bg-sidebar">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_bg_toolbar') || '工具栏'}</label>
+                    <input type="color" id="color-bg-toolbar" data-var="--bg-toolbar">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_text') || '文字'}</label>
+                    <input type="color" id="color-text" data-var="--text">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_text_secondary') || '次要文字'}</label>
+                    <input type="color" id="color-text-secondary" data-var="--text-secondary">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_accent') || '强调色'}</label>
+                    <input type="color" id="color-accent" data-var="--accent">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_border') || '边框'}</label>
+                    <input type="color" id="color-border" data-var="--border">
+                </div>
+                <div class="color-picker-item">
+                    <label>${t('ui.color_gap') || '间隙'}</label>
+                    <input type="color" id="color-gap" data-var="--gap-color">
+                </div>
+            </div>
+            <div class="setting-row" style="margin-top:8px">
+                <button class="btn-reset-colors" id="btn-reset-colors">${t('ui.reset_colors') || '重置为默认'}</button>
+            </div>
         </div>
     `;
 
@@ -353,22 +699,6 @@ function createSettingsTab() {
             </div>
         </div>
         <div class="setting-group">
-            <div class="setting-group-title">${t('ui.auto_save_group') || '自动保存'}</div>
-            <div class="setting-row">
-                <span>${t('ui.auto_save')}</span>
-                <select id="auto-save-select">
-                    <option value="0">${t('ui.off')}</option>
-                    <option value="5">5 ${t('ui.minutes')}</option>
-                    <option value="10">10 ${t('ui.minutes')}</option>
-                    <option value="15">15 ${t('ui.minutes')}</option>
-                </select>
-            </div>
-            <div class="setting-row">
-                <span>${t('ui.tab_close_confirm') || '关闭标签确认'}</span>
-                <label class="toggle-switch"><input type="checkbox" id="tab-close-confirm" checked><span class="toggle-slider"></span></label>
-            </div>
-        </div>
-        <div class="setting-group">
             <div class="setting-group-title">${t('ui.tools_group') || '工具'}</div>
             <div class="setting-row">
                 <span>${t('ui.word_count')}</span>
@@ -390,14 +720,19 @@ function createSettingsTab() {
     aboutSection.id = 'section-about';
     aboutSection.innerHTML = `
         <h3>${t('ui.about')}</h3>
-        <div class="about-info">
-            <p style="color:var(--text-secondary)">World Editor <span id="about-version">v${APP_VERSION}</span></p>
-            <p style="color:var(--text-secondary); margin-top:4px;">${t('ui.about_desc')}</p>
-            <div class="about-links">
-                <a href="https://github.com/firefairyZz" class="about-link" data-external="true">
-                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38C13.71 14.53 16 11.53 16 8c0-4.42-3.58-8-8-8z"/></svg>
-                    <span>firefairyZz</span>
-                </a>
+        <div class="about-header">
+            <div class="about-info">
+                <p style="color:var(--text-secondary)">World Editor <span id="about-version">v${APP_VERSION}</span></p>
+                <p style="color:var(--text-secondary); margin-top:4px;">${t('ui.about_desc')}</p>
+                <div class="about-links">
+                    <a href="https://github.com/firefairyZz" class="about-link" data-external="true">
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38C13.71 14.53 16 11.53 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                        <span>firefairyZz</span>
+                    </a>
+                </div>
+            </div>
+            <div class="about-icon">
+                <img src="../resources/White.png" alt="World Editor" id="about-app-icon" />
             </div>
         </div>
         <div class="update-notes-section">
@@ -424,7 +759,37 @@ function createSettingsTab() {
         }
     });
 
+    // 彩蛋：双击图标切换为 icon.png / 恢复默认
+    let iconEggMode = false;
+    const aboutIcon = aboutSection.querySelector('.about-icon');
+    if (aboutIcon) {
+        aboutIcon.style.cursor = 'pointer';
+        aboutIcon.addEventListener('dblclick', () => {
+            const img = aboutIcon.querySelector('img');
+            iconEggMode = !iconEggMode;
+            if (iconEggMode) {
+                // 显示 icon.png 原图
+                aboutIcon.style.background = 'transparent';
+                aboutIcon.style.borderRadius = '0';
+                img.src = '../resources/icon.png';
+                img.style.filter = 'none';
+                img.style.width = '100%';
+                img.style.height = '100%';
+            } else {
+                // 恢复默认图标样式
+                aboutIcon.style.background = '';
+                aboutIcon.style.borderRadius = '';
+                img.src = document.body.classList.contains('theme-light') ? '../resources/Black.png' : '../resources/White.png';
+                img.style.filter = '';
+                img.style.width = '';
+                img.style.height = '';
+            }
+        });
+    }
+
     contentArea.appendChild(generalSection);
+    contentArea.appendChild(accountSection);
+    contentArea.appendChild(appearanceSection);
     contentArea.appendChild(editorSection);
 
     // 快捷键设置区域
@@ -438,9 +803,15 @@ function createSettingsTab() {
 
     const footer = document.createElement('div');
     footer.className = 'settings-footer';
+    const deleteAccountBtn = document.createElement('button');
+    deleteAccountBtn.textContent = t('ui.delete_account') || '删除账户';
+    deleteAccountBtn.className = 'btn-settings-danger';
+    deleteAccountBtn.id = 'footer-btn-delete-account';
+    deleteAccountBtn.style.display = 'none';
     const applyBtn = document.createElement('button');
     applyBtn.textContent = t('ui.apply');
     applyBtn.className = 'settings-apply-btn';
+    footer.appendChild(deleteAccountBtn);
     footer.appendChild(applyBtn);
 
     panel.appendChild(contentArea);
@@ -455,8 +826,10 @@ function createSettingsTab() {
             const section = item.dataset.section;
             panel.querySelectorAll('.settings-section').forEach(sec => sec.classList.remove('active'));
             document.getElementById(`section-${section}`).classList.add('active');
-            // 关于页面隐藏应用按钮
+            // 关于页面隐藏底栏
             footer.style.display = section === 'about' ? 'none' : 'flex';
+            // 删除账户按钮仅在账户分区显示
+            deleteAccountBtn.style.display = section === 'account' ? '' : 'none';
             if (section === 'about') loadUpdateNotes();
         });
     });
@@ -469,11 +842,22 @@ function createSettingsTab() {
 
     weAPI.getSettings().then(s => {
         content.querySelector('#lang-select').value = s.language || 'zh_CN';
-        content.querySelector('#theme-select').value = s.theme || 'dark';
+        const colorPresetSelect = content.querySelector('#color-preset-select');
+        if (colorPresetSelect) colorPresetSelect.value = s.colorPreset || 'default-dark';
+        const customColorsGroup = content.querySelector('#custom-colors-group');
+        if (customColorsGroup) customColorsGroup.style.display = (s.colorPreset === 'custom') ? 'block' : 'none';
+        // Load custom colors into pickers
+        if (s.customColors) {
+            for (const [cssVar, color] of Object.entries(s.customColors)) {
+                const input = content.querySelector(`input[data-var="${cssVar}"]`);
+                if (input) input.value = color;
+            }
+        }
         content.querySelector('#font-family-select').value = s.fontFamily || 'Microsoft YaHei';
         content.querySelector('#font-size-select').value = s.fontSize || '16';
         content.querySelector('#auto-save-select').value = s.autoSave || '0';
         const tc = content.querySelector('#tab-close-confirm'); if (tc) tc.checked = s.tabCloseConfirm !== false;
+        const aot = content.querySelector('#always-on-top-toggle'); if (aot) aot.checked = s.alwaysOnTop === true;
         const wc = content.querySelector('#word-count-toggle'); if (wc) wc.checked = s.wordCount !== false;
         const tb = content.querySelector('#toolbar-show-toggle'); if (tb) tb.checked = s.toolbarShow !== false;
         const md = content.querySelector('#md-render-toggle'); if (md) md.checked = s.markdownRender !== false;
@@ -482,13 +866,204 @@ function createSettingsTab() {
         if (s.autoSave) setupAutoSave(s.autoSave);
     });
 
+    // 实时同步窗口置顶开关
+    const aotToggle = content.querySelector('#always-on-top-toggle');
+    if (aotToggle) {
+        aotToggle.addEventListener('change', async () => {
+            const val = aotToggle.checked;
+            await weAPI.setAlwaysOnTop(val);
+            window.dispatchEvent(new CustomEvent('settings:updated', { detail: { alwaysOnTop: val } }));
+        });
+    }
+
+    // 配色方案切换：显示/隐藏自定义颜色区域
+    const colorPresetSelect = content.querySelector('#color-preset-select');
+    if (colorPresetSelect) {
+        colorPresetSelect.addEventListener('change', (e) => {
+            const isCustom = e.target.value === 'custom';
+            const group = content.querySelector('#custom-colors-group');
+            if (group) group.style.display = isCustom ? 'block' : 'none';
+            // 如果选了预设，立即填充颜色选择器
+            if (!isCustom && THEME_PRESETS[e.target.value]) {
+                const preset = THEME_PRESETS[e.target.value];
+                for (const [cssVar, color] of Object.entries(preset.colors)) {
+                    const input = content.querySelector(`input[data-var="${cssVar}"]`);
+                    if (input) input.value = color;
+                }
+            }
+        });
+    }
+    // 重置颜色按钮
+    const resetBtn = content.querySelector('#btn-reset-colors');
+    if (resetBtn) {
+        resetBtn.onclick = () => {
+            const preset = THEME_PRESETS['default-dark'];
+            for (const [cssVar, color] of Object.entries(preset.colors)) {
+                const input = content.querySelector(`input[data-var="${cssVar}"]`);
+                if (input) input.value = color;
+            }
+        };
+    }
+
+    // 账户设置事件
+    let tempAvatarUrl = currentAccount?.avatarDataUrl || '';
+    let tempAccountName = currentAccount?.name || '';
+    let tempAccountDisplay = currentAccount?.displayName || '';
+    let accountChanged = false;
+
+    // 更换头像
+    const avatarFileInput = content.querySelector('#settings-avatar-file');
+    const changeAvatarBtn = content.querySelector('#btn-change-avatar');
+    if (changeAvatarBtn && avatarFileInput) {
+        changeAvatarBtn.onclick = () => avatarFileInput.click();
+        avatarFileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                alert(t('ui.avatar_too_large') || '头像不能超过2MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                tempAvatarUrl = evt.target.result;
+                accountChanged = true;
+                const preview = content.querySelector('#settings-avatar-preview');
+                preview.innerHTML = `<img src="${tempAvatarUrl}" alt="avatar" />`;
+                const removeBtn = content.querySelector('#btn-remove-avatar');
+                if (removeBtn) removeBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        };
+    }
+
+    // 移除头像
+    const removeAvatarBtn = content.querySelector('#btn-remove-avatar');
+    if (removeAvatarBtn) {
+        removeAvatarBtn.onclick = () => {
+            if (!currentAccount) return;
+            tempAvatarUrl = '';
+            accountChanged = true;
+            const preview = content.querySelector('#settings-avatar-preview');
+            const initial = (tempAccountName || '?').charAt(0).toUpperCase();
+            preview.innerHTML = `<span>${initial}</span>`;
+            removeAvatarBtn.disabled = true;
+        };
+    }
+
+    // 行内编辑功能
+    function startInlineEdit(field) {
+        const row = content.querySelector(`.settings-account-row[data-field="${field}"]`);
+        if (!row) return;
+        const valueSpan = row.querySelector('.settings-account-value');
+        const editBtn = row.querySelector('.settings-account-edit-btn');
+        const oldValue = field === 'name' ? tempAccountName : tempAccountDisplay;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'settings-account-input';
+        input.value = oldValue;
+        if (field === 'name') {
+            input.maxLength = 20;
+            input.placeholder = t('ui.account_name_placeholder') || '请输入账户名称';
+        } else {
+            input.maxLength = 30;
+            input.placeholder = t('ui.display_name_placeholder') || '请输入显示名称';
+        }
+
+        valueSpan.style.display = 'none';
+        editBtn.style.display = 'none';
+        valueSpan.parentNode.insertBefore(input, editBtn);
+        input.focus();
+        input.select();
+
+        let finished = false;
+        const finishEdit = () => {
+            if (finished) return;
+            finished = true;
+            let val = input.value.trim();
+            if (field === 'name') {
+                // 仅允许英文、数字、下划线、连字符
+                val = val.replace(/[^a-zA-Z0-9_-]/g, '');
+                if (val && val.length < 2) {
+                    alert(t('ui.account_name_too_short') || '账户名称至少2个字符');
+                    val = oldValue;
+                }
+            }
+            if (field === 'name') {
+                tempAccountName = val || oldValue;
+            } else {
+                tempAccountDisplay = val || tempAccountName;
+            }
+            accountChanged = true;
+
+            // 恢复显示
+            input.remove();
+            valueSpan.textContent = (field === 'name' ? tempAccountName : tempAccountDisplay) || (t('ui.not_set') || '未设置');
+            valueSpan.style.display = '';
+            editBtn.style.display = '';
+
+            // 名称变更时同步头像首字母
+            if (field === 'name' && !tempAvatarUrl) {
+                const preview = content.querySelector('#settings-avatar-preview');
+                const initial = (tempAccountName || '?').charAt(0).toUpperCase();
+                preview.innerHTML = `<span>${initial}</span>`;
+            }
+        };
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            else if (e.key === 'Escape') { finished = true; input.remove(); valueSpan.style.display = ''; editBtn.style.display = ''; }
+        });
+        input.addEventListener('blur', finishEdit);
+    }
+
+    const editNameBtn = content.querySelector('#btn-edit-name');
+    if (editNameBtn) editNameBtn.onclick = () => startInlineEdit('name');
+    const editDisplayBtn = content.querySelector('#btn-edit-display');
+    if (editDisplayBtn) editDisplayBtn.onclick = () => startInlineEdit('display');
+
+    // 删除账户（底部按钮）
+    deleteAccountBtn.onclick = () => {
+        if (!currentAccount) return;
+        if (!confirm(t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。')) return;
+        if (!confirm(t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。')) return;
+        weAPI.deleteAccount().then(result => {
+            if (result.success) {
+                currentAccount = null;
+                tempAccountName = '';
+                tempAccountDisplay = '';
+                tempAvatarUrl = '';
+                accountChanged = false;
+                updateAccountUI();
+                // 清空设置页显示
+                const preview = content.querySelector('#settings-avatar-preview');
+                if (preview) preview.innerHTML = '<span>?</span>';
+                const nameEl = content.querySelector('#display-account-name');
+                if (nameEl) nameEl.textContent = t('ui.not_set') || '未设置';
+                const dispEl = content.querySelector('#display-account-display');
+                if (dispEl) dispEl.textContent = t('ui.not_set') || '未设置';
+                showNotification(t('ui.account_deleted') || '账户已删除');
+            } else {
+                alert(t('ui.delete_failed') + ': ' + result.error);
+            }
+        });
+    };
+
     applyBtn.onclick = async () => {
         const lang = content.querySelector('#lang-select').value;
-        const theme = content.querySelector('#theme-select').value;
+        const colorPreset = content.querySelector('#color-preset-select')?.value || 'default-dark';
+        let customColors = null;
+        if (colorPreset === 'custom') {
+            customColors = {};
+            content.querySelectorAll('input[type="color"][data-var]').forEach(input => {
+                customColors[input.dataset.var] = input.value;
+            });
+        }
         const fontFamily = content.querySelector('#font-family-select').value;
         const fontSize = content.querySelector('#font-size-select').value;
         const autoSave = content.querySelector('#auto-save-select').value;
         const tcVal = content.querySelector('#tab-close-confirm')?.checked ?? true;
+        const aotVal = content.querySelector('#always-on-top-toggle')?.checked ?? false;
         const wcVal = content.querySelector('#word-count-toggle')?.checked ?? true;
         const tbVal = content.querySelector('#toolbar-show-toggle')?.checked ?? true;
         const mdVal = content.querySelector('#md-render-toggle')?.checked ?? true;
@@ -496,13 +1071,27 @@ function createSettingsTab() {
         // 收集自定义快捷键
         const customShortcuts = collectCustomShortcuts(content);
 
+        // 根据配色方案决定主题
+        const isLightPreset = colorPreset.includes('light') || colorPreset === 'we-light';
+        const theme = isLightPreset ? 'light' : 'dark';
+
         await weAPI.setSettings({
             language: lang, theme: theme,
+            colorPreset: colorPreset, customColors: customColors,
             fontFamily: fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal,
             customShortcuts: customShortcuts
         });
+
+        // 应用窗口置顶
+        await weAPI.setAlwaysOnTop(aotVal);
+        
+        // 同步标题栏按钮状态
+        window.dispatchEvent(new CustomEvent('settings:updated', { detail: { alwaysOnTop: aotVal } }));
+
+        // 应用主题配色
+        applyColorPreset(colorPreset, customColors);
 
         // 应用快捷键变更
         if (customShortcuts) {
@@ -535,6 +1124,26 @@ function createSettingsTab() {
         applyToolbarVisibility(tbVal);
         applyWordCountVisibility(wcVal);
         await loadLanguage(lang);
+        refreshSettingsI18n();
+
+        // 保存账户变更
+        if (accountChanged && tempAccountName) {
+            const accountData = {
+                name: tempAccountName,
+                displayName: tempAccountDisplay || tempAccountName,
+                avatarDataUrl: tempAvatarUrl || generateInitialAvatar(tempAccountName),
+                createdAt: currentAccount?.createdAt || new Date().toISOString()
+            };
+            const accResult = await weAPI.saveAccount(accountData);
+            if (accResult.success) {
+                currentAccount = accResult.account || accountData;
+                if (!tempAvatarUrl) currentAccount.avatarDataUrl = accountData.avatarDataUrl;
+                else currentAccount.avatarDataUrl = tempAvatarUrl;
+                updateAccountUI();
+                accountChanged = false;
+            }
+        }
+
         showNotification(t('ui.settings_saved'));
         // Reload update notes if markdown render changed
         const c = document.getElementById('update-notes-container');
@@ -551,7 +1160,57 @@ function applyTheme(theme) {
     document.body.classList.toggle('theme-light', theme === 'light');
     const titleIcon = document.getElementById('title-icon');
     if (titleIcon) titleIcon.src = theme === 'light' ? '../resources/Black.png' : '../resources/White.png';
-    weAPI.setBackgroundColor(theme === 'light' ? '#e8e8e8' : '#2a2a2a');
+    const aboutIcon = document.getElementById('about-app-icon');
+    if (aboutIcon) aboutIcon.src = theme === 'light' ? '../resources/Black.png' : '../resources/White.png';
+    weAPI.setBackgroundColor(theme === 'light' ? '#ffffff' : '#1e1e1e');
+}
+
+// 应用背景材质（当前保留设置，窗口需透明模式才能显示完整效果）
+function applyBackgroundMaterial(material) {
+    // 保留 body 类以便将来扩展
+    document.body.dataset.bgMaterial = material || 'none';
+}
+
+// 应用主题配色预设
+function applyColorPreset(presetName, customColors) {
+    currentColorPreset = presetName;
+    const target = document.body;  // 设到 body 以覆盖 body.theme-light 的硬编码
+
+    // 清除之前的预设（在 body 和 root 上都清除）
+    const cssVars = ['--bg-main', '--bg-sidebar', '--bg-toolbar', '--border', '--text', '--text-secondary', '--accent', '--accent-hover', '--gap-color'];
+    cssVars.forEach(v => {
+        target.style.removeProperty(v);
+        document.documentElement.style.removeProperty(v);
+    });
+
+    if (presetName === 'custom' && customColors) {
+        const bgMain = customColors['--bg-main'] || '#1e1e1e';
+        const isLight = hexToLuminance(bgMain) > 0.5;
+        if (isLight) target.classList.add('theme-light');
+        else target.classList.remove('theme-light');
+        for (const [cssVar, color] of Object.entries(customColors)) {
+            target.style.setProperty(cssVar, color);
+        }
+    } else if (THEME_PRESETS[presetName]) {
+        const preset = THEME_PRESETS[presetName];
+        // 同步亮/暗主题
+        const isLight = presetName.includes('light') || presetName === 'we-light';
+        if (isLight) target.classList.add('theme-light');
+        else target.classList.remove('theme-light');
+        // 在 body 上设置变量 —— 内联样式优先级高于 stylesheet 中的 body.theme-light
+        for (const [cssVar, color] of Object.entries(preset.colors)) {
+            target.style.setProperty(cssVar, color);
+        }
+    }
+}
+
+// 计算颜色相对亮度（用于判断亮/暗主题）
+function hexToLuminance(hex) {
+    const c = hex.replace('#', '');
+    const r = parseInt(c.substr(0, 2), 16) / 255;
+    const g = parseInt(c.substr(2, 2), 16) / 255;
+    const b = parseInt(c.substr(4, 2), 16) / 255;
+    return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
 function applyFontSettings(family, size) {
@@ -669,16 +1328,15 @@ async function loadUpdateNotes() {
             sortedNotes.forEach((note, idx) => {
                 const ver = note.version;
                 const card = versionCards[ver];
-                const isLatest = idx === 0;
 
-                tocHtml += `<li class="toc-version ${isLatest ? 'active' : 'collapsed'}" data-version="${ver}">`;
-                tocHtml += `<span class="toc-arrow-icon">${isLatest ? ARROW_EXPANDED_SVG : ARROW_COLLAPSED_SVG}</span>`;
+                tocHtml += `<li class="toc-version collapsed" data-version="${ver}">`;
+                tocHtml += `<span class="toc-arrow-icon">${ARROW_COLLAPSED_SVG}</span>`;
                 tocHtml += `<span class="toc-version-label">v${escapeHtml(ver)}</span>`;
                 tocHtml += `</li>`;
 
                 // 子标题
                 if (card.headings && card.headings.length > 0) {
-                    tocHtml += `<ul class="toc-sub-list ${isLatest ? '' : 'hidden'}" data-version="${ver}">`;
+                    tocHtml += `<ul class="toc-sub-list hidden" data-version="${ver}">`;
                     for (const h of card.headings) {
                         const indent = (h.level - 2) * 12;
                         tocHtml += `<li class="toc-heading-item" data-anchor="${h.anchor}" style="padding-left:${indent + 12}px">`;
@@ -690,10 +1348,10 @@ async function loadUpdateNotes() {
             });
             tocList.innerHTML = tocHtml;
 
-            // 渲染内容区：默认只显示最新版本
-            const latestCard = versionCards[latestVersion];
-            container.innerHTML = `<div class="update-note-card active-version" data-version="${latestVersion}">
-                <div class="version-body">${latestCard.html}</div>
+            // 初始空状态：不默认展开任何版本，显示提示
+            container.innerHTML = `<div class="update-notes-placeholder">
+                <div class="placeholder-icon">📋</div>
+                <div class="placeholder-text">${t('ui.update_notes_placeholder') || '← 点击左侧版本号查看日志'}</div>
             </div>`;
 
             // 版本目录项点击：展开/折叠子标题 + 切换显示
@@ -709,20 +1367,18 @@ async function loadUpdateNotes() {
                     const subList = tocList.querySelector(`.toc-sub-list[data-version="${ver}"]`);
 
                     if (isActive) {
-                        // 已激活 → 折叠子标题
+                        // 已激活 → 折叠，恢复空状态提示
                         li.classList.remove('active');
                         li.classList.add('collapsed');
                         const arrow = li.querySelector('.toc-arrow-icon');
                         if (arrow) arrow.innerHTML = ARROW_COLLAPSED_SVG;
                         if (subList) subList.classList.add('hidden');
 
-                        // 同步内容区折叠
-                        const contentCard = container.querySelector(`.update-note-card[data-version="${ver}"]`);
-                        if (contentCard) {
-                            contentCard.classList.remove('active-version');
-                            const body = contentCard.querySelector('.version-body');
-                            if (body) body.style.display = 'none';
-                        }
+                        // 恢复 placeholder
+                        container.innerHTML = `<div class="update-notes-placeholder">
+                            <div class="placeholder-icon">📋</div>
+                            <div class="placeholder-text">${t('ui.update_notes_placeholder') || '← 点击左侧版本号查看日志'}</div>
+                        </div>`;
                     } else {
                         // 未激活 → 切换到该版本并展开
                         // 先收起所有其他版本

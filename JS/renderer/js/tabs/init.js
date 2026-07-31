@@ -12,14 +12,47 @@ function showNotification(message) {
 // 启动
 window.onload = async () => {
     const settings = await weAPI.getSettings();
-    currentTheme = settings.theme || 'dark';
-    applyTheme(currentTheme);
+    // 先应用配色预设（会同时设置主题）
+    if (typeof applyColorPreset === 'function') {
+        applyColorPreset(settings.colorPreset || 'default-dark', settings.customColors);
+    } else {
+        currentTheme = settings.theme || 'dark';
+        applyTheme(currentTheme);
+    }
     savedFontFamily = settings.fontFamily || 'Microsoft YaHei';
     savedFontSize = settings.fontSize || '16';
     applyFontSettings(savedFontFamily, savedFontSize);
     if (settings.autoSave) setupAutoSave(settings.autoSave);
     await loadLanguage(settings.language || 'zh_CN');
     updateFileMenuTexts();
+    
+    // 加载账户
+    await loadAccount();
+    updateAccountUI();
+    
+    // 首次启动时如果没有账户，创建账户注册标签页
+    if (!currentAccount) {
+        setTimeout(() => createAccountTab(), 300);
+    }
+    
+    // 账户按钮点击：有账户→跳转设置页账户区；无账户→创建账户标签页
+    const accountBtn = document.getElementById('btn-account');
+    if (accountBtn) {
+        accountBtn.onclick = () => {
+            if (currentAccount) {
+                createSettingsTab();
+                // 切换到账户分区
+                setTimeout(() => {
+                    const navItems = document.querySelectorAll('.settings-nav .nav-item');
+                    navItems.forEach(n => n.classList.remove('active'));
+                    const accountNav = document.querySelector('.settings-nav .nav-item[data-section="account"]');
+                    if (accountNav) accountNav.click();
+                }, 50);
+            } else {
+                createAccountTab();
+            }
+        };
+    }
     
     // 先初始化状态栏，确保 createWelcomeTab 调用 switchTab 时结构已就绪
     initStatusBar();
@@ -68,19 +101,45 @@ function initStatusBar() {
 
 // 更新状态栏统计
 function updateStatusBarStats() {
+    // Markdown 模式下使用 markdownEditor
+    if (markdownEditor) {
+        const text = markdownEditor.value || '';
+        const cleanText = text.replace(/\n$/, '');
+        let words = 0;
+        if (cleanText.trim()) {
+            const chineseChars = (cleanText.match(/[\u4e00-\u9fa5]/g) || []).length;
+            const nonChineseText = cleanText.replace(/[\u4e00-\u9fa5]/g, ' ').trim();
+            const nonChineseWords = nonChineseText ? nonChineseText.split(/\s+/).filter(Boolean).length : 0;
+            words = chineseChars + nonChineseWords;
+        }
+        const chars = cleanText.length;
+        const paragraphs = cleanText.split(/\n\n/).filter(p => p.trim()).length;
+        const readingTime = Math.max(1, Math.ceil(words / 200));
+
+        const wordsEl = document.querySelector('#status-words .status-value');
+        const charsEl = document.querySelector('#status-chars .status-value');
+        const paragraphsEl = document.querySelector('#status-paragraphs .status-value');
+        const readingTimeEl = document.querySelector('#status-reading-time .status-value');
+        if (wordsEl) wordsEl.textContent = words;
+        if (charsEl) charsEl.textContent = chars;
+        if (paragraphsEl) paragraphsEl.textContent = paragraphs;
+        if (readingTimeEl) readingTimeEl.textContent = readingTime + '分钟';
+        return;
+    }
+
     if (!quill) return;
-    
+
     const text = quill.getText();
     const words = text.trim() ? text.trim().split(/\s+/).length : 0;
     const chars = text.length;
     const paragraphs = text.split('\n\n').filter(p => p.trim()).length;
     const readingTime = Math.max(1, Math.ceil(words / 200));
-    
+
     const wordsEl = document.querySelector('#status-words .status-value');
     const charsEl = document.querySelector('#status-chars .status-value');
     const paragraphsEl = document.querySelector('#status-paragraphs .status-value');
     const readingTimeEl = document.querySelector('#status-reading-time .status-value');
-    
+
     if (wordsEl) wordsEl.textContent = words;
     if (charsEl) charsEl.textContent = chars;
     if (paragraphsEl) paragraphsEl.textContent = paragraphs;

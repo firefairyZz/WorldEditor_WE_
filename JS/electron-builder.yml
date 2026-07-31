@@ -1,18 +1,22 @@
-"build": {
-  "appId": "com.we.world-editor",
-  "productName": "WE",
-  "directories": { "output": "dist" },
-  "win": {
-    "target": "nsis",
-    "icon": "resources/icon.ico"
-  },
-  "nsis": {
-    "oneClick": false,
-    "allowToChangeInstallationDirectory": true
-  },
-  "publish": {
-    "provider": "github",
-    "owner": "your-github-username",
-    "repo": "we-releases"
-  }
-}
+appId: com.firefairyzz.worldeditor
+productName: World Editor
+directories:
+  output: ../WE-Release
+
+files:
+  - "**/*"
+  - "!node_modules/.bin"
+  - "!**/*.map"
+
+
+win:
+  target: 
+    - target: nsis
+      arch: 
+        - x64
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

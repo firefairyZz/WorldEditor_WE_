@@ -7,8 +7,10 @@ const unzipper = require('unzipper');
 const USER_DIR = path.join(__dirname, 'User');
 const RECENT_PATH = path.join(__dirname, 'resources', 'recent.json');
 const SETTINGS_PATH = path.join(USER_DIR, 'settings.json');
+const ACCOUNT_PATH = path.join(USER_DIR, 'account.json');
+const ACCOUNT_AVATAR_DIR = path.join(USER_DIR, 'avatars');
 const LANG_DIR = path.join(USER_DIR, 'lang');
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.4.0";
 
 if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR);
 if (!fs.existsSync(path.join(__dirname, 'resources'))) fs.mkdirSync(path.join(__dirname, 'resources'));
@@ -24,6 +26,9 @@ const DEFAULT_SETTINGS = {
     fontSize: '16',
     autoSave: '0',
     alwaysOnTop: false,
+    backgroundMaterial: 'none',
+    colorPreset: 'default-dark',
+    customColors: null,
     customShortcuts: null
 };
 
@@ -127,6 +132,64 @@ ui.normal = 正文
 ui.ok = 确定
 ui.read_failed = 读取失败
 ui.need_open_project = 请先打开一个项目
+ui.background_material = 背景材质
+ui.bg_none = 无
+ui.bg_mica = 云母 (Mica)
+ui.bg_acrylic = 亚克力 (Acrylic)
+ui.bg_material_hint = 仅 Windows 11 支持。当前版本为预览版，需窗口透明模式配合
+ui.appearance = 外观
+ui.color_preset = 主题配色
+ui.color_scheme = 配色方案
+ui.theme_default_dark = 默认暗色
+ui.theme_default_light = 默认亮色
+ui.theme_custom = 自定义
+ui.custom_colors = 自定义颜色
+ui.color_bg_main = 主背景
+ui.color_bg_sidebar = 侧边栏
+ui.color_bg_toolbar = 工具栏
+ui.color_text = 文字
+ui.color_text_secondary = 次要文字
+ui.color_accent = 强调色
+ui.color_border = 边框
+ui.color_gap = 间隙
+ui.reset_colors = 重置为默认
+ui.coming_soon = 敬请期待
+ui.always_on_top = 窗口置顶
+ui.group_light = 亮色主题
+ui.group_dark = 暗色主题
+ui.project_template = 项目模板
+ui.template_empty = 空白项目
+ui.template_empty_desc = 不创建任何文件
+ui.template_novel = 小说
+ui.template_novel_desc = 章节、角色、大纲
+ui.template_world = 世界观
+ui.template_world_desc = 地理、种族、历史、魔法
+ui.template_script = 剧本
+ui.template_script_desc = 场景、角色、对话
+ui.account = 账户
+ui.account_register = 注册账户
+ui.account_settings = 账户设置
+ui.upload_avatar = 上传头像
+ui.remove_avatar = 移除头像
+ui.account_name = 账户名称
+ui.account_name_placeholder = 请输入账户名称
+ui.account_name_required = 请输入账户名称
+ui.display_name = 显示名称
+ui.display_name_placeholder = 请输入显示名称
+ui.display_name_hint = 显示在项目所有者位置
+ui.avatar_too_large = 头像不能超过2MB
+ui.account_created = 账户创建成功
+ui.account_updated = 账户已更新
+ui.account_deleted = 账户已删除
+ui.account_delete_confirm = 确定要删除账户吗？此操作不可撤销。
+ui.account_delete_confirm_2 = 真的要删除吗？所有账户数据将被清除。
+ui.change_avatar = 更换头像
+ui.delete_account = 删除账户
+ui.loading = 加载中...
+ui.edit = 修改
+ui.not_set = 未设置
+ui.account_name_too_short = 账户名称至少2个字符
+ui.account_name_hint = 仅支持英文、数字、下划线、连字符
 `;
     fs.writeFileSync(defaultLangPath, defaultContent, 'utf-8');
 }
@@ -159,6 +222,73 @@ function parseLibFile(lang) {
 
 // 全局 IPC 处理器
 ipcMain.handle('get-version', () => APP_VERSION);
+
+ipcMain.handle('toggle-devtools', () => {
+    if (mainWin) {
+        if (mainWin.webContents.isDevToolsOpened()) {
+            mainWin.webContents.closeDevTools();
+        } else {
+            mainWin.webContents.openDevTools({ mode: 'detach' });
+        }
+    }
+});
+
+// ========== 账户系统 ==========
+ipcMain.handle('get-account', () => {
+    try {
+        if (!fs.existsSync(ACCOUNT_PATH)) return { success: true, account: null };
+        const account = JSON.parse(fs.readFileSync(ACCOUNT_PATH, 'utf-8'));
+        return { success: true, account };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('save-account', (event, account) => {
+    try {
+        if (!account || !account.name || !account.name.trim()) {
+            return { success: false, error: 'Name is required' };
+        }
+        if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR, { recursive: true });
+        if (!fs.existsSync(ACCOUNT_AVATAR_DIR)) fs.mkdirSync(ACCOUNT_AVATAR_DIR, { recursive: true });
+        
+        // 如果有上传头像，保存到头像目录
+        if (account.avatarDataUrl) {
+            const base64Data = account.avatarDataUrl.replace(/^data:image\/\w+;base64,/, '');
+            const ext = account.avatarDataUrl.match(/^data:image\/(\w+);base64,/)?.[1] || 'png';
+            const avatarPath = path.join(ACCOUNT_AVATAR_DIR, 'avatar.' + ext);
+            fs.writeFileSync(avatarPath, Buffer.from(base64Data, 'base64'));
+            account.avatarPath = avatarPath;
+            delete account.avatarDataUrl;
+        }
+        
+        fs.writeFileSync(ACCOUNT_PATH, JSON.stringify(account, null, 2));
+        return { success: true, account };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('delete-account', () => {
+    try {
+        if (fs.existsSync(ACCOUNT_PATH)) {
+            fs.unlinkSync(ACCOUNT_PATH);
+        }
+        if (fs.existsSync(ACCOUNT_AVATAR_DIR)) {
+            fs.rmSync(ACCOUNT_AVATAR_DIR, { recursive: true, force: true });
+        }
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('get-account-avatar', (event, account) => {
+    try {
+        if (!account || !account.avatarPath) return { success: false };
+        if (fs.existsSync(account.avatarPath)) {
+            const data = fs.readFileSync(account.avatarPath).toString('base64');
+            const ext = path.extname(account.avatarPath).slice(1);
+            return { success: true, dataUrl: `data:image/${ext};base64,${data}` };
+        }
+        return { success: false };
+    } catch (e) { return { success: false }; }
+});
+
 ipcMain.handle('get-update-notes', async () => {
     try {
         const updateDir = path.join(__dirname, 'resources', 'UPDATE_INF');
@@ -167,13 +297,13 @@ ipcMain.handle('get-update-notes', async () => {
         const notes = [];
         for (const file of files) {
             const content = fs.readFileSync(path.join(updateDir, file), 'utf-8');
-            const versionMatch = file.match(/^(\d+)\.md$/);
-            const versionMap = { '010': '0.1.0', '020': '0.2.0', '030': '0.3.0' };
-            const version = versionMap[versionMatch?.[1]] || file.replace('.md', '');
+            // 支持 x.y.z.md (例如 0.1.0.md, 0.4.0.md)，兼容旧的 3位数字 格式
+            const versionMatch = file.match(/^(\d+\.\d+\.\d+)\.md$/);
+            const version = versionMatch ? versionMatch[1] : file.replace('.md', '');
             notes.push({ file, version, content });
         }
         return { success: true, notes };
-    } catch (e) { return { success: true, notes: [] } };
+    } catch (e) { return { success: true, notes: [] }; }
 });
 ipcMain.handle('get-settings', () => appSettings);
 ipcMain.handle('set-settings', (event, settings) => {
@@ -267,10 +397,13 @@ function backupProject(folder) {
 }
 
 function createSplash() {
+    const preset = appSettings.colorPreset || 'default-dark';
+    const isLight = preset.includes('light') || preset === 'we-light';
+    const bgColor = isLight ? '#e8e8e8' : '#2a2a2a';
     splash = new BrowserWindow({
         width: 400, height: 260, frame: false, transparent: true,
         alwaysOnTop: true, resizable: false,
-        icon: path.join(__dirname, 'resources', 'icon.png'),   // 添加这一行
+        icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
     splash.loadFile('renderer/splash.html');
@@ -279,8 +412,9 @@ function createSplash() {
 function createMainWindow() {
     const bgColor = appSettings.theme === 'light' ? '#e8e8e8' : '#2a2a2a';
     mainWin = new BrowserWindow({
-        width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false, backgroundColor: bgColor,
-        icon: path.join(__dirname, 'resources', 'icon.png'),   // 添加这一行
+        width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
+        backgroundColor: bgColor,
+        icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
     mainWin.loadFile('renderer/main.html');
@@ -304,20 +438,76 @@ function createMainWindow() {
     ipcMain.handle('is-always-on-top', () => mainWin.isAlwaysOnTop());
     ipcMain.on('set-background-color', (event, color) => mainWin.setBackgroundColor(color));
 
+    // 实时切换背景材质（云母/亚克力）
+    ipcMain.handle('set-background-material', (event, material) => {
+        if (!mainWin) return false;
+        try {
+            // 注意：透明窗口（transparent: true）会破坏布局，这里仅在非透明窗口上尝试设置
+            // 效果有限，需配合透明窗口才能完整显示 Mica/Acrylic
+            if (material && material !== 'none') {
+                try { mainWin.setBackgroundMaterial(material); } catch(e) {}
+            } else {
+                try { mainWin.setBackgroundMaterial('none'); } catch(e) {}
+                const bg = appSettings.theme === 'light' ? '#e8e8e8' : '#2a2a2a';
+                mainWin.setBackgroundColor(bg);
+            }
+            return true;
+        } catch (e) {
+            console.error('set-background-material error:', e);
+            return false;
+        }
+    });
+
     ipcMain.handle('get-default-project-path', (event, name) => path.join(USER_DIR, name));
 
-    ipcMain.handle('create-project', async (event, folder, name, desc, initReadme, initSample) => {
+    ipcMain.handle('create-project', async (event, folder, name, desc, template, projectMode) => {
         try {
             if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
             const files = {};
-            if (initReadme) files['README.txt'] = `# ${name}\n\n${desc || '欢迎'}`;
-            if (initSample) {
-                files['chapters/chapter1.txt'] = '第一章 开端\n\n...';
-                files['characters/hero.txt'] = '名称: \n角色: \n';
+
+            // 有描述时自动创建 README
+            if (desc && desc.trim()) {
+                files['README.txt'] = `# ${name}\n\n${desc}`;
+            }
+
+            // 根据模板创建初始文件
+            if (template === 'novel') {
+                if (!files['README.txt']) files['README.txt'] = `# ${name}\n\n`;
+                files['chapters/chapter1.txt'] = '第一章 开端\n\n故事从这里开始...';
+                files['chapters/chapter2.txt'] = '第二章 发展\n\n';
+                files['characters/protagonist.txt'] = '名称: \n角色: 主角\n性格: \n背景: \n';
+                files['characters/antagonist.txt'] = '名称: \n角色: 反派\n动机: \n';
+                files['outline.txt'] = '# 大纲\n\n## 第一幕\n\n## 第二幕\n\n## 第三幕\n';
+            } else if (template === 'worldbuilding') {
+                if (!files['README.txt']) files['README.txt'] = `# ${name}\n\n`;
+                files['geography/continents.txt'] = '# 大陆\n\n';
+                files['geography/locations.txt'] = '# 重要地点\n\n';
+                files['races/races.txt'] = '# 种族\n\n## 人类\n\n## 精灵\n\n## 矮人\n';
+                files['history/timeline.txt'] = '# 历史年表\n\n## 上古时代\n\n## 中古时代\n\n## 近代\n';
+                files['magic/system.txt'] = '# 魔法体系\n\n## 能力来源\n\n## 限制\n\n## 分级\n';
+                files['culture/customs.txt'] = '# 文化习俗\n\n';
+            } else if (template === 'script') {
+                if (!files['README.txt']) files['README.txt'] = `# ${name}\n\n`;
+                files['scenes/scene1.txt'] = '场景一\n\n时间: \n地点: \n人物: \n\n[场景描述]\n\n角色A: 对白\n角色B: 对白\n';
+                files['scenes/scene2.txt'] = '场景二\n\n时间: \n地点: \n人物: \n\n[场景描述]\n';
+                files['characters/cast.txt'] = '# 角色表\n\n## 角色A\n性别: \n年龄: \n特征: \n\n## 角色B\n';
+                files['dialogue/notes.txt'] = '# 对话笔记\n\n';
             }
             await writeProjectWep(folder, files);
+            
+            // 存储项目模式到 metadata
+            try {
+                const metaPath = path.join(folder, '.metadata');
+                let metadata = {};
+                if (fs.existsSync(metaPath)) {
+                    metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                }
+                metadata.projectMode = projectMode || 'rich';
+                fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+            } catch(e) {}
+            
             addRecent(folder);
-            return { success: true, folder, fileList: Object.keys(files) };
+            return { success: true, folder, fileList: Object.keys(files), projectMode: projectMode || 'rich' };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -326,7 +516,16 @@ function createMainWindow() {
         addRecent(folder);
         try {
             const files = await readProjectWep(folder);
-            return { success: true, folder, name: path.basename(folder), fileList: Object.keys(files) };
+            // 读取项目模式
+            let projectMode = 'rich';
+            try {
+                const metaPath = path.join(folder, '.metadata');
+                if (fs.existsSync(metaPath)) {
+                    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                    if (meta.projectMode) projectMode = meta.projectMode;
+                }
+            } catch(e) {}
+            return { success: true, folder, name: path.basename(folder), fileList: Object.keys(files), projectMode };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -334,6 +533,13 @@ function createMainWindow() {
         try {
             const files = await readProjectWep(folder);
             return { success: true, content: files[filename] || '' };
+        } catch (e) { return { success: false, error: e.message }; }
+    });
+
+    ipcMain.handle('list-files', async (event, folder) => {
+        try {
+            const files = await readProjectWep(folder);
+            return { success: true, files: Object.keys(files) };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -454,6 +660,20 @@ function createMainWindow() {
         } catch (e) { return { success: false, error: e.message }; }
     });
 
+    // 删除项目（移入回收站）
+    ipcMain.handle('delete-project', async (event, folder) => {
+        try {
+            if (!fs.existsSync(folder)) return { success: false, error: '文件夹不存在' };
+            // 使用 shell API 移入回收站（可恢复）
+            await shell.trashItem(folder);
+            // 从最近项目列表中移除
+            let recent = loadRecent();
+            recent = recent.filter(p => normalizeFolder(p) !== normalizeFolder(folder));
+            saveRecent(recent);
+            return { success: true };
+        } catch (e) { return { success: false, error: e.message }; }
+    });
+
     ipcMain.handle('read-metadata', async (event, folder) => {
         try {
             const files = await readProjectWep(folder);
@@ -533,6 +753,20 @@ function createMainWindow() {
                     projectName: path.basename(folder)
                 }
             };
+        } catch (e) { return { success: false, error: e.message }; }
+    });
+
+    // 切换项目编辑器模式（单向转化）
+    ipcMain.handle('set-project-mode', async (event, folder, newMode) => {
+        try {
+            const metaPath = path.join(folder, '.metadata');
+            let metadata = {};
+            if (fs.existsSync(metaPath)) {
+                metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+            }
+            metadata.projectMode = newMode;
+            fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
+            return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     });
 

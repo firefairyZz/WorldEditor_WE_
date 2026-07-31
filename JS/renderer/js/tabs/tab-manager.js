@@ -35,10 +35,32 @@ document.getElementById('btn-always-on-top')?.addEventListener('click', async ()
     const settings = await weAPI.getSettings();
     settings.alwaysOnTop = newState;
     await weAPI.setSettings(settings);
+    // 同步设置页开关
+    window.dispatchEvent(new CustomEvent('pin-button:clicked', { detail: { alwaysOnTop: newState } }));
 });
 
 // 初始化置顶按钮状态
 updatePinButton();
+
+// 监听设置页更新，同步按钮状态
+window.addEventListener('settings:updated', (e) => {
+    if (e.detail && 'alwaysOnTop' in e.detail) {
+        const btn = document.getElementById('btn-always-on-top');
+        if (!btn) return;
+        const isOnTop = e.detail.alwaysOnTop;
+        btn.classList.toggle('active', isOnTop);
+        btn.innerHTML = isOnTop ? PIN_SVG_FILLED : PIN_SVG_OUTLINE;
+        btn.title = t(isOnTop ? 'ui.always_on_top_off' : 'ui.always_on_top');
+    }
+});
+
+// 标题栏按钮点击后同步设置页
+window.addEventListener('pin-button:clicked', (e) => {
+    if (e.detail && 'alwaysOnTop' in e.detail) {
+        const toggle = document.getElementById('always-on-top-toggle');
+        if (toggle) toggle.checked = e.detail.alwaysOnTop;
+    }
+});
 
 // ========== 文件菜单 ==========
 function updateFileMenuTexts() {
@@ -51,6 +73,8 @@ function updateFileMenuTexts() {
         <div class="menu-item" data-action="open">${t('ui.open_folder')}</div>
         <div class="menu-item" data-action="save">${t('ui.save')}</div>
         <div class="menu-separator"></div>
+        <div class="menu-item" data-action="switch-mode">${t('ui.switch_editor_mode') || '切换编辑器模式'}</div>
+        <div class="menu-separator"></div>
         <div class="menu-item" data-action="settings">${t('ui.settings')}</div>
     `;
     menu.querySelectorAll('.menu-item').forEach(item => {
@@ -59,6 +83,9 @@ function updateFileMenuTexts() {
             if (action === 'new') createNewProjectTab();
             else if (action === 'open') openProject();
             else if (action === 'save') saveCurrentFile();
+            else if (action === 'switch-mode') {
+                if (typeof switchEditorMode === 'function') switchEditorMode();
+            }
             else if (action === 'settings') {
                 if (!tabs['settings']) createSettingsTab();
                 else switchTab('settings');
@@ -224,13 +251,46 @@ function switchTab(id) {
     }
 }
 
-function closeTab(id) {
+function showConfirmDialog(message, title) {
+    return new Promise((resolve) => {
+        const dialog = document.createElement('div');
+        dialog.className = 'jump-link-dialog mode-switch-dialog';
+        dialog.innerHTML = `
+            <div class="dialog-overlay"></div>
+            <div class="dialog-box confirm-dialog-box">
+                <div class="confirm-icon">⚠</div>
+                <h3>${title || (t('ui.tab_close_confirm') || '关闭标签确认')}</h3>
+                <p class="confirm-message">${message}</p>
+                <div class="dialog-actions">
+                    <button class="btn-cancel">${t('ui.cancel') || '取消'}</button>
+                    <button class="btn-confirm btn-danger">${t('ui.confirm') || '确认'}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        const cleanup = (result) => { dialog.remove(); resolve(result); };
+        dialog.querySelector('.btn-cancel').onclick = () => cleanup(false);
+        dialog.querySelector('.dialog-overlay').onclick = () => cleanup(false);
+        dialog.querySelector('.btn-confirm').onclick = () => cleanup(true);
+    });
+}
+
+function closeTab(id, skipConfirm) {
     if (!tabs[id] || !tabs[id].closable) return;
-    // 关闭标签确认
-    if (tabCloseConfirm !== false && tabs[id].element?.classList?.contains('project-layout')) {
-        if (!confirm(t('ui.unsaved_confirm') || '文件未保存，确定关闭？')) return;
-    }
-    if (tabs[id].dirty && !confirm(t('ui.unsaved_confirm'))) return;
+    // 异步关闭：需要先检查是否有未保存内容
+    (async () => {
+        if (!skipConfirm) {
+            const needConfirm = (tabCloseConfirm !== false && tabs[id].element?.classList?.contains('project-layout')) || tabs[id].dirty;
+            if (needConfirm) {
+                const ok = await showConfirmDialog(t('ui.unsaved_confirm') || '文件未保存，确定关闭？');
+                if (!ok) return;
+            }
+        }
+        doCloseTab(id);
+    })();
+}
+
+function doCloseTab(id) {
     if (quill && currentQuillProjectId === id) {
         const toolbar = quill.container.previousElementSibling;
         const editor = quill.container;

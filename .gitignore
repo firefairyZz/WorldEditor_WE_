@@ -5,6 +5,7 @@ JS/node_modules/
 # Build output
 dist/
 JS/dist/
+WE-Release/
 
 # Logs
 *.log
@@ -32,3 +33,10 @@ __pycache__/
 
 # User data (runtime generated)
 JS/User/settings.json
+JS/User/account.json
+JS/User/avatars/
+JS/User/recent.json
+JS/User/test/
+JS/User/test - 副本/
+JS/resources/recent.json
+Python_Vision/resources/recent.json

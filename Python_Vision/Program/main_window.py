@@ -11,7 +11,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         # 无边框窗口，但保留任务栏交互
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        # self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         self.setMinimumSize(800, 500)
         self.setStyleSheet("background-color: #1e1e1e;")
 

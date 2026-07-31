@@ -5,14 +5,7 @@ function createWelcomeTab() {
     content.className = 'welcome-new';
     const actions = [
         { icon: '📂', labelKey: 'ui.open_folder', action: openProject },
-        { icon: '📄', labelKey: 'ui.new_project', action: createNewProjectTab },
-        { icon: '✏️', labelKey: 'ui.new_file', action: () => {
-            if (activeTabId && tabs[activeTabId] && tabs[activeTabId].projectPath) {
-                addFileToProject(activeTabId);
-            } else {
-                alert(t('ui.need_open_project'));
-            }
-        }}
+        { icon: '📄', labelKey: 'ui.new_project', action: createNewProjectTab }
     ];
     const actionsContainer = document.createElement('div');
     actionsContainer.className = 'welcome-actions-new';

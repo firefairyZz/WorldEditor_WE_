@@ -26,9 +26,17 @@ function stripExt(name) {
 const ARROW_COLLAPSED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ARROW_EXPANDED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
+// 文件树拖拽状态
+let treeDragData = { path: null, type: null, safeId: null };
+const rootDropBound = new WeakSet();
+
+// 排序顺序：'asc' 升序 | 'desc' 降序
+let fileSortOrder = 'asc';
+
 function renderTreeNodes(container, tree, basePath = '') {
     const folders = Object.keys(tree).filter(k => k !== '_files');
     folders.sort();
+    if (fileSortOrder === 'desc') folders.reverse();
     for (const folder of folders) {
         const folderPath = basePath ? `${basePath}/${folder}` : folder;
         const folderDiv = document.createElement('div');
@@ -58,12 +66,61 @@ function renderTreeNodes(container, tree, basePath = '') {
             showFolderContextMenu(e, folderPath, container);
         };
 
+        // 文件夹可拖拽（移动）
+        header.draggable = true;
+        header.addEventListener('dragstart', (e) => {
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            treeDragData = { path: folderPath, type: 'folder', safeId: sid };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', folderPath);
+            header.classList.add('dragging');
+            e.stopPropagation();
+        });
+        header.addEventListener('dragend', () => {
+            header.classList.remove('dragging');
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        // 文件夹作为 drop 目标
+        header.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            // 防止文件夹拖到自身或子文件夹
+            if (treeDragData.type === 'folder') {
+                if (treeDragData.path === folderPath) return;
+                if (folderPath.startsWith(treeDragData.path + '/')) return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            header.classList.add('drag-over');
+        });
+        header.addEventListener('dragleave', () => {
+            header.classList.remove('drag-over');
+        });
+        header.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            e.preventDefault();
+            e.stopPropagation();
+            header.classList.remove('drag-over');
+
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            handleTreeDrop(treeDragData, folderPath, sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
         folderDiv.appendChild(header);
         folderDiv.appendChild(content);
         container.appendChild(folderDiv);
     }
     const files = tree._files || [];
     files.sort();
+    if (fileSortOrder === 'desc') files.reverse();
     for (const file of files) {
         const filePath = basePath ? `${basePath}/${file}` : file;
         const fileDiv = document.createElement('div');
@@ -96,7 +153,87 @@ function renderTreeNodes(container, tree, basePath = '') {
             showFileContextMenu(e, filePath, container);
         };
 
+        // 文件可拖拽（移动）
+        fileDiv.draggable = true;
+        fileDiv.addEventListener('dragstart', (e) => {
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            treeDragData = { path: filePath, type: 'file', safeId: sid };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', filePath);
+            fileDiv.classList.add('dragging');
+            e.stopPropagation();
+        });
+        fileDiv.addEventListener('dragend', () => {
+            fileDiv.classList.remove('dragging');
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        // 文件也作为 drop 目标（移动到该文件所在文件夹）
+        fileDiv.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            if (treeDragData.path === filePath) return; // 不能拖到自己上
+            e.preventDefault();
+            e.stopPropagation();
+            fileDiv.classList.add('drag-over-file');
+        });
+        fileDiv.addEventListener('dragleave', () => {
+            fileDiv.classList.remove('drag-over-file');
+        });
+        fileDiv.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            e.preventDefault();
+            e.stopPropagation();
+            fileDiv.classList.remove('drag-over-file');
+
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            // 目标文件夹 = 该文件所在的文件夹
+            const targetFolder = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+            handleTreeDrop(treeDragData, targetFolder, sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
         container.appendChild(fileDiv);
+    }
+}
+
+// 处理文件树内拖拽移动
+async function handleTreeDrop(dragData, targetFolder, safeId, projectPath) {
+    const sourcePath = dragData.path;
+    const name = sourcePath.split('/').pop();
+    const newPath = targetFolder ? `${targetFolder}/${name}` : name;
+
+    if (sourcePath === newPath) return;
+
+    if (dragData.type === 'file') {
+        const res = await weAPI.renameFile(projectPath, sourcePath, newPath);
+        if (res.success) {
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.file_moved') || '文件已移动');
+        } else {
+            showNotification((t('ui.move_failed') || '移动失败') + ': ' + (res.error || ''));
+        }
+    } else if (dragData.type === 'folder') {
+        const res = await weAPI.renameFolder(projectPath, sourcePath, newPath);
+        if (res.success) {
+            // 关闭已打开的子文件（路径变化）
+            if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(sourcePath + '/')) {
+                tabs[safeId].currentFile = null;
+                if (quill) { quill.setText(''); }
+            }
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.folder_moved') || '文件夹已移动');
+        } else {
+            showNotification((t('ui.move_failed') || '移动失败') + ': ' + (res.error || ''));
+        }
     }
 }
 
@@ -335,6 +472,68 @@ function refreshFileTree(safeId, files) {
     treeContainer.innerHTML = '';
     const tree = buildFileTree(files);
     renderTreeNodes(treeContainer, tree);
+
+    // 根容器作为 drop 目标（拖到根目录），只绑定一次
+    if (!rootDropBound.has(treeContainer)) {
+        rootDropBound.add(treeContainer);
+        treeContainer.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            // 如果鼠标在文件夹 header 上，由 header 处理
+            if (e.target.closest('.tree-folder-header')) return;
+            const sid = treeContainer.id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        treeContainer.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            if (e.target.closest('.tree-folder-header')) return;
+            const sid = treeContainer.id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            handleTreeDrop(treeDragData, '', sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+    }
+}
+
+// 排序切换
+function setupSortToggle(safeId) {
+    const btn = document.getElementById(`sort-toggle-${safeId}`);
+    if (!btn) return;
+
+    // 同步当前排序状态到按钮图标
+    updateSortButtonIcon(btn);
+
+    btn.addEventListener('click', () => {
+        fileSortOrder = fileSortOrder === 'asc' ? 'desc' : 'asc';
+        updateSortButtonIcon(btn);
+
+        // 刷新所有项目的文件树
+        for (const sid in tabs) {
+            if (tabs[sid].fileList) {
+                refreshFileTree(sid, tabs[sid].fileList);
+                // 同步其他按钮图标
+                const otherBtn = document.getElementById(`sort-toggle-${sid}`);
+                if (otherBtn && otherBtn !== btn) updateSortButtonIcon(otherBtn);
+            }
+        }
+    });
+}
+
+function updateSortButtonIcon(btn) {
+    if (fileSortOrder === 'asc') {
+        btn.title = t('ui.sort_asc') || '升序（点击切换为降序）';
+        btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 4l5-2 5 2M5 6v6m3-6v6m3-6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    } else {
+        btn.title = t('ui.sort_desc') || '降序（点击切换为升序）';
+        btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 12l5 2 5-2M5 10V4m3 6V4m3 6V4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
 }
 
 // ====== 搜索功能 ======
