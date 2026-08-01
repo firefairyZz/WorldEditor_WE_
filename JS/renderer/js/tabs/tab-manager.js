@@ -268,6 +268,7 @@ function showConfirmDialog(message, title) {
             </div>
         `;
         document.body.appendChild(dialog);
+        positionDialog(dialog);
         const cleanup = (result) => { dialog.remove(); resolve(result); };
         dialog.querySelector('.btn-cancel').onclick = () => cleanup(false);
         dialog.querySelector('.dialog-overlay').onclick = () => cleanup(false);

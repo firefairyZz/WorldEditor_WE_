@@ -108,14 +108,35 @@ function createNewProjectTab() {
         </div>
     `;
     const nameError = content.querySelector('#name-error');
+    const nameInput = content.querySelector('#new-project-name');
+    const submitBtn = content.querySelector('#create-project-submit');
+    // 初始禁用创建按钮（视觉）
+    submitBtn.classList.add('btn-disabled');
+    // 清除错误状态
+    const clearNameError = () => {
+        nameError.classList.remove('prominent');
+        nameError.style.display = 'none';
+        nameInput.classList.remove('input-error');
+    };
+    // 输入时清除错误 + 控制按钮状态
+    nameInput.addEventListener('input', () => {
+        clearNameError();
+        submitBtn.classList.toggle('btn-disabled', !nameInput.value.trim());
+    });
     content.querySelector('#create-project-submit').onclick = async () => {
-        const name = content.querySelector('#new-project-name').value.trim();
+        const name = nameInput.value.trim();
         if (!name) {
             nameError.textContent = t('ui.name_required') || 'Project name is required';
-            nameError.style.display = 'block';
+            nameError.classList.add('prominent');
+            nameInput.classList.add('input-error');
+            nameInput.focus();
+            // 重新触发抖动动画
+            nameInput.classList.remove('input-error');
+            void nameInput.offsetWidth;
+            nameInput.classList.add('input-error');
             return;
         }
-        nameError.style.display = 'none';
+        clearNameError();
         const desc = content.querySelector('#new-project-desc').value.trim();
         const template = content.querySelector('input[name="template"]:checked')?.value || 'empty';
         const projectMode = content.querySelector('input[name="project-mode"]:checked')?.value || 'rich';
@@ -124,15 +145,15 @@ function createNewProjectTab() {
             const result = await weAPI.createProject(folder, name, desc, template, projectMode);
             if (result.success) {
                 closeTab(id);
-                openProjectDirectly({ folder, name, fileList: result.fileList, projectMode: result.projectMode });
+                openProjectDirectly({ folder, name, fileList: result.fileList, projectMode: result.projectMode, owner: result.owner });
                 showNotification(t('ui.project_created') || '项目已创建');
             } else {
                 nameError.textContent = (t('ui.create_failed') || 'Create failed') + ': ' + result.error;
-                nameError.style.display = 'block';
+                nameError.classList.add('prominent');
             }
         } catch (e) {
             nameError.textContent = (t('ui.create_error') || 'Error') + ': ' + e.message;
-            nameError.style.display = 'block';
+            nameError.classList.add('prominent');
         }
     };
     content.querySelector('#create-project-cancel').onclick = () => closeTab(id);
@@ -153,9 +174,16 @@ async function openProjectByPath(folder) {
     showNotification(t('ui.project_opened') || '项目已打开');
 }
 
-async function openProjectDirectly({ folder, name, fileList, projectMode }) {
+async function openProjectDirectly({ folder, name, fileList, projectMode, owner }) {
     const safeId = sanitizeId(folder);
     if (tabs[safeId]) { switchTab(safeId); return; }
+
+    // 获取当前账户信息
+    let currentAccountData = null;
+    try {
+        const accRes = await weAPI.getAccount();
+        if (accRes.success) currentAccountData = accRes.account;
+    } catch(e) {}
 
     const layout = document.createElement('div');
     layout.className = 'project-layout';
@@ -254,6 +282,46 @@ async function openProjectDirectly({ folder, name, fileList, projectMode }) {
         </div>
     `;
     sidebar.insertBefore(projectNameEl, sidebar.firstChild);
+
+    // 在项目名下方显示账户信息
+    const accountInfoContainer = document.createElement('div');
+    accountInfoContainer.className = 'project-owner-info';
+
+    // 创建者信息
+    if (owner && owner.name) {
+        const ownerItem = document.createElement('div');
+        ownerItem.className = 'account-info-item';
+        const avatarHtml = owner.avatarDataUrl
+            ? `<img src="${owner.avatarDataUrl}" alt="avatar" />`
+            : `<span class="owner-avatar-mini">${(owner.name[0] || '?').toUpperCase()}</span>`;
+        const displayName = (owner.displayName || owner.name).replace(/[<>]/g, '');
+        ownerItem.innerHTML = `${avatarHtml}<span class="account-info-label">${t('ui.creator') || '创作者'}:</span><span class="owner-name-mini">${displayName}</span>`;
+        accountInfoContainer.appendChild(ownerItem);
+    }
+
+    // 当前账户信息（如果与创建者不同则显示）
+    if (currentAccountData && currentAccountData.name) {
+        const isSame = owner && owner.id && owner.id === currentAccountData.id;
+        if (!isSame) {
+            const currentItem = document.createElement('div');
+            currentItem.className = 'account-info-item';
+            const avatarHtml = currentAccountData.avatarDataUrl
+                ? `<img src="${currentAccountData.avatarDataUrl}" alt="avatar" />`
+                : `<span class="owner-avatar-mini">${(currentAccountData.name[0] || '?').toUpperCase()}</span>`;
+            const displayName = (currentAccountData.displayName || currentAccountData.name).replace(/[<>]/g, '');
+            currentItem.innerHTML = `${avatarHtml}<span class="account-info-label">${t('ui.current_user') || '当前用户'}:</span><span class="owner-name-mini">${displayName}</span>`;
+            accountInfoContainer.appendChild(currentItem);
+        }
+    }
+
+    if (accountInfoContainer.children.length > 0) {
+        sidebar.insertBefore(accountInfoContainer, sidebar.firstChild.nextSibling);
+    }
+
+    // 横线分隔项目信息区和文件树区
+    const divider = document.createElement('hr');
+    divider.className = 'sidebar-divider';
+    sidebar.insertBefore(divider, sidebar.children[owner ? 2 : 1] || null);
 
     // 在项目名右侧添加删除按钮
     const deleteProjectBtn = document.createElement('button');
@@ -354,6 +422,7 @@ async function deleteProject(safeId) {
         </div>
     `;
     document.body.appendChild(dialog);
+    positionDialog(dialog);
 
     const closeDialog = () => dialog.remove();
     dialog.querySelector('.btn-cancel').onclick = closeDialog;
@@ -361,10 +430,15 @@ async function deleteProject(safeId) {
 
     dialog.querySelector('.btn-confirm').onclick = async () => {
         closeDialog();
+        // 先同步关闭标签页释放文件占用，再删除
+        doCloseTab(safeId);
         const result = await weAPI.deleteProject(projectPath);
         if (result.success) {
-            closeTab(safeId, true);
             showNotification((t('ui.project_deleted') || '项目已删除') + ': ' + projectName);
+            // 刷新最近项目列表
+            if (window.refreshRecentProjects) {
+                await window.refreshRecentProjects();
+            }
         } else {
             alert((t('ui.delete_failed') || '删除失败') + ': ' + result.error);
         }

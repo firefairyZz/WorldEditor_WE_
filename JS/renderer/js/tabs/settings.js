@@ -126,7 +126,7 @@ function inline(text) {
     // images ![alt](url)
     s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="md-img" />');
     // links [text](url)
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" rel="noopener">$1</a>');
     // bold **x** or __x__
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
@@ -368,20 +368,23 @@ function refreshSettingsI18n() {
         const removeBtn = accountSection.querySelector('#btn-remove-avatar');
         if (removeBtn) removeBtn.textContent = t('ui.remove_avatar') || removeBtn.textContent;
         const labels = accountSection.querySelectorAll('.settings-account-label');
-        if (labels[0]) labels[0].textContent = t('ui.account_name') || labels[0].textContent;
-        if (labels[1]) labels[1].textContent = t('ui.display_name') || labels[1].textContent;
+        if (labels[0]) labels[0].textContent = 'ID';
+        if (labels[1]) labels[1].textContent = t('ui.account_name') || labels[1].textContent;
+        if (labels[2]) labels[2].textContent = t('ui.display_name') || labels[2].textContent;
         const editBtns = accountSection.querySelectorAll('.settings-account-edit-btn');
         editBtns.forEach(btn => { btn.textContent = t('ui.edit') || btn.textContent; });
+        const copyBtn = accountSection.querySelector('#btn-copy-id');
+        if (copyBtn) copyBtn.textContent = t('ui.copy') || copyBtn.textContent;
 
         // Update value displays if not being edited
         const nameValue = accountSection.querySelector('#display-account-name');
         if (nameValue && !nameValue.querySelector('input')) {
-            const val = tempAccountName || currentAccount?.name;
+            const val = currentAccount?.name;
             nameValue.textContent = val || t('ui.not_set') || 'Not set';
         }
         const displayValue = accountSection.querySelector('#display-account-display');
         if (displayValue && !displayValue.querySelector('input')) {
-            const val = tempAccountDisplay || currentAccount?.displayName;
+            const val = currentAccount?.displayName;
             displayValue.textContent = val || t('ui.not_set') || 'Not set';
         }
     }
@@ -519,6 +522,7 @@ function createSettingsTab() {
     nav.className = 'settings-nav';
     nav.innerHTML = `
         <div class="nav-item active" data-section="general">${t('ui.general')}</div>
+        <div class="nav-item" data-section="tags">${t('ui.tags_settings') || '标签'}</div>
         <div class="nav-item" data-section="account">${t('ui.account') || '账户'}</div>
         <div class="nav-item" data-section="appearance">${t('ui.appearance') || '外观'}</div>
         <div class="nav-item" data-section="editor">${t('ui.editor')}</div>
@@ -562,6 +566,30 @@ function createSettingsTab() {
         </div>
     `;
 
+    // 标签设置区域
+    const tagsSection = document.createElement('div');
+    tagsSection.className = 'settings-section';
+    tagsSection.id = 'section-tags';
+    tagsSection.innerHTML = `
+        <h3>${t('ui.tags_settings') || '标签'}</h3>
+        <div class="setting-group">
+            <div class="setting-group-title">${t('ui.pinned_tags') || '固定标签'}</div>
+            <p class="setting-hint">${t('ui.pinned_tags_hint') || '固定标签会在所有项目的标签选择器中显示为快捷选项'}</p>
+            <div class="pinned-tags-editor">
+                <div class="pinned-tags-list" id="pinned-tags-list"></div>
+                <div class="pinned-tags-add-row">
+                    <input type="text" id="pinned-tag-label" maxlength="10" placeholder="${t('ui.tag_label_placeholder') || '标签名称'}" />
+                    <input type="color" id="pinned-tag-color" value="#ff6b6b" />
+                    <select id="pinned-tag-emoji">
+                        <option value="">${t('ui.no_emoji') || '无'}</option>
+                        ${TAG_EMOJIS.map(e => `<option value="${e}">${e}</option>`).join('')}
+                    </select>
+                    <button id="btn-add-pinned-tag">${t('ui.add') || '添加'}</button>
+                </div>
+            </div>
+        </div>
+    `;
+
     // 账户设置区域
     const accountSection = document.createElement('div');
     accountSection.className = 'settings-section';
@@ -581,6 +609,11 @@ function createSettingsTab() {
                 <button class="settings-account-link" id="btn-remove-avatar" ${avatarUrl ? '' : 'disabled'}>${t('ui.remove_avatar') || '移除头像'}</button>
             </div>
             <div class="settings-account-fields">
+                <div class="settings-account-row" data-field="id">
+                    <span class="settings-account-label">ID</span>
+                    <span class="settings-account-value" id="display-account-id" style="font-family:monospace;font-size:11px;">${currentAccount?.id || '—'}</span>
+                    <button class="settings-account-copy-btn" id="btn-copy-id" title="${t('ui.copy') || 'Copy'}">${t('ui.copy') || '复制'}</button>
+                </div>
                 <div class="settings-account-row" data-field="name">
                     <span class="settings-account-label">${t('ui.account_name') || '账户名称'}</span>
                     <span class="settings-account-value" id="display-account-name">${accountName || (t('ui.not_set') || '未设置')}</span>
@@ -788,6 +821,7 @@ function createSettingsTab() {
     }
 
     contentArea.appendChild(generalSection);
+    contentArea.appendChild(tagsSection);
     contentArea.appendChild(accountSection);
     contentArea.appendChild(appearanceSection);
     contentArea.appendChild(editorSection);
@@ -840,7 +874,8 @@ function createSettingsTab() {
         if (verEl) verEl.textContent = 'v' + v;
     });
 
-    weAPI.getSettings().then(s => {
+    weAPI.getSettings().then(async (s) => {
+        await tagModule.loadPinnedAndFrequentTags();
         content.querySelector('#lang-select').value = s.language || 'zh_CN';
         const colorPresetSelect = content.querySelector('#color-preset-select');
         if (colorPresetSelect) colorPresetSelect.value = s.colorPreset || 'default-dark';
@@ -864,6 +899,44 @@ function createSettingsTab() {
         savedFontFamily = s.fontFamily || 'Microsoft YaHei';
         savedFontSize = s.fontSize || '16';
         if (s.autoSave) setupAutoSave(s.autoSave);
+
+        // 加载固定标签到设置页
+        const pinnedList = content.querySelector('#pinned-tags-list');
+        function renderPinnedTags() {
+            if (!pinnedList) return;
+            pinnedList.innerHTML = '';
+            if (!tagModule.pinnedTags.length) {
+                pinnedList.innerHTML = `<span class="tag-quick-empty">${t('ui.no_pinned_tags') || '暂无固定标签'}</span>`;
+                return;
+            }
+            tagModule.pinnedTags.forEach((tag, idx) => {
+                const el = document.createElement('span');
+                el.className = 'tag-quick-item';
+                el.style.backgroundColor = tag.color || TAG_COLORS[0];
+                el.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label || ''}</span><span class="tag-remove">✕</span>`;
+                el.querySelector('.tag-remove').onclick = async () => {
+                    tagModule.pinnedTags.splice(idx, 1);
+                    await tagModule.savePinnedTags();
+                    renderPinnedTags();
+                };
+                pinnedList.appendChild(el);
+            });
+        }
+        renderPinnedTags();
+
+        const addPinnedBtn = content.querySelector('#btn-add-pinned-tag');
+        if (addPinnedBtn) {
+            addPinnedBtn.onclick = async () => {
+                const label = content.querySelector('#pinned-tag-label').value.trim();
+                if (!label) { showNotification(t('ui.enter_tag_label') || '请输入标签名称'); return; }
+                const color = content.querySelector('#pinned-tag-color').value;
+                const emoji = content.querySelector('#pinned-tag-emoji').value;
+                tagModule.pinnedTags.push({ label, color, emoji });
+                await tagModule.savePinnedTags();
+                content.querySelector('#pinned-tag-label').value = '';
+                renderPinnedTags();
+            };
+        }
     });
 
     // 实时同步窗口置顶开关
@@ -1022,11 +1095,34 @@ function createSettingsTab() {
     const editDisplayBtn = content.querySelector('#btn-edit-display');
     if (editDisplayBtn) editDisplayBtn.onclick = () => startInlineEdit('display');
 
+    // 复制账户ID
+    const copyIdBtn = content.querySelector('#btn-copy-id');
+    if (copyIdBtn) {
+        copyIdBtn.onclick = async () => {
+            const idText = content.querySelector('#display-account-id')?.textContent || '';
+            if (!idText || idText === '—') return;
+            try {
+                await navigator.clipboard.writeText(idText);
+                copyIdBtn.textContent = '✓';
+                setTimeout(() => { copyIdBtn.textContent = t('ui.copy') || '复制'; }, 1500);
+            } catch (e) {}
+        };
+    }
+
     // 删除账户（底部按钮）
-    deleteAccountBtn.onclick = () => {
+    deleteAccountBtn.onclick = async () => {
         if (!currentAccount) return;
-        if (!confirm(t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。')) return;
-        if (!confirm(t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。')) return;
+        // 二次确认弹窗
+        const ok1 = await showConfirmDialog(
+            t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。',
+            t('ui.delete_account') || '删除账户'
+        );
+        if (!ok1) return;
+        const ok2 = await showConfirmDialog(
+            t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。',
+            t('ui.delete_account') || '删除账户'
+        );
+        if (!ok2) return;
         weAPI.deleteAccount().then(result => {
             if (result.success) {
                 currentAccount = null;
@@ -1145,9 +1241,17 @@ function createSettingsTab() {
         }
 
         showNotification(t('ui.settings_saved'));
+        // 全面刷新UI文本（包括欢迎页、标签页标题等）
+        if (typeof refreshAllUITexts === 'function') {
+            refreshAllUITexts();
+        }
         // Reload update notes if markdown render changed
         const c = document.getElementById('update-notes-container');
         if (c) { c.dataset.loaded = ''; loadUpdateNotes(); }
+        // 刷新最近项目列表（如果在欢迎页）
+        if (window.refreshRecentProjects) {
+            window.refreshRecentProjects();
+        }
     };
 
     // 绑定快捷键捕获事件
@@ -1270,8 +1374,9 @@ async function loadUpdateNotes() {
     container.dataset.loaded = 'true';
 
     try {
-        const res = await weAPI.getUpdateNotes();
         const settings = await weAPI.getSettings();
+        const currentLang = settings.language || 'en';
+        const res = await weAPI.getUpdateNotes(currentLang);
         const useMd = settings.markdownRender !== false;
 
         if (res.success && res.notes.length > 0) {

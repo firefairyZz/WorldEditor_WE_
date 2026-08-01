@@ -1,4 +1,4 @@
-ui.file = 文件
+﻿ui.file = 文件
 ui.new_project = 新建项目
 ui.open_folder = 打开文件夹
 ui.new_file = 新建文件
@@ -308,3 +308,16 @@ ui.edit = 修改
 ui.not_set = 未设置
 ui.account_name_too_short = 账户名称至少2个字符
 ui.account_name_hint = 仅支持英文、数字、下划线、连字符
+ui.copy = 复制
+
+ui.creator = 创作者
+ui.current_user = 当前用户
+
+ui.frequent_tags = 常用标签
+ui.add = 添加
+ui.no_pinned_tags = 没有固定标签
+ui.pinned_tags_hint = 拖拽标签到此处可固定
+ui.pinned_tags = 固定标签
+ui.enter_tag_label = 请输入标签名称
+ui.tags_settings = 标签
+ui.tags = 标签

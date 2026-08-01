@@ -16,6 +16,62 @@ const tagModule = {
     currentProjectId: null,
     currentProjectPath: null,
     availableImages: [],
+    pinnedTags: [],       // 固定标签（全局，来自设置）
+    frequentTags: {},     // 常用标签 { 'label|color|emoji': count }
+
+    normalizeTag(tag) {
+        if (!tag || typeof tag !== 'object') return null;
+        return {
+            label: tag.label || '',
+            color: tag.color || TAG_COLORS[0],
+            emoji: tag.emoji || ''
+        };
+    },
+
+    async loadPinnedAndFrequentTags() {
+        try {
+            const s = await weAPI.getSettings();
+            this.pinnedTags = Array.isArray(s.pinnedTags)
+                ? s.pinnedTags.map(tag => this.normalizeTag(tag)).filter(Boolean)
+                : [];
+            this.frequentTags = s.frequentTags && typeof s.frequentTags === 'object' ? s.frequentTags : {};
+        } catch(e) {
+            console.error('Failed to load pinned/frequent tags:', e);
+        }
+    },
+
+    async savePinnedTags() {
+        const s = await weAPI.getSettings();
+        s.pinnedTags = this.pinnedTags;
+        await weAPI.setSettings(s);
+    },
+
+    async saveFrequentTags() {
+        const s = await weAPI.getSettings();
+        s.frequentTags = this.frequentTags;
+        await weAPI.setSettings(s);
+    },
+
+    _tagKey(tag) {
+        return `${tag.label}|${tag.color}|${tag.emoji}`;
+    },
+
+    async trackTagUsage(tag) {
+        if (!tag || !tag.label) return;
+        const key = this._tagKey(tag);
+        this.frequentTags[key] = (this.frequentTags[key] || 0) + 1;
+        await this.saveFrequentTags();
+    },
+
+    getFrequentTagsList(limit = 8) {
+        return Object.entries(this.frequentTags)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, limit)
+            .map(([key]) => {
+                const [label, color, emoji] = key.split('|');
+                return { label, color, emoji };
+            });
+    },
 
     async loadProjectMetadata(safeId, projectPath) {
         this.currentProjectId = safeId;
@@ -64,6 +120,7 @@ const tagModule = {
         };
         this.metadata.tags[filePath].push(tag);
         await this.saveMetadata();
+        await this.trackTagUsage(tag);
         return tag;
     },
 
@@ -79,6 +136,7 @@ const tagModule = {
         if (tag) {
             Object.assign(tag, updates);
             await this.saveMetadata();
+            await this.trackTagUsage(tag);
         }
     },
 
@@ -173,33 +231,83 @@ const tagModule = {
         return el;
     },
 
-    openTagPicker(filePath, onSave, existingTag = null) {
+    _createOverlayHost() {
         const overlay = document.createElement('div');
         overlay.className = 'tag-picker-overlay';
+        overlay.dataset.overlay = 'true';
+
+        const host = document.getElementById('content-container');
+        if (host) {
+            const rect = host.getBoundingClientRect();
+            overlay.style.position = 'fixed';
+            overlay.style.top = `${rect.top}px`;
+            overlay.style.left = `${rect.left}px`;
+            overlay.style.width = `${rect.width}px`;
+            overlay.style.height = `${rect.height}px`;
+        }
+
+        return overlay;
+    },
+
+    _syncOverlayHost(overlay) {
+        const host = document.getElementById('content-container');
+        if (!host || !overlay) return;
+        const rect = host.getBoundingClientRect();
+        overlay.style.top = `${rect.top}px`;
+        overlay.style.left = `${rect.left}px`;
+        overlay.style.width = `${rect.width}px`;
+        overlay.style.height = `${rect.height}px`;
+
+        const panel = overlay.querySelector('.tag-picker');
+        if (panel) {
+            panel.style.maxHeight = `calc(${rect.height}px - 32px)`;
+        }
+    },
+
+    openTagPicker(filePath, onSave, existingTag = null) {
+        const overlay = this._createOverlayHost();
         overlay.innerHTML = `<div class="tag-picker">
-            <h3>${t('ui.tag_settings') || 'Tag Settings'}</h3>
-            <div class="tag-row">
-                <label>${t('ui.tag_label') || 'Label'}</label>
-                <input type="text" id="tag-label-input" maxlength="10" placeholder="${t('ui.tag_label_placeholder') || 'Tag label'}" />
+            <div class="tag-picker-header">
+                <h3>${t('ui.tag_settings') || 'Tag Settings'}</h3>
+                <button class="tag-picker-close" type="button" aria-label="Close">×</button>
             </div>
-            <div class="tag-row">
-                <label>${t('ui.tag_emoji') || 'Emoji'}</label>
-                <div class="emoji-picker"></div>
-            </div>
-            <div class="tag-row">
-                <label>${t('ui.tag_color') || 'Color'}</label>
-                <div class="color-picker"></div>
-            </div>
-            <div class="tag-preview">
-                <span class="tag-item" id="tag-preview-item"></span>
+            <div class="tag-picker-body">
+                <div class="tag-quick-section" id="tag-pinned-section">
+                    <label>${t('ui.pinned_tags') || '固定标签'}</label>
+                    <div class="tag-quick-list" id="tag-pinned-list"></div>
+                </div>
+                <div class="tag-quick-section" id="tag-frequent-section">
+                    <label>${t('ui.frequent_tags') || '常用标签'}</label>
+                    <div class="tag-quick-list" id="tag-frequent-list"></div>
+                </div>
+                <div class="tag-row">
+                    <label>${t('ui.tag_label') || 'Label'}</label>
+                    <input type="text" id="tag-label-input" maxlength="10" placeholder="${t('ui.tag_label_placeholder') || 'Tag label'}" />
+                </div>
+                <div class="tag-row">
+                    <label>${t('ui.tag_emoji') || 'Emoji'}</label>
+                    <div class="emoji-picker"></div>
+                </div>
+                <div class="tag-row">
+                    <label>${t('ui.tag_color') || 'Color'}</label>
+                    <div class="color-picker"></div>
+                </div>
+                <div class="tag-preview">
+                    <span class="tag-item" id="tag-preview-item"></span>
+                </div>
             </div>
             <div class="tag-actions">
-                <button class="btn-cancel">${t('ui.cancel')}</button>
-                <button class="btn-save">${t('ui.save')}</button>
+                <button class="btn-cancel" type="button">${t('ui.cancel')}</button>
+                <button class="btn-save" type="button">${t('ui.save')}</button>
             </div>
         </div>`;
 
         document.body.appendChild(overlay);
+        this._syncOverlayHost(overlay);
+
+        const resizeHandler = () => this._syncOverlayHost(overlay);
+        window.addEventListener('resize', resizeHandler);
+        window.addEventListener('orientationchange', resizeHandler);
 
         let selectedColor = existingTag?.color || TAG_COLORS[0];
         let selectedEmoji = existingTag?.emoji || '';
@@ -260,16 +368,66 @@ const tagModule = {
             updatePreview();
         };
 
-        const closeOverlay = () => overlay.remove();
+        // 渲染固定标签和常用标签快捷区
+        const renderQuickTags = (containerId, tags) => {
+            const container = overlay.querySelector('#' + containerId);
+            if (!container) return;
+            container.innerHTML = '';
+            if (!tags || tags.length === 0) {
+                container.innerHTML = `<span class="tag-quick-empty">${t('ui.no_quick_tags') || '暂无'}</span>`;
+                return;
+            }
+            tags.forEach(tag => {
+                const btn = document.createElement('span');
+                btn.className = 'tag-quick-item';
+                btn.style.backgroundColor = tag.color || TAG_COLORS[0];
+                btn.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label || ''}</span>`;
+                btn.onclick = () => {
+                    // 点击快捷标签：填充到编辑区
+                    selectedLabel = tag.label || '';
+                    selectedColor = tag.color || TAG_COLORS[0];
+                    selectedEmoji = tag.emoji || '';
+                    labelInput.value = selectedLabel;
+                    // 更新 emoji 选择器高亮
+                    emojiPicker.querySelectorAll('.emoji-btn').forEach(b => {
+                        b.classList.toggle('active', b.textContent === selectedEmoji);
+                    });
+                    // 更新颜色选择器高亮
+                    colorPicker.querySelectorAll('.color-btn').forEach(b => {
+                        b.classList.toggle('active', b.style.backgroundColor === selectedColor);
+                    });
+                    updatePreview();
+                };
+                container.appendChild(btn);
+            });
+        };
+
+        renderQuickTags('tag-pinned-list', this.pinnedTags);
+        renderQuickTags('tag-frequent-list', this.getFrequentTagsList());
+        // 隐藏空区域
+        if (!this.pinnedTags.length) overlay.querySelector('#tag-pinned-section').style.display = 'none';
+        if (!Object.keys(this.frequentTags).length) overlay.querySelector('#tag-frequent-section').style.display = 'none';
+
+        const closeOverlay = () => {
+            window.removeEventListener('resize', resizeHandler);
+            window.removeEventListener('orientationchange', resizeHandler);
+            overlay.remove();
+        };
+        overlay.onclick = (e) => {
+            if (e.target === overlay) closeOverlay();
+        };
+        overlay.querySelector('.tag-picker-close').onclick = closeOverlay;
         overlay.querySelector('.btn-cancel').onclick = closeOverlay;
         overlay.querySelector('.btn-save').onclick = async () => {
             if (existingTag) {
+                const updatedTag = { ...existingTag, label: selectedLabel, color: selectedColor, emoji: selectedEmoji };
                 await this.updateTag(filePath, existingTag.id, {
                     label: selectedLabel,
                     color: selectedColor,
                     emoji: selectedEmoji
                 });
-                onSave({ ...existingTag, label: selectedLabel, color: selectedColor, emoji: selectedEmoji });
+                await this.trackTagUsage(updatedTag);
+                onSave(updatedTag);
             } else {
                 const tag = await this.addTag(filePath, selectedLabel, selectedColor, selectedEmoji);
                 onSave(tag);
@@ -279,30 +437,39 @@ const tagModule = {
     },
 
     openThumbnailPicker(filePath, onSave) {
-        const overlay = document.createElement('div');
-        overlay.className = 'tag-picker-overlay';
+        const overlay = this._createOverlayHost();
         overlay.innerHTML = `<div class="tag-picker">
-            <h3>${t('ui.thumbnail_settings') || 'Thumbnail Settings'}</h3>
-            <div class="thumb-section">
-                <label>${t('ui.current_thumbnail') || 'Current Thumbnail'}</label>
-                <div class="current-thumb"></div>
+            <div class="tag-picker-header">
+                <h3>${t('ui.thumbnail_settings') || 'Thumbnail Settings'}</h3>
+                <button class="tag-picker-close" type="button" aria-label="Close">×</button>
             </div>
-            <div class="thumb-section">
-                <label>${t('ui.select_image') || 'Select Image'}</label>
-                <div class="thumb-list"></div>
-            </div>
-            <div class="thumb-section">
-                <label>${t('ui.upload_image') || 'Upload Image'}</label>
-                <input type="file" accept="image/*" class="thumb-upload" />
-                <p class="hint">${t('ui.upload_hint') || 'PNG, JPG, GIF, WEBP supported'}</p>
+            <div class="tag-picker-body">
+                <div class="thumb-section">
+                    <label>${t('ui.current_thumbnail') || 'Current Thumbnail'}</label>
+                    <div class="current-thumb"></div>
+                </div>
+                <div class="thumb-section">
+                    <label>${t('ui.select_image') || 'Select Image'}</label>
+                    <div class="thumb-list"></div>
+                </div>
+                <div class="thumb-section">
+                    <label>${t('ui.upload_image') || 'Upload Image'}</label>
+                    <input type="file" accept="image/*" class="thumb-upload" />
+                    <p class="hint">${t('ui.upload_hint') || 'PNG, JPG, GIF, WEBP supported'}</p>
+                </div>
             </div>
             <div class="tag-actions">
-                <button class="btn-cancel">${t('ui.cancel')}</button>
-                <button class="btn-save">${t('ui.save')}</button>
+                <button class="btn-cancel" type="button">${t('ui.cancel')}</button>
+                <button class="btn-save" type="button">${t('ui.save')}</button>
             </div>
         </div>`;
 
         document.body.appendChild(overlay);
+        this._syncOverlayHost(overlay);
+
+        const resizeHandler = () => this._syncOverlayHost(overlay);
+        window.addEventListener('resize', resizeHandler);
+        window.addEventListener('orientationchange', resizeHandler);
 
         const currentThumbContainer = overlay.querySelector('.current-thumb');
         const currentThumb = this.getThumbnail(filePath);
@@ -361,10 +528,22 @@ const tagModule = {
             reader.readAsDataURL(file);
         };
 
-        const closeOverlay = () => overlay.remove();
+        const closeOverlay = () => {
+            window.removeEventListener('resize', resizeHandler);
+            window.removeEventListener('orientationchange', resizeHandler);
+            overlay.remove();
+        };
+        overlay.onclick = (e) => {
+            if (e.target === overlay) closeOverlay();
+        };
+        overlay.querySelector('.tag-picker-close').onclick = closeOverlay;
         overlay.querySelector('.btn-cancel').onclick = closeOverlay;
         overlay.querySelector('.btn-save').onclick = closeOverlay;
     }
 };
+
+window.addEventListener('DOMContentLoaded', () => {
+    void tagModule.loadPinnedAndFrequentTags();
+});
 
 window.tagModule = tagModule;

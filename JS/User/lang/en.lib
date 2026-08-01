@@ -1,4 +1,4 @@
-ui.file = File
+﻿ui.file = File
 ui.new_project = New Project
 ui.open_folder = Open Folder
 ui.new_file = New File
@@ -175,6 +175,7 @@ ui.mode_switch_failed = Conversion failed
 ui.mode_switch_meta_failed = Metadata update failed
 
 ui.open_project_first = Please open a project first
+ui.update_notes = Update Notes
 ui.update_notes_placeholder = ← Click a version on the left to view notes
 ui.no_valid_files = No valid files to import
 ui.importing = Importing
@@ -307,3 +308,16 @@ ui.edit = Edit
 ui.not_set = Not set
 ui.account_name_too_short = Account name must be at least 2 characters
 ui.account_name_hint = Only letters, numbers, underscores, hyphens
+ui.copy = Copy
+
+ui.creator = Creator
+ui.current_user = Current User
+
+ui.frequent_tags = Frequent Tags
+ui.add = Add
+ui.no_pinned_tags = No pinned tags
+ui.pinned_tags_hint = Drag tags here to pin
+ui.pinned_tags = Pinned Tags
+ui.enter_tag_label = Enter tag label
+ui.tags_settings = Tags
+ui.tags = Tags

@@ -2,6 +2,17 @@ function buildFileTree(files) {
     const root = {};
     for (const file of files) {
         if (file.startsWith('_')) continue;
+        // 跳过 .keep 占位文件，但仍会通过路径创建文件夹节点
+        if (file.endsWith('/.keep')) {
+            const dirPath = file.slice(0, -'/.keep'.length);
+            const parts = dirPath.split('/');
+            let current = root;
+            for (const part of parts) {
+                if (!current[part]) current[part] = {};
+                current = current[part];
+            }
+            continue;
+        }
         const parts = file.split('/');
         let current = root;
         for (let i = 0; i < parts.length; i++) {

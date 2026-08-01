@@ -10,7 +10,7 @@ const SETTINGS_PATH = path.join(USER_DIR, 'settings.json');
 const ACCOUNT_PATH = path.join(USER_DIR, 'account.json');
 const ACCOUNT_AVATAR_DIR = path.join(USER_DIR, 'avatars');
 const LANG_DIR = path.join(USER_DIR, 'lang');
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.4.2";
 
 if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR);
 if (!fs.existsSync(path.join(__dirname, 'resources'))) fs.mkdirSync(path.join(__dirname, 'resources'));
@@ -234,10 +234,31 @@ ipcMain.handle('toggle-devtools', () => {
 });
 
 // ========== 账户系统 ==========
+const crypto = require('crypto');
+
+// 生成唯一ID
+function generateAccountId() {
+    return 'u_' + Date.now().toString(36) + '_' + crypto.randomBytes(3).toString('hex');
+}
+
+// 读取头像 dataUrl
+function getAvatarDataUrl(account) {
+    try {
+        if (account.avatarPath && fs.existsSync(account.avatarPath)) {
+            const ext = path.extname(account.avatarPath).slice(1) || 'png';
+            const data = fs.readFileSync(account.avatarPath);
+            return `data:image/${ext};base64,${data.toString('base64')}`;
+        }
+    } catch (e) {}
+    return '';
+}
+
 ipcMain.handle('get-account', () => {
     try {
         if (!fs.existsSync(ACCOUNT_PATH)) return { success: true, account: null };
         const account = JSON.parse(fs.readFileSync(ACCOUNT_PATH, 'utf-8'));
+        // 读取头像文件转为 dataUrl
+        account.avatarDataUrl = getAvatarDataUrl(account);
         return { success: true, account };
     } catch (e) { return { success: false, error: e.message }; }
 });
@@ -249,7 +270,22 @@ ipcMain.handle('save-account', (event, account) => {
         }
         if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR, { recursive: true });
         if (!fs.existsSync(ACCOUNT_AVATAR_DIR)) fs.mkdirSync(ACCOUNT_AVATAR_DIR, { recursive: true });
-        
+
+        // 读取已有账户（保留ID）
+        let existing = {};
+        if (fs.existsSync(ACCOUNT_PATH)) {
+            existing = JSON.parse(fs.readFileSync(ACCOUNT_PATH, 'utf-8'));
+        }
+
+        // ID 在创建时生成，之后不可修改
+        if (!existing.id) {
+            account.id = generateAccountId();
+        } else {
+            account.id = existing.id;
+        }
+        // 保留创建时间
+        if (existing.createdAt) account.createdAt = existing.createdAt;
+
         // 如果有上传头像，保存到头像目录
         if (account.avatarDataUrl) {
             const base64Data = account.avatarDataUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -259,11 +295,38 @@ ipcMain.handle('save-account', (event, account) => {
             account.avatarPath = avatarPath;
             delete account.avatarDataUrl;
         }
-        
+
         fs.writeFileSync(ACCOUNT_PATH, JSON.stringify(account, null, 2));
+
+        // 用户改名时同步更新所有其名下项目的 owner 信息
+        if (existing.id && (existing.name !== account.name || existing.displayName !== account.displayName)) {
+            syncOwnerToProjects(existing.id, account);
+        }
+
         return { success: true, account };
     } catch (e) { return { success: false, error: e.message }; }
 });
+
+// 同步用户信息到所有其名下项目
+function syncOwnerToProjects(userId, account) {
+    try {
+        const avatarDataUrl = getAvatarDataUrl(account);
+        const recent = loadRecent();
+        for (const folder of recent) {
+            const metaPath = path.join(folder, '.metadata');
+            if (!fs.existsSync(metaPath)) continue;
+            try {
+                const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+                if (meta.owner && meta.owner.id === userId) {
+                    meta.owner.name = account.name || '';
+                    meta.owner.displayName = account.displayName || account.name || '';
+                    meta.owner.avatarDataUrl = avatarDataUrl;
+                    fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2));
+                }
+            } catch (e) {}
+        }
+    } catch (e) {}
+}
 
 ipcMain.handle('delete-account', () => {
     try {
@@ -289,19 +352,55 @@ ipcMain.handle('get-account-avatar', (event, account) => {
     } catch (e) { return { success: false }; }
 });
 
-ipcMain.handle('get-update-notes', async () => {
+ipcMain.handle('get-update-notes', async (event, lang) => {
     try {
         const updateDir = path.join(__dirname, 'resources', 'UPDATE_INF');
         if (!fs.existsSync(updateDir)) return { success: true, notes: [] };
-        const files = fs.readdirSync(updateDir).filter(f => f.endsWith('.md')).sort();
+
+        // 语言映射：zh_CN -> cn, en -> en
+        const langPrefix = (lang === 'zh_CN' || lang === 'zh-TW') ? 'cn' : 'en';
+
+        const entries = fs.readdirSync(updateDir, { withFileTypes: true });
         const notes = [];
-        for (const file of files) {
-            const content = fs.readFileSync(path.join(updateDir, file), 'utf-8');
-            // 支持 x.y.z.md (例如 0.1.0.md, 0.4.0.md)，兼容旧的 3位数字 格式
-            const versionMatch = file.match(/^(\d+\.\d+\.\d+)\.md$/);
-            const version = versionMatch ? versionMatch[1] : file.replace('.md', '');
-            notes.push({ file, version, content });
+
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+
+            const ver = entry.name;
+            const verMatch = ver.match(/^(\d+\.\d+\.\d+)$/);
+            if (!verMatch) continue;
+
+            const verDir = path.join(updateDir, ver);
+            // 优先读取当前语言文件，找不到则回退到 cn
+            let langFile = path.join(verDir, `${langPrefix}.${ver}.md`);
+            let fallbackFile = path.join(verDir, `cn.${ver}.md`);
+
+            let content;
+            if (fs.existsSync(langFile)) {
+                content = fs.readFileSync(langFile, 'utf-8');
+            } else if (fs.existsSync(fallbackFile)) {
+                content = fs.readFileSync(fallbackFile, 'utf-8');
+            } else {
+                continue;
+            }
+
+            notes.push({
+                version: ver,
+                content: content,
+                lang: langPrefix
+            });
         }
+
+        // 按版本号降序排列
+        notes.sort((a, b) => {
+            const va = a.version.split('.').map(Number);
+            const vb = b.version.split('.').map(Number);
+            for (let i = 0; i < 3; i++) {
+                if ((vb[i] || 0) !== (va[i] || 0)) return (vb[i] || 0) - (va[i] || 0);
+            }
+            return 0;
+        });
+
         return { success: true, notes };
     } catch (e) { return { success: true, notes: [] }; }
 });
@@ -419,6 +518,22 @@ function createMainWindow() {
     });
     mainWin.loadFile('renderer/main.html');
 
+    // 外部链接统一用系统浏览器打开，阻止 target="_blank" 创建新 Electron 窗口
+    mainWin.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:') || url.startsWith('tel:')) {
+            shell.openExternal(url).catch(() => {});
+            return { action: 'deny' };
+        }
+        return { action: 'allow' };
+    });
+    // 备用：will-navigate 拦截当前窗口导航到外部链接
+    mainWin.webContents.on('will-navigate', (e, url) => {
+        if (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:') || url.startsWith('tel:')) {
+            e.preventDefault();
+            shell.openExternal(url).catch(() => {});
+        }
+    });
+
     // 恢复窗口置顶设置
     if (appSettings.alwaysOnTop) {
         mainWin.setAlwaysOnTop(true);
@@ -462,7 +577,11 @@ function createMainWindow() {
 
     ipcMain.handle('create-project', async (event, folder, name, desc, template, projectMode) => {
         try {
-            if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+            if (!fs.existsSync(folder)) {
+                fs.mkdirSync(folder, { recursive: true });
+            }
+            // 注意：不要修改文件夹权限！使用默认继承的权限即可。
+            // 之前用 SetAccessRuleProtection 切断继承导致文件夹无法删除。
             const files = {};
 
             // 有描述时自动创建 README
@@ -503,11 +622,37 @@ function createMainWindow() {
                     metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
                 }
                 metadata.projectMode = projectMode || 'rich';
+                // 写入创建者信息（包含ID用于跨用户区分）
+                try {
+                    if (fs.existsSync(ACCOUNT_PATH)) {
+                        const account = JSON.parse(fs.readFileSync(ACCOUNT_PATH, 'utf-8'));
+                        metadata.owner = {
+                            id: account.id || '',
+                            name: account.name || '',
+                            displayName: account.displayName || account.name || '',
+                            avatarDataUrl: getAvatarDataUrl(account),
+                            createdAt: new Date().toISOString()
+                        };
+                    }
+                } catch(e) {}
                 fs.writeFileSync(metaPath, JSON.stringify(metadata, null, 2));
             } catch(e) {}
             
             addRecent(folder);
-            return { success: true, folder, fileList: Object.keys(files), projectMode: projectMode || 'rich' };
+            // 读取刚写入的 owner 信息用于返回
+            let ownerResult = null;
+            try {
+                if (fs.existsSync(ACCOUNT_PATH)) {
+                    const account = JSON.parse(fs.readFileSync(ACCOUNT_PATH, 'utf-8'));
+                    ownerResult = {
+                        id: account.id || '',
+                        name: account.name || '',
+                        displayName: account.displayName || account.name || '',
+                        avatarDataUrl: getAvatarDataUrl(account)
+                    };
+                }
+            } catch(e) {}
+            return { success: true, folder, fileList: Object.keys(files), projectMode: projectMode || 'rich', owner: ownerResult };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -516,16 +661,18 @@ function createMainWindow() {
         addRecent(folder);
         try {
             const files = await readProjectWep(folder);
-            // 读取项目模式
+            // 读取项目模式和创建者信息
             let projectMode = 'rich';
+            let owner = null;
             try {
                 const metaPath = path.join(folder, '.metadata');
                 if (fs.existsSync(metaPath)) {
                     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
                     if (meta.projectMode) projectMode = meta.projectMode;
+                    if (meta.owner) owner = meta.owner;
                 }
             } catch(e) {}
-            return { success: true, folder, name: path.basename(folder), fileList: Object.keys(files), projectMode };
+            return { success: true, folder, name: path.basename(folder), fileList: Object.keys(files), projectMode, owner };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -558,6 +705,9 @@ function createMainWindow() {
             const files = await readProjectWep(folder);
             if (files[filename]) return { success: false, error: '文件已存在' };
             files[filename] = '';
+            // 如果文件夹有了实际文件，移除 .keep 占位
+            const dir = filename.includes('/') ? filename.substring(0, filename.lastIndexOf('/')) : '';
+            if (dir && files[dir + '/.keep']) delete files[dir + '/.keep'];
             await writeProjectWep(folder, files);
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
@@ -573,7 +723,9 @@ function createMainWindow() {
             for (const key of Object.keys(files)) {
                 if (key.startsWith(prefix)) return { success: false, error: '文件夹已存在' };
             }
-            // 文件夹在 wep 中以路径前缀表示，无需实际创建条目
+            // 创建占位文件使文件夹在 wep 中可见
+            files[folderPath + '/.keep'] = '';
+            await writeProjectWep(folder, files);
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     });
@@ -660,12 +812,71 @@ function createMainWindow() {
         } catch (e) { return { success: false, error: e.message }; }
     });
 
-    // 删除项目（移入回收站）
+    // 删除项目
     ipcMain.handle('delete-project', async (event, folder) => {
         try {
             if (!fs.existsSync(folder)) return { success: false, error: '文件夹不存在' };
-            // 使用 shell API 移入回收站（可恢复）
-            await shell.trashItem(folder);
+
+            const { execSync } = require('child_process');
+            let deleted = false;
+
+            // Step 1: 获取所有权和完全控制权限（处理账户变更导致的权限问题）
+            try {
+                // 获取所有权（需要管理员权限或当前用户是所有者）
+                execSync(`takeown /f "${folder}" /r /d y`, { timeout: 15000, stdio: 'pipe' });
+            } catch (e) {
+                // takeown 可能失败，继续尝试 icacls
+            }
+
+            try {
+                // 授予当前用户完全控制权限
+                const username = process.env.USERNAME || '';
+                if (username) {
+                    execSync(`icacls "${folder}" /grant "${username}:(OI)(CI)F" /T /C`, { timeout: 15000, stdio: 'pipe' });
+                }
+            } catch (e) {
+                // icacls 可能失败，继续尝试
+            }
+
+            // Step 2: 清除只读/系统/隐藏属性
+            try {
+                execSync(`attrib -R -S -H "${folder}" /S /D`, { timeout: 5000, stdio: 'pipe' });
+            } catch (e) {}
+
+            // Step 3: 尝试各种删除方法
+            // 方法A: cmd rmdir
+            try {
+                execSync(`cmd /c rmdir /s /q "${folder}"`, { timeout: 30000, stdio: 'pipe' });
+                deleted = !fs.existsSync(folder);
+            } catch (e) {}
+
+            // 方法B: PowerShell Remove-Item
+            if (!deleted) {
+                try {
+                    const psPath = folder.replace(/'/g, "''");
+                    execSync(`powershell -NoProfile -Command "Remove-Item -LiteralPath '${psPath}' -Recurse -Force"`, { timeout: 30000, stdio: 'pipe' });
+                    deleted = !fs.existsSync(folder);
+                } catch (e) {}
+            }
+
+            // 方法C: fs.rmSync
+            if (!deleted) {
+                try {
+                    fs.rmSync(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+                    deleted = !fs.existsSync(folder);
+                } catch (e) {}
+            }
+
+            // 方法D: shell.trashItem
+            if (!deleted) {
+                try {
+                    await shell.trashItem(folder);
+                    deleted = !fs.existsSync(folder);
+                } catch (e) {}
+            }
+
+            if (!deleted) return { success: false, error: '删除失败：文件夹可能被占用或权限不足。请尝试以管理员身份运行本程序后重试。' };
+
             // 从最近项目列表中移除
             let recent = loadRecent();
             recent = recent.filter(p => normalizeFolder(p) !== normalizeFolder(folder));

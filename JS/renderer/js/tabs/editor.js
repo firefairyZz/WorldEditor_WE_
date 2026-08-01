@@ -1,32 +1,54 @@
-let tocPanel = null;
+var tocPanel = null;
 let wordCountTimer = null;
 let editorStats = { words: 0, chars: 0, headings: 0 };
 let markdownEditor = null;
 let markdownPreviewVisible = true;
 
-// 自定义跳转链接 Blot
-const JumpLinkBlot = new Quill.import('formats/link');
+// ====== 跳转链接 Blot ======
+// 继承 Quill 标准 Link，额外支持 data-jump 属性存储项目内跳转信息
+const LinkBlot = Quill.import('formats/link');
 
-class ProjectLinkBlot extends JumpLinkBlot {
+class ProjectLinkBlot extends LinkBlot {
     static blotName = 'projectLink';
     static tagName = 'a';
 
     static create(value) {
-        const node = super.create(value.href || value);
-        if (value.project) {
+        // 字符串：普通 URL，交给父类
+        if (typeof value === 'string') {
+            return super.create(value);
+        }
+        // 对象：项目内跳转
+        if (value && value.project) {
+            const node = super.create('#');
             node.setAttribute('data-jump', JSON.stringify({
                 project: value.project,
                 file: value.file || '',
-                heading: value.heading || '',
-                url: value.url || ''
+                heading: value.heading || ''
             }));
             node.classList.add('jump-link');
-            node.textContent = value.text || value.file || value.url || '';
-        } else if (value.url) {
-            node.setAttribute('href', value.url);
-            node.setAttribute('target', '_blank');
+            node.removeAttribute('href');
+            if (value.text) node.textContent = value.text;
+            return node;
         }
-        return node;
+        // 对象：外部 URL + 自定义文字
+        if (value && value.url) {
+            const node = super.create(value.url);
+            if (value.text) node.textContent = value.text;
+            return node;
+        }
+        return super.create(value || '');
+    }
+
+    // Quill 解析 HTML → Delta 时调用，返回假值会导致格式丢失
+    static formats(node) {
+        const jumpData = node.getAttribute('data-jump');
+        if (jumpData) {
+            try {
+                const parsed = JSON.parse(jumpData);
+                return { project: parsed.project, file: parsed.file, heading: parsed.heading };
+            } catch(e) {}
+        }
+        return node.getAttribute('href') || '';
     }
 
     static value(node) {
@@ -41,9 +63,50 @@ class ProjectLinkBlot extends JumpLinkBlot {
     }
 }
 
-Quill.register(ProjectLinkBlot);
-// 注册为 link 格式的替代
+Quill.register(ProjectLinkBlot, true);
+// 同时注册为 link 格式的替代，让 Quill 工具栏的链接按钮也走这个 Blot
 Quill.register('formats/link', ProjectLinkBlot, true);
+
+function positionDialog(dialog) {
+    const titleBar = document.getElementById('title-bar');
+    const notificationBar = document.getElementById('notification-bar');
+    const tabBar = document.getElementById('tab-bar');
+    let topOffset = 0;
+    if (titleBar) topOffset += titleBar.offsetHeight;
+    if (notificationBar) topOffset += notificationBar.offsetHeight;
+    if (tabBar) topOffset += tabBar.offsetHeight;
+    dialog.style.top = topOffset + 'px';
+}
+
+// 从富文本编辑器 DOM 读取标题列表
+function getHeadingsFromEditor() {
+    if (!quill) return [];
+    const els = quill.root.querySelectorAll('h1, h2, h3');
+    return Array.from(els).map(el => {
+        const text = el.textContent.trim();
+        return {
+            level: parseInt(el.tagName.substring(1)),
+            text: text,
+            anchor: text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
+        };
+    }).filter(h => h.text);
+}
+
+// 从 Markdown 文本读取标题列表
+function getHeadingsFromMarkdown(text) {
+    const headings = [];
+    text.split('\n').forEach(line => {
+        const match = line.match(/^(#{1,3})\s+(.+)/);
+        if (match) {
+            headings.push({
+                level: match[1].length,
+                text: match[2].trim(),
+                anchor: match[2].trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
+            });
+        }
+    });
+    return headings;
+}
 
 async function openProjectFile(safeId, filename) {
     const project = tabs[safeId];
@@ -93,7 +156,7 @@ async function openProjectFile(safeId, filename) {
         fromCache = true;
     } else {
         const result = await weAPI.readFile(project.projectPath, filename);
-        if (!result.success) { alert(t('ui.read_failed') + ': ' + result.error); return; }
+        if (!result.success) { showNotification(t('ui.read_failed') + ': ' + result.error); return; }
         content = result.content;
     }
 
@@ -195,28 +258,6 @@ async function openProjectFile(safeId, filename) {
         const jumpBtn = toolbarEl.querySelector('.btn-jump-link');
         if (jumpBtn) jumpBtn.onclick = () => showJumpLinkDialog(safeId);
 
-        // 链接点击处理（跳转链接 + 外部链接）
-        quill.root.addEventListener('click', (e) => {
-            const link = e.target.closest('a');
-            if (!link) return;
-            e.preventDefault();
-            e.stopPropagation();
-
-            // 项目内跳转链接
-            if (link.classList.contains('jump-link') || link.hasAttribute('data-jump')) {
-                const data = JSON.parse(link.getAttribute('data-jump') || '{}');
-                handleJumpLinkClick(data);
-                return;
-            }
-
-            // 外部链接：在系统浏览器中打开
-            const href = link.getAttribute('href') || '';
-            if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:'))) {
-                weAPI.openExternalLink(href);
-                return;
-            }
-        });
-
         quill.on('text-change', updateEditorStats);
         quill.root.style.fontFamily = savedFontFamily;
         quill.root.style.fontSize = savedFontSize + 'px';
@@ -235,6 +276,33 @@ async function openProjectFile(safeId, filename) {
         }
         editor.style.display = '';
         currentQuillProjectId = safeId;
+    }
+
+    // 全局链接点击处理（document级别，捕获所有链接点击，只注册一次）
+    if (!window._globalLinkHandler) {
+        window._globalLinkHandler = true;
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (!link) return;
+            const href = link.getAttribute('href') || '';
+
+            // 项目内跳转链接
+            if (link.classList.contains('jump-link') || link.hasAttribute('data-jump')) {
+                e.preventDefault();
+                e.stopPropagation();
+                const data = JSON.parse(link.getAttribute('data-jump') || '{}');
+                handleJumpLinkClick(data);
+                return;
+            }
+
+            // 外部链接：在系统浏览器中打开
+            if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:') || href.startsWith('tel:'))) {
+                e.preventDefault();
+                e.stopPropagation();
+                weAPI.openExternalLink(href);
+                return;
+            }
+        }, true);
     }
 
     quill.root.innerHTML = content;
@@ -339,15 +407,12 @@ async function showJumpLinkDialog(safeId) {
     const project = tabs[safeId];
     if (!project) return;
 
-    // 获取当前选中文字
     const selection = quill.getSelection();
     if (!selection || selection.length === 0) {
-        alert(t('ui.select_text_for_link') || '请先选择要设置跳转链接的文字');
+        showNotification(t('ui.select_text_for_link') || '请先选择要设置跳转链接的文字');
         return;
     }
-    const selectedText = quill.getText(selection.index, selection.length);
 
-    // 获取项目内所有文件
     const filesResult = await weAPI.listFiles(project.projectPath);
     const files = filesResult.files || [];
 
@@ -356,35 +421,28 @@ async function showJumpLinkDialog(safeId) {
     dialog.innerHTML = `
         <div class="dialog-overlay"></div>
         <div class="dialog-box">
-            <h3>${t('ui.jump_link') || '跳转链接'}</h3>
+            <div class="dialog-header">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+                <h3>${t('ui.jump_link') || '跳转链接'}</h3>
+            </div>
             <div class="dialog-body">
                 <div class="link-type-select">
-                    <label class="radio-label">
-                        <input type="radio" name="link-type" value="url" checked>
-                        <span>${t('ui.external_link') || '外部链接'}</span>
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="link-type" value="file">
-                        <span>${t('ui.project_file') || '项目内文件'}</span>
-                    </label>
+                    <button class="link-type-btn active" data-type="url">${t('ui.external_link') || '外部链接'}</button>
+                    <button class="link-type-btn" data-type="file">${t('ui.project_file') || '项目内文件'}</button>
                 </div>
                 <div class="link-input-row" id="url-row">
                     <input type="text" id="external-url" placeholder="https://...">
                 </div>
                 <div class="link-input-row" id="file-row" style="display:none">
-                    <label>${t('ui.select_file') || '选择文件'}:</label>
+                    <label>${t('ui.select_file') || '选择文件'}</label>
                     <select id="target-file">
                         <option value="">-- ${t('ui.select_file') || '选择文件'} --</option>
                         ${files.map(f => `<option value="${f}">${f}</option>`).join('')}
                     </select>
-                    <label>${t('ui.select_heading') || '选择标题'}:</label>
+                    <label>${t('ui.select_heading') || '选择标题'}</label>
                     <select id="target-heading">
                         <option value="">-- ${t('ui.no_heading') || '（无标题）'} --</option>
                     </select>
-                </div>
-                <div class="link-text-row">
-                    <label>${t('ui.link_text') || '链接文字'}:</label>
-                    <input type="text" id="link-text" value="${selectedText}" placeholder="${t('ui.link_text_placeholder') || '显示的文字'}">
                 </div>
             </div>
             <div class="dialog-actions">
@@ -394,75 +452,107 @@ async function showJumpLinkDialog(safeId) {
         </div>
     `;
     document.body.appendChild(dialog);
+    positionDialog(dialog);
 
-    const typeRadios = dialog.querySelectorAll('input[name="link-type"]');
+    const typeBtns = dialog.querySelectorAll('.link-type-btn');
     const urlRow = dialog.querySelector('#url-row');
     const fileRow = dialog.querySelector('#file-row');
     const fileSelect = dialog.querySelector('#target-file');
     const headingSelect = dialog.querySelector('#target-heading');
+    let currentType = 'url';
 
-    typeRadios.forEach(r => r.onchange = () => {
-        const isUrl = dialog.querySelector('input[name="link-type"]:checked').value === 'url';
-        urlRow.style.display = isUrl ? '' : 'none';
-        fileRow.style.display = isUrl ? 'none' : '';
+    typeBtns.forEach(btn => {
+        btn.onclick = () => {
+            typeBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentType = btn.dataset.type;
+            urlRow.style.display = currentType === 'url' ? '' : 'none';
+            fileRow.style.display = currentType === 'url' ? 'none' : '';
+            // 切到文件模式时，自动选中当前文件并加载标题
+            if (currentType === 'file') {
+                const currentFile = project.currentFile;
+                if (currentFile && files.includes(currentFile)) {
+                    fileSelect.value = currentFile;
+                    loadHeadingsForFile(dialog, project, currentFile, safeId);
+                }
+            }
+        };
     });
 
-    // 文件改变时加载标题列表
-    fileSelect.onchange = async () => {
-        headingSelect.innerHTML = '<option value="">-- ' + (t('ui.loading') || '加载中...') + ' --</option>';
-        const filename = fileSelect.value;
-        if (!filename) {
-            headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>';
-            return;
-        }
-        const result = await weAPI.readFile(project.projectPath, filename);
-        if (result.success) {
-            const headingExtract = [];
-            const lines = result.content.split('\n');
-            lines.forEach(line => {
-                const match = line.match(/^(#{1,3})\s+(.+)/);
-                if (match) {
-                    headingExtract.push({
-                        level: match[1].length,
-                        text: match[2].trim(),
-                        anchor: match[2].trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
-                    });
-                }
-            });
-            headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>' +
-                headingExtract.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
-        }
+    fileSelect.onchange = () => {
+        loadHeadingsForFile(dialog, project, fileSelect.value, safeId);
     };
 
     dialog.querySelector('.btn-cancel').onclick = () => dialog.remove();
     dialog.querySelector('.dialog-overlay').onclick = () => dialog.remove();
 
     dialog.querySelector('.btn-confirm').onclick = () => {
-        const isUrl = dialog.querySelector('input[name="link-type"]:checked').value === 'url';
-        const linkText = dialog.querySelector('#link-text').value || selectedText;
+        const sel = quill.getSelection(true);
+        if (!sel || sel.length === 0) {
+            showNotification(t('ui.select_text_for_link') || '请先选择文字');
+            return;
+        }
 
-        if (isUrl) {
+        if (currentType === 'url') {
             const url = dialog.querySelector('#external-url').value.trim();
-            if (!url) { alert(t('ui.enter_url') || '请输入链接地址'); return; }
-            quill.deleteText(selection.index, selection.length);
-            quill.insertEmbed(selection.index, 'link', {
-                url: url,
-                text: linkText
-            }, Quill.sources.USER);
+            if (!url) { showNotification(t('ui.enter_url') || '请输入链接地址'); return; }
+            // formatText：直接在选中文字上应用 link 格式，不删除任何文字
+            quill.formatText(sel.index, sel.length, 'link', url, Quill.sources.USER);
         } else {
             const filename = fileSelect.value;
+            if (!filename) { showNotification(t('ui.select_file') || '请选择目标文件'); return; }
             const heading = headingSelect.value;
-            if (!filename) { alert(t('ui.select_file') || '请选择目标文件'); return; }
-            quill.deleteText(selection.index, selection.length);
-            quill.insertEmbed(selection.index, 'projectLink', {
+            // formatText：直接在选中文字上应用 projectLink 格式
+            quill.formatText(sel.index, sel.length, 'projectLink', {
                 project: safeId,
                 file: filename,
-                heading: heading,
-                text: linkText
+                heading: heading
             }, Quill.sources.USER);
         }
         dialog.remove();
     };
+}
+
+// 为文件选择加载标题列表
+async function loadHeadingsForFile(dialog, project, filename, safeId) {
+    const headingSelect = dialog.querySelector('#target-heading');
+    headingSelect.innerHTML = '<option value="">-- ' + (t('ui.loading') || '加载中...') + ' --</option>';
+    if (!filename) {
+        headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>';
+        return;
+    }
+
+    // 如果选的是当前已打开的文件，直接从编辑器 DOM 读取（实时、准确）
+    if (filename === project.currentFile && quill) {
+        const headings = getHeadingsFromEditor();
+        headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>' +
+            headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+        return;
+    }
+
+    // 否则从磁盘读取文件内容
+    const result = await weAPI.readFile(project.projectPath, filename);
+    if (result.success) {
+        const isHtml = project.projectMode !== 'markdown';
+        let headings;
+        if (isHtml) {
+            // HTML 文件：用 DOMParser 解析
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(result.content, 'text/html');
+            headings = Array.from(doc.querySelectorAll('h1, h2, h3')).map(el => {
+                const text = el.textContent.trim();
+                return {
+                    level: parseInt(el.tagName.substring(1)),
+                    text: text,
+                    anchor: text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
+                };
+            }).filter(h => h.text);
+        } else {
+            headings = getHeadingsFromMarkdown(result.content);
+        }
+        headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>' +
+            headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+    }
 }
 
 function handleJumpLinkClick(data) {
@@ -513,6 +603,8 @@ function handleJumpLinkClick(data) {
                     }
                 }, 300);
             }, 100);
+        } else {
+            showNotification(t('ui.project_not_found') || '目标项目未打开');
         }
     }
 }
@@ -535,7 +627,7 @@ async function openMarkdownFile(safeId, filename) {
         fromCache = true;
     } else {
         const result = await weAPI.readFile(project.projectPath, filename);
-        if (!result.success) { alert(t('ui.read_failed') + ': ' + result.error); return; }
+        if (!result.success) { showNotification(t('ui.read_failed') + ': ' + result.error); return; }
         content = result.content;
     }
 
@@ -676,8 +768,9 @@ async function openMarkdownFile(safeId, filename) {
     });
 
     mdToolbar.querySelector('.btn-md-link').onclick = () => {
-        const url = prompt(t('ui.enter_url') || 'Enter URL:');
-        if (url) wrapMarkdownTextarea(textarea, '[', `](${url})`);
+        showPrompt(t('ui.enter_url') || 'Enter URL:', 'https://...').then(url => {
+            if (url) wrapMarkdownTextarea(textarea, '[', `](${url})`);
+        });
     };
 
     mdToolbar.querySelector('.btn-md-jump').onclick = () => {
@@ -685,8 +778,9 @@ async function openMarkdownFile(safeId, filename) {
     };
 
     mdToolbar.querySelector('.btn-md-image').onclick = () => {
-        const url = prompt(t('ui.enter_image_url') || 'Enter image URL:');
-        if (url) wrapMarkdownTextarea(textarea, '![', `](${url})`);
+        showPrompt(t('ui.enter_image_url') || 'Enter image URL:', 'https://...').then(url => {
+            if (url) wrapMarkdownTextarea(textarea, '![', `](${url})`);
+        });
     };
 
     mdToolbar.querySelector('.btn-md-export').onclick = () => {
@@ -752,34 +846,31 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
     dialog.innerHTML = `
         <div class="dialog-overlay"></div>
         <div class="dialog-box">
-            <h3>${t('ui.jump_link') || 'Jump Link'}</h3>
+            <div class="dialog-header">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
+                <h3>${t('ui.jump_link') || 'Jump Link'}</h3>
+            </div>
             <div class="dialog-body">
                 <div class="link-type-select">
-                    <label class="radio-label">
-                        <input type="radio" name="link-type" value="url" checked>
-                        <span>${t('ui.external_link') || 'External Link'}</span>
-                    </label>
-                    <label class="radio-label">
-                        <input type="radio" name="link-type" value="file">
-                        <span>${t('ui.project_file') || 'Project File'}</span>
-                    </label>
+                    <button class="link-type-btn active" data-type="url">${t('ui.external_link') || 'External Link'}</button>
+                    <button class="link-type-btn" data-type="file">${t('ui.project_file') || 'Project File'}</button>
                 </div>
                 <div class="link-input-row" id="url-row">
                     <input type="text" id="external-url" placeholder="https://...">
                 </div>
                 <div class="link-input-row" id="file-row" style="display:none">
-                    <label>${t('ui.select_file') || 'Select File'}:</label>
+                    <label>${t('ui.select_file') || 'Select File'}</label>
                     <select id="target-file">
                         <option value="">-- ${t('ui.select_file') || 'Select File'} --</option>
                         ${files.map(f => `<option value="${f}">${f}</option>`).join('')}
                     </select>
-                    <label>${t('ui.select_heading') || 'Select Heading'}:</label>
+                    <label>${t('ui.select_heading') || 'Select Heading'}</label>
                     <select id="target-heading">
                         <option value="">-- ${t('ui.no_heading') || '(no heading)'} --</option>
                     </select>
                 </div>
                 <div class="link-text-row">
-                    <label>${t('ui.link_text') || 'Link Text'}:</label>
+                    <label>${t('ui.link_text') || 'Link Text'}</label>
                     <input type="text" id="link-text" value="${selected}" placeholder="${t('ui.link_text_placeholder') || 'Display text'}">
                 </div>
             </div>
@@ -790,17 +881,30 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
         </div>
     `;
     document.body.appendChild(dialog);
+    positionDialog(dialog);
 
-    const typeRadios = dialog.querySelectorAll('input[name="link-type"]');
+    const typeBtns = dialog.querySelectorAll('.link-type-btn');
     const urlRow = dialog.querySelector('#url-row');
     const fileRow = dialog.querySelector('#file-row');
     const fileSelect = dialog.querySelector('#target-file');
     const headingSelect = dialog.querySelector('#target-heading');
+    let currentType = 'url';
 
-    typeRadios.forEach(r => r.onchange = () => {
-        const isUrl = dialog.querySelector('input[name="link-type"]:checked').value === 'url';
-        urlRow.style.display = isUrl ? '' : 'none';
-        fileRow.style.display = isUrl ? 'none' : '';
+    typeBtns.forEach(btn => {
+        btn.onclick = () => {
+            typeBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentType = btn.dataset.type;
+            urlRow.style.display = currentType === 'url' ? '' : 'none';
+            fileRow.style.display = currentType === 'url' ? 'none' : '';
+            if (currentType === 'file') {
+                const currentFile = project.currentFile;
+                if (currentFile && files.includes(currentFile)) {
+                    fileSelect.value = currentFile;
+                    fileSelect.dispatchEvent(new Event('change'));
+                }
+            }
+        };
     });
 
     fileSelect.onchange = async () => {
@@ -810,22 +914,19 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
             headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '(no heading)') + ' --</option>';
             return;
         }
+        // 当前文件：直接从 textarea 读取
+        if (filename === project.currentFile && textarea) {
+            const headings = getHeadingsFromMarkdown(textarea.value);
+            headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '(no heading)') + ' --</option>' +
+                headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+            return;
+        }
+        // 其他文件：从磁盘读取
         const result = await weAPI.readFile(project.projectPath, filename);
         if (result.success) {
-            const headingExtract = [];
-            const lines = result.content.split('\n');
-            lines.forEach(line => {
-                const match = line.match(/^(#{1,3})\s+(.+)/);
-                if (match) {
-                    headingExtract.push({
-                        level: match[1].length,
-                        text: match[2].trim(),
-                        anchor: match[2].trim().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
-                    });
-                }
-            });
+            const headings = getHeadingsFromMarkdown(result.content);
             headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '(no heading)') + ' --</option>' +
-                headingExtract.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+                headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
         }
     };
 
@@ -833,17 +934,17 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
     dialog.querySelector('.dialog-overlay').onclick = () => dialog.remove();
 
     dialog.querySelector('.btn-confirm').onclick = () => {
-        const isUrl = dialog.querySelector('input[name="link-type"]:checked').value === 'url';
+        const isUrl = currentType === 'url';
         const linkText = dialog.querySelector('#link-text').value || selected;
 
         if (isUrl) {
             const url = dialog.querySelector('#external-url').value.trim();
-            if (!url) { alert(t('ui.enter_url') || 'Please enter URL'); return; }
+            if (!url) { showNotification(t('ui.enter_url') || 'Please enter URL'); return; }
             wrapMarkdownTextarea(textarea, '[', `](${url})`, linkText);
         } else {
             const filename = fileSelect.value;
             const heading = headingSelect.value;
-            if (!filename) { alert(t('ui.select_file') || 'Please select target file'); return; }
+            if (!filename) { showNotification(t('ui.select_file') || 'Please select target file'); return; }
             const anchorPart = heading ? '#' + heading : '';
             wrapMarkdownTextarea(textarea, '[', `](project:${encodeURIComponent(filename)}${anchorPart})`, linkText);
         }
@@ -869,7 +970,7 @@ function renderMarkdownPreview(text, previewEl) {
             return `<a href="project:${rest}" class="jump-link"${anchorAttr}>${t}</a>`;
         })
         // 外部链接
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
         // 粗体
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         // 斜体
@@ -1267,7 +1368,7 @@ async function addFileToProject(safeId) {
             }
             showNotification(t('ui.folder_created') || '文件夹已创建');
         } else {
-            alert((t('ui.create_failed') || '创建失败') + ': ' + res.error);
+            showNotification((t('ui.create_failed') || '创建失败') + ': ' + res.error);
         }
     } else {
         const res = await weAPI.addFile(project.projectPath, name);
@@ -1279,7 +1380,7 @@ async function addFileToProject(safeId) {
             }
             openProjectFile(safeId, name);
         } else {
-            alert((t('ui.add_failed') || '添加失败') + ': ' + res.error);
+            showNotification((t('ui.add_failed') || '添加失败') + ': ' + res.error);
         }
     }
 }
@@ -1290,7 +1391,7 @@ async function switchEditorMode() {
     // 找到当前打开的项目标签
     const project = tabs[activeTabId];
     if (!project || !project.projectPath) {
-        alert(t('ui.need_open_project') || '请先打开一个项目');
+        showNotification(t('ui.need_open_project') || '请先打开一个项目');
         return;
     }
 
@@ -1333,6 +1434,7 @@ async function switchEditorMode() {
         </div>
     `;
     document.body.appendChild(dialog);
+    positionDialog(dialog);
 
     const closeDialog = () => dialog.remove();
     dialog.querySelector('.btn-cancel').onclick = closeDialog;
@@ -1350,7 +1452,7 @@ async function performModeSwitch(projectPath, fromMode, toMode) {
     // 获取所有文件列表
     const listResult = await weAPI.listFiles(projectPath);
     if (!listResult.success) {
-        alert(t('ui.mode_switch_failed') || '转换失败：无法读取文件列表');
+        showNotification(t('ui.mode_switch_failed') || '转换失败：无法读取文件列表');
         return;
     }
     const files = listResult.files || [];

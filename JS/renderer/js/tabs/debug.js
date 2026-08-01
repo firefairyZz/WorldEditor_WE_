@@ -180,8 +180,9 @@ async function handleDebugAction(action) {
 
 // Ctrl+Shift+D 切换 Debug 面板
 document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd' || e.code === 'KeyD')) {
         e.preventDefault();
+        e.stopPropagation();
         toggleDebugPanel();
     }
 });

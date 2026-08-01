@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('weAPI', {
     saveMetadata: (folder, metadata) => ipcRenderer.invoke('save-metadata', folder, metadata),
     storeImage: (folder, imageName, imageData) => ipcRenderer.invoke('store-image', folder, imageName, imageData),
     deleteImage: (folder, imageName) => ipcRenderer.invoke('delete-image', folder, imageName),
-    getUpdateNotes: () => ipcRenderer.invoke('get-update-notes'),
+    getUpdateNotes: (lang) => ipcRenderer.invoke('get-update-notes', lang),
 
     renameFile: (folder, oldPath, newPath) => ipcRenderer.invoke('rename-file', folder, oldPath, newPath),
     renameFolder: (folder, oldPath, newPath) => ipcRenderer.invoke('rename-folder', folder, oldPath, newPath),

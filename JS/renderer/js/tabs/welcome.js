@@ -45,3 +45,11 @@ async function loadRecentProjectsNew(container) {
         container.innerHTML = `<div class="recent-empty">${t('ui.load_failed')}</div>`;
     }
 }
+
+// 暴露给其他模块调用的刷新函数
+window.refreshRecentProjects = async function() {
+    const container = document.getElementById('recent-list');
+    if (container) {
+        await loadRecentProjectsNew(container);
+    }
+};
