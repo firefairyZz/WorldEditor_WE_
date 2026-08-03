@@ -545,6 +545,8 @@ function createSettingsTab() {
             <select id="lang-select">
                 <option value="zh_CN">中文</option>
                 <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="ru">Русский</option>
             </select>
         </div>
         <div class="setting-row">
@@ -697,6 +699,39 @@ function createSettingsTab() {
             </div>
             <div class="setting-row" style="margin-top:8px">
                 <button class="btn-reset-colors" id="btn-reset-colors">${t('ui.reset_colors') || '重置为默认'}</button>
+            </div>
+        </div>
+        <div class="setting-group" id="bg-material-group">
+            <div class="setting-group-title">${t('ui.background_material') || '背景材质'}</div>
+            <div class="setting-row">
+                <span>${t('ui.bg_material') || '材质'}</span>
+                <select id="bg-material-select">
+                    <option value="none">${t('ui.bg_none') || '无'}</option>
+                    <option value="mica">${t('ui.bg_mica') || '云母 (Mica)'}</option>
+                    <option value="acrylic">${t('ui.bg_acrylic') || '亚克力 (Acrylic)'}</option>
+                    <option value="tabbed">${t('ui.bg_tabbed') || '标签式 (Tabbed)'}</option>
+                </select>
+            </div>
+            <div class="setting-row" id="bg-tint-row">
+                <span>${t('ui.bg_tint') || '内容区透明度'}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input type="range" id="bg-tint-slider" min="0" max="100" value="78" style="width:120px">
+                    <span id="bg-tint-val" style="min-width:36px;text-align:right">78%</span>
+                </div>
+            </div>
+            <div class="setting-row" id="bg-overlay-row">
+                <span>${t('ui.bg_overlay') || '遮罩透明度'}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input type="range" id="bg-overlay-slider" min="0" max="100" value="30" style="width:120px">
+                    <span id="bg-overlay-val" style="min-width:36px;text-align:right">30%</span>
+                </div>
+            </div>
+            <div class="setting-row" id="bg-bar-tint-row">
+                <span>${t('ui.bg_bar_tint') || '标题栏透明度'}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input type="range" id="bg-bar-tint-slider" min="0" max="100" value="100" style="width:120px">
+                    <span id="bg-bar-tint-val" style="min-width:36px;text-align:right">100%</span>
+                </div>
             </div>
         </div>
     `;
@@ -893,6 +928,10 @@ function createSettingsTab() {
         content.querySelector('#auto-save-select').value = s.autoSave || '0';
         const tc = content.querySelector('#tab-close-confirm'); if (tc) tc.checked = s.tabCloseConfirm !== false;
         const aot = content.querySelector('#always-on-top-toggle'); if (aot) aot.checked = s.alwaysOnTop === true;
+        const bgm = content.querySelector('#bg-material-select'); if (bgm) bgm.value = s.backgroundMaterial || 'none';
+        const bgTint = content.querySelector('#bg-tint-slider'); if (bgTint) { bgTint.value = s.materialTint ?? 78; content.querySelector('#bg-tint-val').textContent = bgTint.value + '%'; }
+        const bgOverlay = content.querySelector('#bg-overlay-slider'); if (bgOverlay) { bgOverlay.value = s.materialOverlay ?? 30; content.querySelector('#bg-overlay-val').textContent = bgOverlay.value + '%'; }
+        const bgBarTint = content.querySelector('#bg-bar-tint-slider'); if (bgBarTint) { bgBarTint.value = s.materialBarTint ?? 100; content.querySelector('#bg-bar-tint-val').textContent = bgBarTint.value + '%'; }
         const wc = content.querySelector('#word-count-toggle'); if (wc) wc.checked = s.wordCount !== false;
         const tb = content.querySelector('#toolbar-show-toggle'); if (tb) tb.checked = s.toolbarShow !== false;
         const md = content.querySelector('#md-render-toggle'); if (md) md.checked = s.markdownRender !== false;
@@ -965,6 +1004,68 @@ function createSettingsTab() {
                 }
             }
         });
+    }
+
+    // 背景材质：实时预览（对齐测试文件：滑块独立调用 applyTint / applyOverlay / applyBarTint）
+    const bgTintSlider = content.querySelector('#bg-tint-slider');
+    const bgTintVal = content.querySelector('#bg-tint-val');
+    const bgOverlaySlider = content.querySelector('#bg-overlay-slider');
+    const bgOverlayVal = content.querySelector('#bg-overlay-val');
+    const bgBarTintSlider = content.querySelector('#bg-bar-tint-slider');
+    const bgBarTintVal = content.querySelector('#bg-bar-tint-val');
+    if (bgTintSlider) {
+        bgTintSlider.addEventListener('input', () => {
+            bgTintVal.textContent = bgTintSlider.value + '%';
+            const bgm = content.querySelector('#bg-material-select')?.value || 'none';
+            if (bgm !== 'none') {
+                applyTint(parseInt(bgTintSlider.value));
+            }
+        });
+    }
+    if (bgOverlaySlider) {
+        bgOverlaySlider.addEventListener('input', () => {
+            bgOverlayVal.textContent = bgOverlaySlider.value + '%';
+            const bgm = content.querySelector('#bg-material-select')?.value || 'none';
+            if (bgm !== 'none') {
+                applyOverlay(parseInt(bgOverlaySlider.value));
+            }
+        });
+    }
+    if (bgBarTintSlider) {
+        bgBarTintSlider.addEventListener('input', () => {
+            bgBarTintVal.textContent = bgBarTintSlider.value + '%';
+            const bgm = content.querySelector('#bg-material-select')?.value || 'none';
+            if (bgm !== 'none') {
+                applyBarTint(parseInt(bgBarTintSlider.value));
+            }
+        });
+    }
+    const bgMaterialSelect = content.querySelector('#bg-material-select');
+    // 灰化/启用材质相关设置项
+    function updateMaterialRowsState(bgm) {
+        const disabled = bgm === 'none';
+        const tintRow = content.querySelector('#bg-tint-row');
+        const overlayRow = content.querySelector('#bg-overlay-row');
+        const barTintRow = content.querySelector('#bg-bar-tint-row');
+        for (const row of [tintRow, overlayRow, barTintRow]) {
+            if (row) {
+                row.style.opacity = disabled ? '0.4' : '';
+                row.style.pointerEvents = disabled ? 'none' : '';
+            }
+        }
+    }
+    if (bgMaterialSelect) {
+        bgMaterialSelect.addEventListener('change', () => {
+            const bgm = bgMaterialSelect.value;
+            const tint = parseInt(bgTintSlider?.value || '78');
+            const overlay = parseInt(bgOverlaySlider?.value || '30');
+            const barTint = parseInt(bgBarTintSlider?.value || '100');
+            applyBackgroundMaterial(bgm, tint, overlay, barTint);
+            // 通知主进程切换 OS 材质
+            weAPI.setBackgroundMaterial(bgm);
+            updateMaterialRowsState(bgm);
+        });
+        updateMaterialRowsState(bgMaterialSelect.value);
     }
     // 重置颜色按钮
     const resetBtn = content.querySelector('#btn-reset-colors');
@@ -1160,6 +1261,10 @@ function createSettingsTab() {
         const autoSave = content.querySelector('#auto-save-select').value;
         const tcVal = content.querySelector('#tab-close-confirm')?.checked ?? true;
         const aotVal = content.querySelector('#always-on-top-toggle')?.checked ?? false;
+        const bgmVal = content.querySelector('#bg-material-select')?.value ?? 'none';
+        const bgTintVal = parseInt(content.querySelector('#bg-tint-slider')?.value ?? '78');
+        const bgOverlayVal = parseInt(content.querySelector('#bg-overlay-slider')?.value ?? '30');
+        const bgBarTintVal = parseInt(content.querySelector('#bg-bar-tint-slider')?.value ?? '100');
         const wcVal = content.querySelector('#word-count-toggle')?.checked ?? true;
         const tbVal = content.querySelector('#toolbar-show-toggle')?.checked ?? true;
         const mdVal = content.querySelector('#md-render-toggle')?.checked ?? true;
@@ -1176,7 +1281,7 @@ function createSettingsTab() {
             colorPreset: colorPreset, customColors: customColors,
             fontFamily: fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal,
             customShortcuts: customShortcuts
         });
 
@@ -1222,6 +1327,10 @@ function createSettingsTab() {
         await loadLanguage(lang);
         refreshSettingsI18n();
 
+        // 应用背景材质（必须在 applyTheme/applyColorPreset 之后，否则背景色会被覆盖）
+        await weAPI.setBackgroundMaterial(bgmVal);
+        applyBackgroundMaterial(bgmVal, bgTintVal, bgBarTintVal);
+
         // 保存账户变更
         if (accountChanged && tempAccountName) {
             const accountData = {
@@ -1266,13 +1375,125 @@ function applyTheme(theme) {
     if (titleIcon) titleIcon.src = theme === 'light' ? '../resources/Black.png' : '../resources/White.png';
     const aboutIcon = document.getElementById('about-app-icon');
     if (aboutIcon) aboutIcon.src = theme === 'light' ? '../resources/Black.png' : '../resources/White.png';
-    weAPI.setBackgroundColor(theme === 'light' ? '#ffffff' : '#1e1e1e');
+    // 窗口背景始终透明（圆角由 CSS clip-path 处理），不设置不透明背景色
 }
 
-// 应用背景材质（当前保留设置，窗口需透明模式才能显示完整效果）
-function applyBackgroundMaterial(material) {
-    // 保留 body 类以便将来扩展
+// ============================================================
+// 背景材质系统（对齐测试文件 mica-test.html 的三层架构）
+//   applyTint()      — 控制内容区不透明度（--content-tint + --bg-*）
+//   applyOverlay()   — 控制底层遮罩不透明度（--overlay-tint，覆盖边框+内容区底层）
+//   applyBarTint()   — 仅控制标题栏不透明度（--title-bar-tint）
+//   applyBackgroundMaterial() — 总入口，调用上述函数
+// ============================================================
+
+// 读取当前主题的实色值
+// 优先从 body.dataset.themeColors 读取原始主题色（避免被 applyTint 覆盖后的半透明值污染）
+function readThemeColors() {
+    let cached = null;
+    try {
+        cached = JSON.parse(document.body.dataset.themeColors || 'null');
+    } catch {}
+    if (cached) return cached;
+    const styles = getComputedStyle(document.body);
+    const colors = {
+        bgSidebar: styles.getPropertyValue('--bg-sidebar').trim(),
+        bgMain: styles.getPropertyValue('--bg-main').trim(),
+        gapColor: styles.getPropertyValue('--gap-color').trim(),
+        border: styles.getPropertyValue('--border').trim()
+    };
+    document.body.dataset.themeColors = JSON.stringify(colors);
+    return colors;
+}
+
+// 清除主题色缓存（applyColorPreset 切换主题后调用）
+function clearThemeColorsCache() {
+    delete document.body.dataset.themeColors;
+}
+
+// 仅控制内容区不透明度
+// tint: 0-100，100=完全不透明，0=完全透明
+function applyTint(tint) {
+    const { bgSidebar, bgMain, border } = readThemeColors();
+    const alpha = (tint ?? 78) / 100;
+    document.body.style.setProperty('--content-tint', hexToRgba(bgSidebar, alpha));
+    document.body.style.setProperty('--bg-sidebar', hexToRgba(bgSidebar, alpha));
+    document.body.style.setProperty('--bg-main', hexToRgba(bgMain, alpha));
+    document.body.style.setProperty('--border', hexToRgba(border, alpha));
+}
+
+// 控制底层遮罩不透明度（覆盖边框+内容区底层，颜色跟随主题 gap-color）
+// overlay: 0-100，100=完全不透明，0=完全透明
+function applyOverlay(overlay) {
+    const { gapColor } = readThemeColors();
+    const alpha = (overlay ?? 30) / 100;
+    document.body.style.setProperty('--overlay-tint', hexToRgba(gapColor, alpha));
+    // 标签栏边框色跟随遮罩（标签栏在遮罩之上，用 gap-color 半透明）
+    document.body.style.setProperty('--gap-color', hexToRgba(gapColor, alpha));
+}
+
+// 仅控制标题栏不透明度
+// barTint: 0-100，100=实心（主题色），0=完全透明
+function applyBarTint(barTint) {
+    const { bgSidebar } = readThemeColors();
+    const alpha = (barTint ?? 100) / 100;
+    document.body.style.setProperty('--title-bar-tint', hexToRgba(bgSidebar, alpha));
+    const titleBar = document.getElementById('title-bar');
+    if (titleBar) titleBar.style.removeProperty('border-bottom');
+}
+
+// 恢复不透明状态（材质为"无"时调用）
+function resetMaterialStyles() {
+    const { bgSidebar, bgMain, gapColor, border } = readThemeColors();
+    document.body.style.setProperty('--content-tint', bgSidebar);
+    document.body.style.setProperty('--bg-sidebar', bgSidebar);
+    document.body.style.setProperty('--bg-main', bgMain);
+    document.body.style.setProperty('--border', border);
+    document.body.style.setProperty('--gap-color', gapColor);
+    document.body.style.setProperty('--overlay-tint', 'transparent');
+    document.body.style.setProperty('--title-bar-tint', bgSidebar);
+    const titleBar = document.getElementById('title-bar');
+    if (titleBar) titleBar.style.removeProperty('border-bottom');
+}
+
+// 应用背景材质（总入口）
+// material: 'none' | 'mica' | 'acrylic' | 'tabbed'
+// tint: 内容区不透明度（0-100）
+// overlay: 底层遮罩不透明度（0-100）
+// barTint: 标题栏不透明度（0-100）
+function applyBackgroundMaterial(material, tint, overlay, barTint) {
+    const active = material && material !== 'none';
+    document.body.classList.toggle('material-active', active);
+    document.documentElement.classList.toggle('material-active', active);
     document.body.dataset.bgMaterial = material || 'none';
+    window.__lastMaterialSettings = { material, tint, overlay, barTint };
+
+    if (!active) {
+        resetMaterialStyles();
+        return;
+    }
+    applyTint(tint);
+    applyOverlay(overlay);
+    applyBarTint(barTint);
+}
+
+// 颜色转 rgba 工具函数
+function hexToRgba(color, alpha) {
+    color = color.trim();
+    if (color.startsWith('rgba')) {
+        // 替换已有 rgba 的 alpha 值
+        return color.replace(/rgba\(([^)]+),\s*[\d.]+\)/, (_, rgb) => `rgba(${rgb}, ${alpha})`);
+    }
+    if (color.startsWith('rgb(')) {
+        return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+    }
+    // hex 格式 #rgb 或 #rrggbb
+    let hex = color.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    if (hex.length === 8) hex = hex.slice(0, 6); // 去掉 alpha 通道
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // 应用主题配色预设
@@ -1281,11 +1502,13 @@ function applyColorPreset(presetName, customColors) {
     const target = document.body;  // 设到 body 以覆盖 body.theme-light 的硬编码
 
     // 清除之前的预设（在 body 和 root 上都清除）
-    const cssVars = ['--bg-main', '--bg-sidebar', '--bg-toolbar', '--border', '--text', '--text-secondary', '--accent', '--accent-hover', '--gap-color'];
+    const cssVars = ['--bg-main', '--bg-sidebar', '--bg-toolbar', '--border', '--text', '--text-secondary', '--accent', '--accent-hover', '--gap-color', '--content-tint', '--overlay-tint', '--title-bar-tint'];
     cssVars.forEach(v => {
         target.style.removeProperty(v);
         document.documentElement.style.removeProperty(v);
     });
+    // 清除主题色缓存，让 readThemeColors 重新读取新主题色
+    clearThemeColorsCache();
 
     if (presetName === 'custom' && customColors) {
         const bgMain = customColors['--bg-main'] || '#1e1e1e';
@@ -1305,6 +1528,29 @@ function applyColorPreset(presetName, customColors) {
         for (const [cssVar, color] of Object.entries(preset.colors)) {
             target.style.setProperty(cssVar, color);
         }
+    }
+
+    // 同步标题栏/关于页图标与原生背景色（亮/暗主题）
+    const isLightTheme = target.classList.contains('theme-light');
+    const titleIcon = document.getElementById('title-icon');
+    if (titleIcon) titleIcon.src = isLightTheme ? '../resources/Black.png' : '../resources/White.png';
+    const aboutIcon = document.getElementById('about-app-icon');
+    if (aboutIcon) aboutIcon.src = isLightTheme ? '../resources/Black.png' : '../resources/White.png';
+    // 窗口背景始终透明（圆角由 CSS clip-path 处理），不设置不透明背景色
+
+    // 主题切换后，若材质已激活则重新读取新主题颜色并应用半透明值
+    // 否则 body 上的旧内联 rgba 会覆盖新主题颜色
+    if (target.classList.contains('material-active') && typeof applyBackgroundMaterial === 'function') {
+        const m = target.dataset.bgMaterial || 'none';
+        if (m && m !== 'none') {
+            const saved = window.__lastMaterialSettings || {};
+            applyBackgroundMaterial(m, saved.tint ?? 78, saved.overlay ?? 30, saved.barTint ?? 100);
+        }
+    }
+    // 通知主进程更新窗口背景色（主题变了，none 时的回退色也要变）
+    if (typeof weAPI !== 'undefined' && weAPI.setBackgroundMaterial) {
+        const m = target.dataset.bgMaterial || 'none';
+        weAPI.setBackgroundMaterial(m);
     }
 }
 

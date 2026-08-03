@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS = {
     autoSave: '0',
     alwaysOnTop: false,
     backgroundMaterial: 'none',
+    materialTint: 78,
+    materialOverlay: 30,
+    materialBarTint: 100,
     colorPreset: 'default-dark',
     customColors: null,
     customShortcuts: null
@@ -136,6 +139,10 @@ ui.background_material = 背景材质
 ui.bg_none = 无
 ui.bg_mica = 云母 (Mica)
 ui.bg_acrylic = 亚克力 (Acrylic)
+ui.bg_tabbed = 标签式 (Tabbed)
+ui.bg_tint = 内容区透明度
+ui.bg_overlay = 遮罩透明度
+ui.bg_bar_tint = 标题栏透明度
 ui.bg_material_hint = 仅 Windows 11 支持。当前版本为预览版，需窗口透明模式配合
 ui.appearance = 外观
 ui.color_preset = 主题配色
@@ -357,8 +364,8 @@ ipcMain.handle('get-update-notes', async (event, lang) => {
         const updateDir = path.join(__dirname, 'resources', 'UPDATE_INF');
         if (!fs.existsSync(updateDir)) return { success: true, notes: [] };
 
-        // 语言映射：zh_CN -> cn, en -> en
-        const langPrefix = (lang === 'zh_CN' || lang === 'zh-TW') ? 'cn' : 'en';
+        // 语言映射：zh_CN -> cn, en -> en, ja -> ja
+        const langPrefix = (lang === 'zh_CN' || lang === 'zh-TW') ? 'cn' : (lang === 'ja' ? 'ja' : 'en');
 
         const entries = fs.readdirSync(updateDir, { withFileTypes: true });
         const notes = [];
@@ -371,9 +378,9 @@ ipcMain.handle('get-update-notes', async (event, lang) => {
             if (!verMatch) continue;
 
             const verDir = path.join(updateDir, ver);
-            // 优先读取当前语言文件，找不到则回退到 cn
+            // 优先读取当前语言文件，找不到则回退到 en
             let langFile = path.join(verDir, `${langPrefix}.${ver}.md`);
-            let fallbackFile = path.join(verDir, `cn.${ver}.md`);
+            let fallbackFile = path.join(verDir, `en.${ver}.md`);
 
             let content;
             if (fs.existsSync(langFile)) {
@@ -403,6 +410,54 @@ ipcMain.handle('get-update-notes', async (event, lang) => {
 
         return { success: true, notes };
     } catch (e) { return { success: true, notes: [] }; }
+});
+
+// ========== 导出功能 ==========
+ipcMain.handle('export-pdf', async (event, html, suggestedName) => {
+    try {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWin, {
+            title: 'Export PDF',
+            defaultPath: (suggestedName || 'document') + '.pdf',
+            filters: [{ name: 'PDF', extensions: ['pdf'] }]
+        });
+        if (canceled) return { success: false, canceled: true };
+
+        const win = new BrowserWindow({
+            width: 800, height: 600,
+            show: false,
+            webPreferences: { contextIsolation: true, nodeIntegration: false }
+        });
+        await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+        // 等待渲染完成
+        await new Promise(r => setTimeout(r, 300));
+        const pdfData = await win.webContents.printToPDF({
+            printBackground: true,
+            pageSize: 'A4',
+            margins: { top: 0, bottom: 0, left: 0, right: 0 }
+        });
+        fs.writeFileSync(filePath, pdfData);
+        win.destroy();
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+
+ipcMain.handle('export-zip', async (event, folder, suggestedName) => {
+    try {
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWin, {
+            title: 'Export ZIP',
+            defaultPath: (suggestedName || 'project') + '.zip',
+            filters: [{ name: 'ZIP', extensions: ['zip'] }]
+        });
+        if (canceled) return { success: false, canceled: true };
+        const wepPath = path.join(folder, 'project.wep');
+        if (!fs.existsSync(wepPath)) return { success: false, error: 'project.wep not found' };
+        fs.copyFileSync(wepPath, filePath);
+        return { success: true };
+    } catch (e) {
+        return { success: false, error: e.message };
+    }
 });
 ipcMain.handle('get-settings', () => appSettings);
 ipcMain.handle('set-settings', (event, settings) => {
@@ -509,10 +564,19 @@ function createSplash() {
 }
 
 function createMainWindow() {
-    const bgColor = appSettings.theme === 'light' ? '#e8e8e8' : '#2a2a2a';
+    const preset = appSettings.colorPreset || 'default-dark';
+    const isLight = preset.includes('light') || preset === 'we-light';
+    const material = appSettings.backgroundMaterial || 'none';
+    const validMaterial = (material === 'transparent') ? 'none' : material;
+    // 对齐测试文件：材质激活时窗口背景透明让 OS 材质透过；无材质时用主题不透明色
+    const bgColor = (material === 'none' || material === 'transparent')
+        ? (isLight ? '#e8e8e8' : '#2a2a2a')
+        : '#00000000';
     mainWin = new BrowserWindow({
         width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
+        show: false,
         backgroundColor: bgColor,
+        backgroundMaterial: validMaterial,
         icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
@@ -543,6 +607,9 @@ function createMainWindow() {
     mainWin.on('unmaximize', () => mainWin.webContents.send('maximized-change', false));
     mainWin.on('resize', () => mainWin.webContents.send('maximized-change', mainWin.isMaximized()));
 
+    // 首次显示
+    mainWin.once('ready-to-show', () => mainWin.show());
+
     ipcMain.on('minimize-window', () => mainWin.minimize());
     ipcMain.on('maximize-window', () => mainWin.isMaximized() ? mainWin.unmaximize() : mainWin.maximize());
     ipcMain.on('close-window', () => mainWin.close());
@@ -553,18 +620,22 @@ function createMainWindow() {
     ipcMain.handle('is-always-on-top', () => mainWin.isAlwaysOnTop());
     ipcMain.on('set-background-color', (event, color) => mainWin.setBackgroundColor(color));
 
-    // 实时切换背景材质（云母/亚克力）
+    // 实时切换背景材质（云母/亚克力/标签式）
+    // 对齐测试文件 set-material：none 时设不透明主题色，其他材质设透明
     ipcMain.handle('set-background-material', (event, material) => {
         if (!mainWin) return false;
         try {
-            // 注意：透明窗口（transparent: true）会破坏布局，这里仅在非透明窗口上尝试设置
-            // 效果有限，需配合透明窗口才能完整显示 Mica/Acrylic
-            if (material && material !== 'none') {
-                try { mainWin.setBackgroundMaterial(material); } catch(e) {}
+            appSettings.backgroundMaterial = material;
+            const validMaterial = (material === 'transparent') ? 'none' : material;
+            mainWin.setBackgroundMaterial(validMaterial);
+            if (material === 'none' || material === 'transparent') {
+                // 无材质：恢复不透明主题色，避免露出桌面
+                const preset = appSettings.colorPreset || 'default-dark';
+                const isLight = preset.includes('light') || preset === 'we-light';
+                mainWin.setBackgroundColor(isLight ? '#e8e8e8' : '#2a2a2a');
             } else {
-                try { mainWin.setBackgroundMaterial('none'); } catch(e) {}
-                const bg = appSettings.theme === 'light' ? '#e8e8e8' : '#2a2a2a';
-                mainWin.setBackgroundColor(bg);
+                // 材质激活：窗口背景透明让 OS 材质透过
+                mainWin.setBackgroundColor('#00000000');
             }
             return true;
         } catch (e) {

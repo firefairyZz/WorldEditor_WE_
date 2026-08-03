@@ -416,7 +416,7 @@ function openTagManager(filePath, container) {
 
     const header = document.createElement('div');
     header.className = 'tag-manager-header';
-    header.innerHTML = `<span class="tag-manager-title">${t('ui.manage_tags') || 'Manage Tags'}: ${filePath}</span><button class="close-btn">✕</button>`;
+    header.innerHTML = `<span class="tag-manager-title">${t('ui.manage_tags') || 'Manage Tags'}: ${stripExt(filePath.split('/').pop())}</span><button class="close-btn">✕</button>`;
     panel.appendChild(header);
 
     const tagsContainer = document.createElement('div');

@@ -235,33 +235,11 @@ const tagModule = {
         const overlay = document.createElement('div');
         overlay.className = 'tag-picker-overlay';
         overlay.dataset.overlay = 'true';
-
-        const host = document.getElementById('content-container');
-        if (host) {
-            const rect = host.getBoundingClientRect();
-            overlay.style.position = 'fixed';
-            overlay.style.top = `${rect.top}px`;
-            overlay.style.left = `${rect.left}px`;
-            overlay.style.width = `${rect.width}px`;
-            overlay.style.height = `${rect.height}px`;
-        }
-
         return overlay;
     },
 
     _syncOverlayHost(overlay) {
-        const host = document.getElementById('content-container');
-        if (!host || !overlay) return;
-        const rect = host.getBoundingClientRect();
-        overlay.style.top = `${rect.top}px`;
-        overlay.style.left = `${rect.left}px`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
-
-        const panel = overlay.querySelector('.tag-picker');
-        if (panel) {
-            panel.style.maxHeight = `calc(${rect.height}px - 32px)`;
-        }
+        // 遮罩由 CSS 控制范围（标题栏以下全窗口），此处仅确保存在
     },
 
     openTagPicker(filePath, onSave, existingTag = null) {
@@ -290,7 +268,13 @@ const tagModule = {
                 </div>
                 <div class="tag-row">
                     <label>${t('ui.tag_color') || 'Color'}</label>
-                    <div class="color-picker"></div>
+                    <div class="color-picker-row">
+                        <div class="color-picker"></div>
+                        <div class="color-picker-custom">
+                            <span class="custom-color-label">${t('ui.custom_color') || '自定义'}</span>
+                            <input type="color" id="tag-custom-color" value="${existingTag?.color || TAG_COLORS[0]}" />
+                        </div>
+                    </div>
                 </div>
                 <div class="tag-preview">
                     <span class="tag-item" id="tag-preview-item"></span>
@@ -343,6 +327,7 @@ const tagModule = {
         emojiPicker.appendChild(noEmojiBtn);
 
         const colorPicker = overlay.querySelector('.color-picker');
+        const customColorInput = overlay.querySelector('#tag-custom-color');
         TAG_COLORS.forEach(color => {
             const btn = document.createElement('button');
             btn.className = 'color-btn' + (color === selectedColor ? ' active' : '');
@@ -351,10 +336,16 @@ const tagModule = {
                 selectedColor = color;
                 colorPicker.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
+                customColorInput.value = color;
                 updatePreview();
             };
             colorPicker.appendChild(btn);
         });
+        customColorInput.oninput = () => {
+            selectedColor = customColorInput.value;
+            colorPicker.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            updatePreview();
+        };
 
         const previewItem = overlay.querySelector('#tag-preview-item');
         function updatePreview() {
@@ -383,19 +374,17 @@ const tagModule = {
                 btn.style.backgroundColor = tag.color || TAG_COLORS[0];
                 btn.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label || ''}</span>`;
                 btn.onclick = () => {
-                    // 点击快捷标签：填充到编辑区
                     selectedLabel = tag.label || '';
                     selectedColor = tag.color || TAG_COLORS[0];
                     selectedEmoji = tag.emoji || '';
                     labelInput.value = selectedLabel;
-                    // 更新 emoji 选择器高亮
                     emojiPicker.querySelectorAll('.emoji-btn').forEach(b => {
                         b.classList.toggle('active', b.textContent === selectedEmoji);
                     });
-                    // 更新颜色选择器高亮
                     colorPicker.querySelectorAll('.color-btn').forEach(b => {
                         b.classList.toggle('active', b.style.backgroundColor === selectedColor);
                     });
+                    customColorInput.value = selectedColor;
                     updatePreview();
                 };
                 container.appendChild(btn);

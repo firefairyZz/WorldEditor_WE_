@@ -3,6 +3,8 @@ let wordCountTimer = null;
 let editorStats = { words: 0, chars: 0, headings: 0 };
 let markdownEditor = null;
 let markdownPreviewVisible = true;
+let isSaving = false;
+let pendingSave = false;
 
 // ====== 跳转链接 Blot ======
 // 继承 Quill 标准 Link，额外支持 data-jump 属性存储项目内跳转信息
@@ -69,12 +71,8 @@ Quill.register('formats/link', ProjectLinkBlot, true);
 
 function positionDialog(dialog) {
     const titleBar = document.getElementById('title-bar');
-    const notificationBar = document.getElementById('notification-bar');
-    const tabBar = document.getElementById('tab-bar');
     let topOffset = 0;
     if (titleBar) topOffset += titleBar.offsetHeight;
-    if (notificationBar) topOffset += notificationBar.offsetHeight;
-    if (tabBar) topOffset += tabBar.offsetHeight;
     dialog.style.top = topOffset + 'px';
 }
 
@@ -252,7 +250,7 @@ async function openProjectFile(safeId, filename) {
         });
 
         const exportBtn = toolbarEl.querySelector('.btn-export-md');
-        if (exportBtn) exportBtn.onclick = handleExportMarkdown;
+        if (exportBtn) exportBtn.onclick = () => showExportMenu(exportBtn);
         const tocBtn = toolbarEl.querySelector('.btn-toggle-toc');
         if (tocBtn) tocBtn.onclick = toggleTableOfContents;
         const jumpBtn = toolbarEl.querySelector('.btn-jump-link');
@@ -305,7 +303,16 @@ async function openProjectFile(safeId, filename) {
         }, true);
     }
 
-    quill.root.innerHTML = content;
+    quill.root.innerHTML = '';
+    // 检测内容类型：HTML 还是纯文本
+    const isHtml = /<[a-z][\s\S]*>/i.test(content);
+    if (isHtml) {
+        // HTML 内容：通过 Quill clipboard 解析为正确的 Delta blocks
+        quill.clipboard.dangerouslyPasteHTML(0, content, Quill.sources.SILENT);
+    } else {
+        // 纯文本：setText 会将 \n 正确转为独立的 block
+        quill.setText(content, Quill.sources.SILENT);
+    }
     if (savedFontFamily) quill.root.style.fontFamily = savedFontFamily;
     if (savedFontSize) quill.root.style.fontSize = savedFontSize + 'px';
 
@@ -337,7 +344,7 @@ function editorToolbar() {
     toolbar.innerHTML = `
         <span class="ql-formats">
             <select class="ql-header">
-                <option value="" selected>${t('ui.normal') || 'Normal'}</option>
+                <option value="false" selected>${t('ui.normal') || 'Normal'}</option>
                 <option value="1">${t('ui.heading1') || 'Heading 1'}</option>
                 <option value="2">${t('ui.heading2') || 'Heading 2'}</option>
                 <option value="3">${t('ui.heading3') || 'Heading 3'}</option>
@@ -366,7 +373,7 @@ function editorToolbar() {
             <button class="ql-image" title="${t('ui.image') || 'Image'}"></button>
         </span>
         <span class="editor-actions">
-            <button class="custom-btn btn-export-md" title="${t('ui.export_markdown') || 'Export as Markdown'}">
+            <button class="custom-btn btn-export-md" title="${t('ui.export') || 'Export'}">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 15h2l2-3 2 3h2v-5H6v5z"/></svg>
             </button>
             <button class="custom-btn btn-toggle-toc" title="${t('ui.toggle_toc') || 'Toggle TOC'}">
@@ -388,10 +395,138 @@ function editorToolbar() {
 }
 
 function handleExportMarkdown() {
-    if (!quill) return;
-    const delta = quill.getContents();
-    const markdown = deltaToMarkdown(delta);
+    const project = tabs[activeTabId];
+    let markdown;
+    if (project && project.projectMode === 'markdown') {
+        const textarea = document.querySelector('#md-textarea');
+        markdown = textarea ? textarea.value : '';
+    } else {
+        if (!quill) return;
+        const delta = quill.getContents();
+        markdown = deltaToMarkdown(delta);
+    }
     downloadText(markdown, getCurrentFileName() + '.md', 'text/markdown');
+}
+
+// 构建导出用的完整 HTML 文档（PDF / HTML 共用）
+function buildExportDocument() {
+    const project = tabs[activeTabId];
+    let bodyHtml = '';
+    if (project && project.projectMode === 'markdown') {
+        const textarea = document.querySelector('#md-textarea');
+        bodyHtml = textarea ? markdownToHtmlString(textarea.value) : '';
+    } else if (quill) {
+        bodyHtml = quill.root.innerHTML;
+    }
+    const title = escapeHtml(getCurrentFileName());
+    return `<!DOCTYPE html>
+<html lang="auto">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; max-width: 760px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.75; }
+h1 { font-size: 1.8em; border-bottom: 1px solid #eee; padding-bottom: 8px; line-height: 1.3; }
+h2 { font-size: 1.4em; line-height: 1.3; }
+h3 { font-size: 1.15em; line-height: 1.3; }
+p { margin: 12px 0; }
+img { max-width: 100%; height: auto; }
+pre { background: #f5f5f5; padding: 12px 14px; border-radius: 4px; overflow-x: auto; font-size: 13px; }
+code { background: #f5f5f5; padding: 2px 5px; border-radius: 3px; font-family: Consolas, 'Courier New', monospace; font-size: 0.92em; }
+pre code { background: none; padding: 0; }
+blockquote { border-left: 4px solid #ddd; margin: 12px 0; padding: 4px 16px; color: #555; }
+li { margin: 4px 0; }
+a { color: #0a84ff; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 6px 10px; }
+</style>
+</head>
+<body>${bodyHtml}</body>
+</html>`;
+}
+
+// 显示导出下拉菜单
+function showExportMenu(anchorEl) {
+    if (!anchorEl) return;
+    document.querySelectorAll('.export-menu').forEach(m => m.remove());
+
+    const menu = document.createElement('div');
+    menu.className = 'export-menu';
+    menu.innerHTML = `
+        <div class="export-menu-item" data-fmt="md"><span class="export-menu-fmt">Markdown</span><span class="export-menu-desc">.md</span></div>
+        <div class="export-menu-item" data-fmt="html"><span class="export-menu-fmt">HTML</span><span class="export-menu-desc">.html</span></div>
+        <div class="export-menu-item" data-fmt="pdf"><span class="export-menu-fmt">PDF</span><span class="export-menu-desc">.pdf</span></div>
+        <div class="export-menu-item" data-fmt="zip"><span class="export-menu-fmt">ZIP</span><span class="export-menu-desc">${escapeHtml(t('ui.export_zip_desc') || '项目打包')}</span></div>
+    `;
+    document.body.appendChild(menu);
+
+    const rect = anchorEl.getBoundingClientRect();
+    let left = rect.left;
+    const menuWidth = menu.offsetWidth;
+    if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+    menu.style.top = (rect.bottom + 4) + 'px';
+    menu.style.left = left + 'px';
+
+    menu.querySelectorAll('.export-menu-item').forEach(item => {
+        item.onclick = () => {
+            const fmt = item.dataset.fmt;
+            menu.remove();
+            document.removeEventListener('mousedown', outsideHandler);
+            handleExport(fmt);
+        };
+    });
+
+    const outsideHandler = (e) => {
+        if (!menu.contains(e.target) && e.target !== anchorEl) {
+            menu.remove();
+            document.removeEventListener('mousedown', outsideHandler);
+        }
+    };
+    setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0);
+}
+
+function handleExport(fmt) {
+    if (fmt === 'md') return handleExportMarkdown();
+    if (fmt === 'html') return handleExportHtml();
+    if (fmt === 'pdf') return handleExportPdf();
+    if (fmt === 'zip') return handleExportZip();
+}
+
+function handleExportHtml() {
+    const html = buildExportDocument();
+    downloadText(html, getCurrentFileName() + '.html', 'text/html');
+}
+
+async function handleExportPdf() {
+    const project = tabs[activeTabId];
+    if (!project) {
+        showNotification(t('ui.need_open_project') || '请先打开一个项目');
+        return;
+    }
+    const html = buildExportDocument();
+    showNotification(t('ui.exporting_pdf') || '正在导出 PDF...');
+    const result = await weAPI.exportPdf(html, getCurrentFileName());
+    if (result.success) {
+        showNotification(t('ui.export_success') || '导出成功');
+    } else if (!result.canceled) {
+        showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+    }
+}
+
+async function handleExportZip() {
+    const project = tabs[activeTabId];
+    if (!project || !project.projectPath) {
+        showNotification(t('ui.need_open_project') || '请先打开一个项目');
+        return;
+    }
+    const name = project.title || getCurrentFileName() || 'project';
+    const result = await weAPI.exportZip(project.projectPath, name);
+    if (result.success) {
+        showNotification(t('ui.export_success') || '导出成功');
+    } else if (!result.canceled) {
+        showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+    }
 }
 
 function toggleTableOfContents() {
@@ -437,7 +572,7 @@ async function showJumpLinkDialog(safeId) {
                     <label>${t('ui.select_file') || '选择文件'}</label>
                     <select id="target-file">
                         <option value="">-- ${t('ui.select_file') || '选择文件'} --</option>
-                        ${files.map(f => `<option value="${f}">${f}</option>`).join('')}
+                        ${files.map(f => `<option value="${f}">${stripExt(f.split('/').pop())}</option>`).join('')}
                     </select>
                     <label>${t('ui.select_heading') || '选择标题'}</label>
                     <select id="target-heading">
@@ -677,7 +812,7 @@ async function openMarkdownFile(safeId, filename) {
             </button>
         </span>
         <span class="editor-actions">
-            <button class="custom-btn btn-md-export" title="${t('ui.export_markdown') || 'Export as Markdown'}">
+            <button class="custom-btn btn-md-export" title="${t('ui.export') || 'Export'}">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 15h2l2-3 2 3h2v-5H6v5z"/></svg>
             </button>
             <button class="custom-btn btn-md-preview-toggle" title="${t('ui.toggle_preview') || 'Toggle Preview'}">
@@ -783,8 +918,8 @@ async function openMarkdownFile(safeId, filename) {
         });
     };
 
-    mdToolbar.querySelector('.btn-md-export').onclick = () => {
-        downloadText(textarea.value, filename + '.md', 'text/markdown');
+    mdToolbar.querySelector('.btn-md-export').onclick = (e) => {
+        showExportMenu(mdToolbar.querySelector('.btn-md-export'));
     };
 
     mdToolbar.querySelector('.btn-md-preview-toggle').onclick = () => {
@@ -862,7 +997,7 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
                     <label>${t('ui.select_file') || 'Select File'}</label>
                     <select id="target-file">
                         <option value="">-- ${t('ui.select_file') || 'Select File'} --</option>
-                        ${files.map(f => `<option value="${f}">${f}</option>`).join('')}
+                        ${files.map(f => `<option value="${f}">${stripExt(f.split('/').pop())}</option>`).join('')}
                     </select>
                     <label>${t('ui.select_heading') || 'Select Heading'}</label>
                     <select id="target-heading">
@@ -955,7 +1090,10 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
 
 function renderMarkdownPreview(text, previewEl) {
     if (!previewEl) return;
+    previewEl.innerHTML = markdownToHtmlString(text);
+}
 
+function markdownToHtmlString(text) {
     let html = text
         // 代码块（必须在最前处理，避免内部语法被重复替换）
         .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
@@ -991,8 +1129,7 @@ function renderMarkdownPreview(text, previewEl) {
         .replace(/\n\n/g, '</p><p>')
         // 换行
         .replace(/\n/g, '<br>');
-
-    previewEl.innerHTML = `<p>${html}</p>`;
+    return `<p>${html}</p>`;
 }
 
 function wrapMarkdownTextarea(textarea, before, after, customText) {
@@ -1171,7 +1308,8 @@ window.updateEditorStats = updateEditorStats;
 
 function getCurrentFileName() {
     const project = tabs[activeTabId];
-    return project?.currentFile || 'document';
+    const f = project?.currentFile || 'document';
+    return stripExt(f.split('/').pop());
 }
 
 function downloadText(text, filename, mimeType) {
@@ -1322,31 +1460,52 @@ function deltaToMarkdown(delta) {
 }
 
 async function saveCurrentFile(silent) {
+    if (isSaving) {
+        pendingSave = true;
+        return;
+    }
+
     const project = tabs[activeTabId];
     if (!project || !project.currentFile) return;
+
+    isSaving = true;
+    pendingSave = false;
 
     const projectMode = project.projectMode || 'rich';
     let content;
     if (projectMode === 'markdown') {
-        if (!markdownEditor) return;
+        if (!markdownEditor) { isSaving = false; return; }
         content = markdownEditor.value;
     } else {
-        if (!quill) return;
+        if (!quill) { isSaving = false; return; }
         content = quill.root.innerHTML;
     }
 
-    const res = await weAPI.saveFile(project.projectPath, project.currentFile, content);
-    if (res.success) {
-        project.dirty = false;
-        project.savedContent = content;
-        // 清除该文件的缓存（已保存到磁盘）
-        if (project.fileCache) {
-            delete project.fileCache[project.currentFile];
+    // 通知用户正在保存（持久显示，直到保存完成）
+    showNotification(t('ui.saving') || '正在保存...', 0);
+
+    try {
+        const res = await weAPI.saveFile(project.projectPath, project.currentFile, content);
+        if (res.success) {
+            project.dirty = false;
+            project.savedContent = content;
+            if (project.fileCache) {
+                delete project.fileCache[project.currentFile];
+            }
+            updateStatusBar();
+            showNotification(t('ui.saved') || '已保存');
+        } else {
+            showNotification((t('ui.save_failed') || '保存失败') + ': ' + res.error);
         }
-        updateStatusBar();
-        if (!silent) showNotification(t('ui.saved') || '已保存');
-    } else if (!silent) {
-        showNotification(t('ui.save_failed') + ': ' + res.error);
+    } catch (e) {
+        showNotification((t('ui.save_failed') || '保存失败') + ': ' + e.message);
+    } finally {
+        isSaving = false;
+        // 如果保存期间有新的保存请求，立即再执行一次
+        if (pendingSave) {
+            pendingSave = false;
+            saveCurrentFile(silent);
+        }
     }
 }
 

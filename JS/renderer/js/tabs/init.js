@@ -1,12 +1,14 @@
 // 全局通知
 let notificationTimer = null;
-function showNotification(message) {
+function showNotification(message, duration = 2000) {
     const bar = document.getElementById('notification-bar');
     if (!bar) return;
     bar.textContent = message;
     bar.classList.add('show');
     clearTimeout(notificationTimer);
-    notificationTimer = setTimeout(() => bar.classList.remove('show'), 2000);
+    if (duration > 0) {
+        notificationTimer = setTimeout(() => bar.classList.remove('show'), duration);
+    }
 }
 
 // 启动
@@ -18,6 +20,11 @@ window.onload = async () => {
     } else {
         currentTheme = settings.theme || 'dark';
         applyTheme(currentTheme);
+    }
+    // 应用背景材质（Mica/Acrylic/Tabbed）
+    const bgMaterial = settings.backgroundMaterial || 'none';
+    if (typeof applyBackgroundMaterial === 'function') {
+        applyBackgroundMaterial(bgMaterial, settings.materialTint ?? 78, settings.materialOverlay ?? 30, settings.materialBarTint ?? 100);
     }
     savedFontFamily = settings.fontFamily || 'Microsoft YaHei';
     savedFontSize = settings.fontSize || '16';

@@ -55,4 +55,8 @@ contextBridge.exposeInMainWorld('weAPI', {
     saveFileFromPath: (folder, filePath) => ipcRenderer.invoke('save-file-from-path', folder, filePath),
     getProjectStats: (folder) => ipcRenderer.invoke('get-project-stats', folder),
     setProjectMode: (folder, newMode) => ipcRenderer.invoke('set-project-mode', folder, newMode),
+
+    // 导出功能
+    exportPdf: (html, filename) => ipcRenderer.invoke('export-pdf', html, filename),
+    exportZip: (folder, filename) => ipcRenderer.invoke('export-zip', folder, filename),
 });

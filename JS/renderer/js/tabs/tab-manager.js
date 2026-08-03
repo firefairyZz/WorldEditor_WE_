@@ -10,15 +10,18 @@ document.getElementById('btn-maximize')?.addEventListener('click', () => weAPI.m
 document.getElementById('btn-close')?.addEventListener('click', () => weAPI.close());
 
 // ========== 置顶按钮 ==========
-const PIN_SVG_OUTLINE = '<svg class="pin-icon" viewBox="0 0 18 18" width="16" height="16"><g transform="rotate(40 9 7)"><line x1="5.5" y1="2.5" x2="12.5" y2="2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="7" y="2.3" width="4" height="6" fill="currentColor" rx="0.4"/><line x1="9" y1="8.3" x2="9" y2="16.5" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></g></svg>';
-const PIN_SVG_FILLED = '<svg class="pin-icon" viewBox="0 0 18 18" width="16" height="16"><line x1="5.5" y1="2.5" x2="12.5" y2="2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="7" y="2.3" width="4" height="6" fill="currentColor" rx="0.4"/><line x1="9" y1="8.3" x2="9" y2="16.5" stroke="currentColor" stroke-width="0.8" stroke-linecap="round"/></svg>';
+const PIN_SVG_SRC = '../resources/pin.svg';
+
+function setPinIcon(btn) {
+    btn.innerHTML = `<img class="pin-icon" src="${PIN_SVG_SRC}" alt="">`;
+}
 
 async function updatePinButton() {
     const btn = document.getElementById('btn-always-on-top');
     if (!btn) return;
     const isOnTop = await weAPI.isAlwaysOnTop();
     btn.classList.toggle('active', isOnTop);
-    btn.innerHTML = isOnTop ? PIN_SVG_FILLED : PIN_SVG_OUTLINE;
+    setPinIcon(btn);
     btn.title = t(isOnTop ? 'ui.always_on_top_off' : 'ui.always_on_top');
 }
 
@@ -28,7 +31,7 @@ document.getElementById('btn-always-on-top')?.addEventListener('click', async ()
     const newState = !isOnTop;
     await weAPI.setAlwaysOnTop(newState);
     btn.classList.toggle('active', newState);
-    btn.innerHTML = newState ? PIN_SVG_FILLED : PIN_SVG_OUTLINE;
+    setPinIcon(btn);
     btn.title = t(newState ? 'ui.always_on_top_off' : 'ui.always_on_top');
     showNotification(newState ? t('ui.always_on_top') : t('ui.always_on_top_off'));
     // 保存设置
@@ -49,7 +52,7 @@ window.addEventListener('settings:updated', (e) => {
         if (!btn) return;
         const isOnTop = e.detail.alwaysOnTop;
         btn.classList.toggle('active', isOnTop);
-        btn.innerHTML = isOnTop ? PIN_SVG_FILLED : PIN_SVG_OUTLINE;
+        setPinIcon(btn);
         btn.title = t(isOnTop ? 'ui.always_on_top_off' : 'ui.always_on_top');
     }
 });

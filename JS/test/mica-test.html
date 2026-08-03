@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Mica / Acrylic 测试</title>
+<style>
+:root {
+    --title-h: 36px;
+    --tab-h: 34px;
+    --radius: 6px;
+    /* 亮色主题默认值 */
+    --title-bg: #e8e8e8;
+    --tab-bg: #e8e8e8;
+    --text: #1f1f1f;
+    --text-secondary: #6b6b6b;
+    --accent: #0067c0;
+    --border: #d1d1d1;
+    --content-tint: rgba(255, 255, 255, 0.55); /* 内容区半透明叠加色 */
+}
+body.theme-dark {
+    --title-bg: #1f1f1f;
+    --tab-bg: #2a2a2a;
+    --text: #f0f0f0;
+    --text-secondary: #a0a0a0;
+    --accent: #4cc2ff;
+    --border: #3a3a3a;
+    --content-tint: rgba(32, 32, 32, 0.55);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    height: 100vh;
+    overflow: hidden;
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    /* 关键：body 背景透明，让窗口材质透过来 */
+    background: transparent;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+}
+
+/* 标题栏：实心背景，不模糊 */
+#title-bar {
+    height: var(--title-h);
+    background: var(--title-bg);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+}
+.title-text { font-size: 12px; padding-left: 8px; flex: 1; color: var(--text-secondary); }
+.win-controls { display: flex; -webkit-app-region: no-drag; }
+.win-btn {
+    width: 46px; height: var(--title-h);
+    border: none; background: transparent; color: var(--text);
+    cursor: pointer; font-size: 10px;
+    display: flex; align-items: center; justify-content: center;
+}
+.win-btn:hover { background: rgba(128,128,128,0.15); }
+.win-btn.close:hover { background: #e81123; color: white; }
+.win-btn img { width: 12px; height: 12px; filter: brightness(0) saturate(100%) invert(var(--icon-inv)); }
+body.theme-dark .win-btn img { filter: brightness(0) saturate(100%) invert(1); }
+
+/* 标签栏：实心背景 */
+#tab-bar {
+    height: var(--tab-h);
+    background: var(--tab-bg);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    gap: 4px;
+}
+.tab {
+    height: 26px; line-height: 26px; padding: 0 12px;
+    background: rgba(128,128,128,0.1); border-radius: 4px;
+    font-size: 12px; color: var(--text-secondary);
+    cursor: pointer;
+}
+.tab.active { background: var(--accent); color: white; }
+
+/* 主体：左侧控制面板 + 右侧内容区，中间分隔间隙实心 */
+#main {
+    flex: 1;
+    display: flex;
+    /* 间隙用 body 透明之外的实心色填充，避免材质透过间隙 */
+    gap: 5px;
+    padding: 5px;
+    /* 主体本身透明，让每个子区域各自决定是否半透明 */
+    background: transparent;
+    min-height: 0;
+}
+
+/* 控制面板：实心，测试控件 */
+#control-panel {
+    width: 260px;
+    background: var(--title-bg);
+    border-radius: var(--radius);
+    padding: 14px;
+    overflow-y: auto;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+}
+#control-panel h3 {
+    font-size: 12px; color: var(--text-secondary);
+    margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 6px;
+}
+#control-panel h3 img { width: 12px; height: 12px; filter: brightness(0) saturate(100%) invert(var(--icon-inv)); }
+body.theme-dark #control-panel h3 img { filter: brightness(0) saturate(100%) invert(1); }
+
+.ctrl-group { margin-bottom: 16px; }
+.ctrl-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: block; }
+.btn-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.btn {
+    flex: 1; min-width: 0;
+    padding: 6px 8px; font-size: 12px;
+    background: rgba(128,128,128,0.12); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: rgba(128,128,128,0.22); }
+.btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.btn-full { width: 100%; flex: none; padding: 8px; margin-top: 4px; }
+
+.slider-row { display: flex; align-items: center; gap: 8px; }
+.slider-row input[type="range"] { flex: 1; }
+.slider-val { font-size: 11px; color: var(--text-secondary); width: 36px; text-align: right; }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.toggle-row span { font-size: 12px; }
+.switch { position: relative; width: 36px; height: 18px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider-tg { position: absolute; inset: 0; background: var(--border); border-radius: 18px; cursor: pointer; transition: 0.2s; }
+.slider-tg::before { content: ''; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; background: white; border-radius: 50%; transition: 0.2s; }
+.switch input:checked + .slider-tg { background: var(--accent); }
+.switch input:checked + .slider-tg::before { transform: translateX(18px); }
+
+/* 内容区：半透明叠加，材质在此处显现 */
+#content {
+    flex: 1;
+    background: var(--content-tint);
+    border-radius: var(--radius);
+    padding: 20px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    min-width: 0;
+}
+#content h1 { font-size: 22px; margin-bottom: 8px; }
+#content h2 { font-size: 16px; margin: 16px 0 6px; color: var(--text-secondary); }
+#content p { font-size: 13px; line-height: 1.7; margin-bottom: 8px; }
+#content .note {
+    margin-top: 20px; padding: 10px 12px;
+    background: rgba(128,128,128,0.12); border-radius: 4px;
+    font-size: 12px; color: var(--text-secondary);
+    border-left: 3px solid var(--accent);
+}
+#content .icon-grid { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+#content .icon-grid .ic {
+    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+    background: rgba(128,128,128,0.12); border-radius: 6px;
+}
+#content .icon-grid .ic img { width: 18px; height: 18px; filter: brightness(0) saturate(100%) invert(var(--icon-inv)); }
+body.theme-dark #content .icon-grid .ic img { filter: brightness(0) saturate(100%) invert(1); }
+
+/* 亮色图标反色变量（默认亮色：图标黑色 -> invert 0） */
+:root { --icon-inv: 0; }
+body.theme-dark { --icon-inv: 1; }
+</style>
+</head>
+<body class="theme-dark">
+
+<header id="title-bar">
+    <div class="title-text">Mica / Acrylic 材质测试</div>
+    <div class="win-controls">
+        <button class="win-btn" id="btn-min"><img src="../../LUCIDE/lucide-static/icons/minus.svg"></button>
+        <button class="win-btn" id="btn-max"><img src="../../LUCIDE/lucide-static/icons/square.svg"></button>
+        <button class="win-btn close" id="btn-close"><img src="../../LUCIDE/lucide-static/icons/x.svg"></button>
+    </div>
+</header>
+
+<div id="tab-bar">
+    <div class="tab active">测试标签 1</div>
+    <div class="tab">测试标签 2</div>
+</div>
+
+<div id="main">
+    <!-- 控制面板 -->
+    <div id="control-panel">
+        <h3><img src="../../LUCIDE/lucide-static/icons/layers.svg"> 背景材质</h3>
+        <div class="ctrl-group">
+            <div class="btn-row" id="material-btns">
+                <button class="btn" data-m="none">无</button>
+                <button class="btn" data-m="auto">自动</button>
+                <button class="btn active" data-m="mica">Mica</button>
+                <button class="btn" data-m="acrylic">亚克力</button>
+                <button class="btn" data-m="tabbed">Tabbed</button>
+            </div>
+        </div>
+
+        <h3><img src="../../LUCIDE/lucide-static/icons/palette.svg"> 外观</h3>
+        <div class="ctrl-group">
+            <span class="ctrl-label">主题</span>
+            <div class="btn-row">
+                <button class="btn" id="theme-light">亮色</button>
+                <button class="btn active" id="theme-dark">暗色</button>
+            </div>
+        </div>
+
+        <div class="ctrl-group">
+            <span class="ctrl-label">内容区透明度</span>
+            <div class="slider-row">
+                <input type="range" id="tint-slider" min="0" max="100" value="45">
+                <span class="slider-val" id="tint-val">45%</span>
+            </div>
+        </div>
+
+        <div class="toggle-row">
+            <span>实心标题/标签栏</span>
+            <label class="switch"><input type="checkbox" id="solid-bars" checked><span class="slider-tg"></span></label>
+        </div>
+        <div class="toggle-row">
+            <span>透明窗口 (transparent)</span>
+            <label class="switch"><input type="checkbox" id="use-transparent"><span class="slider-tg"></span></label>
+        </div>
+        <div class="toggle-row">
+            <span>窗口置顶</span>
+            <label class="switch"><input type="checkbox" id="on-top"><span class="slider-tg"></span></label>
+        </div>
+
+        <button class="btn btn-full" id="btn-recreate">应用并重建窗口</button>
+
+        <div style="margin-top:14px;font-size:11px;color:var(--text-secondary);line-height:1.5;">
+            提示：切换材质/主题/透明度后，若效果异常可点击"重建窗口"。Mica 仅 Win11 支持。
+        </div>
+    </div>
+
+    <!-- 内容区 -->
+    <div id="content">
+        <h1>毛玻璃 / 石英材质测试</h1>
+        <p>此区域为半透明叠加层，背景材质（Mica/Acrylic）会透过这里显现。标题栏与标签栏保持实心，符合"模糊仅作用于内容区"的设计。</p>
+
+        <h2>图标显示测试（Lucide）</h2>
+        <div class="icon-grid">
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/layers.svg"></div>
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/palette.svg"></div>
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/sun.svg"></div>
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/moon.svg"></div>
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/check.svg"></div>
+            <div class="ic"><img src="../../LUCIDE/lucide-static/icons/x.svg"></div>
+        </div>
+
+        <h2>文字可读性</h2>
+        <p>在不同透明度下检查正文文字是否清晰。建议内容区透明度保持在 30%~60% 之间，既保留材质质感又确保可读性。</p>
+        <p>这是一段较长的测试文字，用于验证多行文本在毛玻璃背景上的渲染效果。Mica 材质会取桌面壁纸主色调进行柔和着色，亚克力则会真实模糊窗口后方内容。</p>
+
+        <div class="note">
+            <strong>Mica vs 亚克力区别：</strong><br>
+            • <strong>Mica</strong>：取桌面壁纸主色调做柔和着色，<u>不会模糊窗口后方的应用</u>。看起来像半透明纯色。<br>
+            • <strong>亚克力(Acrylic)</strong>：真正模糊窗口后方的内容（包括其他应用窗口）。<br>
+            • <strong>Tabbed</strong>：Mica 变体，用于带标签的窗口。<br><br>
+            若窗口"只透桌面"，说明 Mica 正常工作（它就是显示桌面色调）。若想看到模糊效果，请切到"亚克力"。<br>
+            若材质完全无效（窗口纯透明露出桌面），可能系统不支持 Win11 材质，请切到"无"恢复实心背景。
+        </div>
+    </div>
+</div>
+
+<script>
+// testAPI 由 preload 通过 contextBridge 暴露为全局变量，无需手动声明
+
+// 调试状态指示器：如果 testAPI 未定义会立即在页面顶部显示错误
+(function checkAPI() {
+    const bar = document.createElement('div');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:4px 10px;font-size:12px;text-align:center;';
+    if (typeof testAPI === 'undefined') {
+        bar.textContent = '错误：testAPI 未定义（preload 未加载），所有按钮将失效';
+        bar.style.background = '#e81123';
+        bar.style.color = '#fff';
+    } else {
+        bar.textContent = 'testAPI 已就绪 ✓';
+        bar.style.background = '#107c10';
+        bar.style.color = '#fff';
+        setTimeout(() => bar.remove(), 2500);
+    }
+    document.body.appendChild(bar);
+})();
+
+function safeCall(fn, name) {
+    try { fn(); }
+    catch (e) {
+        alert('操作失败 [' + name + ']: ' + e.message + '\n\ntestAPI 类型: ' + typeof testAPI);
+    }
+}
+
+// 窗口控制
+document.getElementById('btn-min').onclick = () => safeCall(() => testAPI.minimize(), 'minimize');
+document.getElementById('btn-max').onclick = () => safeCall(() => testAPI.maximize(), 'maximize');
+document.getElementById('btn-close').onclick = () => safeCall(() => testAPI.close(), 'close');
+
+// 材质切换（实时）
+const materialBtns = document.querySelectorAll('#material-btns .btn');
+materialBtns.forEach(btn => {
+    btn.onclick = () => safeCall(async () => {
+        const m = btn.dataset.m;
+        materialBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        await testAPI.setMaterial(m);
+    }, 'setMaterial');
+});
+
+// 主题切换
+const themeLight = document.getElementById('theme-light');
+const themeDark = document.getElementById('theme-dark');
+function applyTheme(theme) {
+    const isDark = theme === 'dark';
+    document.body.classList.toggle('theme-dark', isDark);
+    themeLight.classList.toggle('active', !isDark);
+    themeDark.classList.toggle('active', isDark);
+    // 同步到主进程，以便切换"无"材质时用正确的回退色
+    testAPI.setTheme(theme);
+    // 重新应用当前透明度/实心栏设置（因为 body 上的变量被主题切换重置了）
+    applyTint();
+    applySolidBars();
+}
+themeLight.onclick = () => applyTheme('light');
+themeDark.onclick = () => applyTheme('dark');
+
+// 内容区透明度
+const tintSlider = document.getElementById('tint-slider');
+const tintVal = document.getElementById('tint-val');
+function applyTint() {
+    const v = tintSlider.value;
+    tintVal.textContent = v + '%';
+    const alpha = v / 100;
+    const isDark = document.body.classList.contains('theme-dark');
+    const base = isDark ? '32,32,32' : '255,255,255';
+    // 必须设到 body 上，因为 :root 和 body.theme-dark 的变量优先级高于 html
+    document.body.style.setProperty('--content-tint', `rgba(${base},${alpha})`);
+}
+tintSlider.oninput = applyTint;
+
+// 实心标题/标签栏开关
+const solidBarsToggle = document.getElementById('solid-bars');
+function applySolidBars() {
+    const solid = solidBarsToggle.checked;
+    const isDark = document.body.classList.contains('theme-dark');
+    const titleBg = solid ? (isDark ? '#1f1f1f' : '#e8e8e8') : 'transparent';
+    // 设到 body 上覆盖 body.theme-dark 的变量
+    document.body.style.setProperty('--title-bg', titleBg);
+    document.body.style.setProperty('--tab-bg', titleBg);
+}
+solidBarsToggle.onchange = applySolidBars;
+
+// 窗口置顶
+document.getElementById('on-top').onchange = (e) => {
+    testAPI.toggleTop(e.target.checked);
+};
+
+// 透明窗口开关：切换后自动重建窗口
+document.getElementById('use-transparent').onchange = () => safeCall(async () => {
+    const transparent = document.getElementById('use-transparent').checked;
+    const material = document.querySelector('#material-btns .btn.active').dataset.m;
+    await testAPI.recreate({ material, transparent });
+}, 'recreate');
+
+// 手动重建窗口按钮（保留，用于材质变更后的强制重建）
+document.getElementById('btn-recreate').onclick = () => safeCall(async () => {
+    const transparent = document.getElementById('use-transparent').checked;
+    const material = document.querySelector('#material-btns .btn.active').dataset.m;
+    await testAPI.recreate({ material, transparent });
+}, 'recreate');
+
+// 初始化：读取主进程当前状态
+safeCall(async () => {
+    const s = await testAPI.getState();
+    materialBtns.forEach(b => b.classList.toggle('active', b.dataset.m === s.material));
+    document.getElementById('use-transparent').checked = s.transparent;
+    document.getElementById('on-top').checked = s.alwaysOnTop;
+    // 应用初始主题/透明度/实心栏
+    applyTheme(s.theme || 'dark');
+    applyTint();
+    applySolidBars();
+}, 'init');
+</script>
+</body>
+</html>
