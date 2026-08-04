@@ -209,7 +209,8 @@ const tagModule = {
         const el = document.createElement('span');
         el.className = 'tag-item';
         el.style.backgroundColor = tag.color;
-        el.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label}</span><span class="tag-remove">✕</span>`;
+        const emojiHtml = `<span class="tag-emoji">${tag.emoji || ''}</span>`;
+        el.innerHTML = `${emojiHtml}<span class="tag-label">${tag.label}</span><span class="tag-remove">✕</span>`;
 
         const removeBtn = el.querySelector('.tag-remove');
         removeBtn.onclick = async (e) => {
@@ -262,9 +263,11 @@ const tagModule = {
                     <label>${t('ui.tag_label') || 'Label'}</label>
                     <input type="text" id="tag-label-input" maxlength="10" placeholder="${t('ui.tag_label_placeholder') || 'Tag label'}" />
                 </div>
-                <div class="tag-row">
+                <div class="tag-row tag-icons-row">
                     <label>${t('ui.tag_emoji') || 'Emoji'}</label>
-                    <div class="emoji-picker"></div>
+                    <div class="tag-icons-container">
+                        <div class="emoji-picker"></div>
+                    </div>
                 </div>
                 <div class="tag-row">
                     <label>${t('ui.tag_color') || 'Color'}</label>
@@ -301,13 +304,18 @@ const tagModule = {
         labelInput.value = selectedLabel;
 
         const emojiPicker = overlay.querySelector('.emoji-picker');
+
+        const clearEmojiSelection = () => {
+            emojiPicker.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('active'));
+        };
+
         TAG_EMOJIS.forEach(emoji => {
             const btn = document.createElement('button');
             btn.className = 'emoji-btn' + (emoji === selectedEmoji ? ' active' : '');
             btn.textContent = emoji;
             btn.onclick = () => {
                 selectedEmoji = emoji;
-                emojiPicker.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('active'));
+                clearEmojiSelection();
                 btn.classList.add('active');
                 updatePreview();
             };
@@ -320,7 +328,7 @@ const tagModule = {
         noEmojiBtn.title = t('ui.no_emoji') || 'No emoji';
         noEmojiBtn.onclick = () => {
             selectedEmoji = '';
-            emojiPicker.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('active'));
+            clearEmojiSelection();
             noEmojiBtn.classList.add('active');
             updatePreview();
         };
@@ -350,7 +358,8 @@ const tagModule = {
         const previewItem = overlay.querySelector('#tag-preview-item');
         function updatePreview() {
             previewItem.style.backgroundColor = selectedColor;
-            previewItem.innerHTML = `<span class="tag-emoji">${selectedEmoji}</span><span class="tag-label">${selectedLabel}</span>`;
+            const emojiHtml = `<span class="tag-emoji">${selectedEmoji}</span>`;
+            previewItem.innerHTML = `${emojiHtml}<span class="tag-label">${selectedLabel}</span>`;
         }
         updatePreview();
 
@@ -372,15 +381,18 @@ const tagModule = {
                 const btn = document.createElement('span');
                 btn.className = 'tag-quick-item';
                 btn.style.backgroundColor = tag.color || TAG_COLORS[0];
-                btn.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label || ''}</span>`;
+                const emojiHtml = `<span class="tag-emoji">${tag.emoji || ''}</span>`;
+                btn.innerHTML = `${emojiHtml}<span class="tag-label">${tag.label || ''}</span>`;
                 btn.onclick = () => {
                     selectedLabel = tag.label || '';
                     selectedColor = tag.color || TAG_COLORS[0];
                     selectedEmoji = tag.emoji || '';
                     labelInput.value = selectedLabel;
-                    emojiPicker.querySelectorAll('.emoji-btn').forEach(b => {
-                        b.classList.toggle('active', b.textContent === selectedEmoji);
-                    });
+                    clearEmojiSelection();
+                    if (selectedEmoji) {
+                        const emojiBtn = Array.from(emojiPicker.querySelectorAll('.emoji-btn')).find(b => b.textContent === selectedEmoji);
+                        if (emojiBtn) emojiBtn.classList.add('active');
+                    }
                     colorPicker.querySelectorAll('.color-btn').forEach(b => {
                         b.classList.toggle('active', b.style.backgroundColor === selectedColor);
                     });

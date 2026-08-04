@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('weAPI', {
     addFolder: (folder, folderPath) => ipcRenderer.invoke('add-folder', folder, folderPath),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
+    togglePinProject: (folder) => ipcRenderer.invoke('toggle-pin-project', folder),
+    isProjectPinned: (folder) => ipcRenderer.invoke('is-project-pinned', folder),
     getVersion: () => ipcRenderer.invoke('get-version'),
     toggleDevTools: () => ipcRenderer.invoke('toggle-devtools'),
     getAccount: () => ipcRenderer.invoke('get-account'),
@@ -59,4 +61,12 @@ contextBridge.exposeInMainWorld('weAPI', {
     // 导出功能
     exportPdf: (html, filename) => ipcRenderer.invoke('export-pdf', html, filename),
     exportZip: (folder, filename) => ipcRenderer.invoke('export-zip', folder, filename),
+
+    // 背景图片
+    selectBackgroundImage: () => ipcRenderer.invoke('select-background-image'),
+    getBackgroundImage: (name) => ipcRenderer.invoke('get-background-image', name),
+    clearBackgroundImage: () => ipcRenderer.invoke('clear-background-image'),
+
+    // 检查更新
+    checkUpdate: () => ipcRenderer.invoke('check-update'),
 });

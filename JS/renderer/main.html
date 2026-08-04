@@ -4,22 +4,35 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;">
     <link rel="stylesheet" href="css/style.css">
-    <!-- 本地 Quill -->
+    <!-- 本地 Quill（defer：不阻塞首屏，执行顺序仍优先于依赖它的业务脚本） -->
     <link rel="stylesheet" href="lib/quill.snow.css">
-    <script src="lib/quill.js"></script>
+    <link rel="stylesheet" href="lib/katex.min.css">
+    <script src="lib/quill.js" defer></script>
+    <script src="lib/katex.min.js" defer></script>
     <title>WE - World Editor</title>
 </head>
 <body>
+    <!-- 背景图片层（最底层，由用户在设置中选择；遮罩层 #main 覆盖其上） -->
+    <div id="background-image-layer"></div>
     <!-- 三段式结构：title-bar / tab-bar / #main -->
     <header id="title-bar">
         <div class="title-left">
             <img id="title-icon" src="../resources/White.png" class="title-icon" />
             <div class="title-separator"></div>
             <button id="btn-file-menu" class="file-menu-btn">文件</button>
+            <button id="btn-edit-menu" class="file-menu-btn" data-i18n="ui.edit">编辑</button>
         </div>
         <div class="title-drag"></div>
+            <button id="btn-update-available" class="win-btn update-indicator-btn" style="display:none" title="">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+            </button>
+            <div class="title-separator" id="update-separator" style="display:none"></div>
             <button id="btn-account" class="win-btn account-btn" title="账户">
                 <span id="account-avatar" class="account-avatar">U</span>
+            </button>
+            <div class="title-separator"></div>
+            <button id="btn-command-palette" class="win-btn search-icon-btn" data-i18n-title="ui.command_palette" title="搜索命令和设置 (Ctrl P)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
             </button>
             <div class="title-separator"></div>
         <button id="btn-always-on-top" class="win-btn pin-btn" data-i18n-title="ui.always_on_top" data-i18n-title-active="ui.always_on_top_off" title="窗口置顶">
@@ -48,24 +61,26 @@
 
     <!-- 浮层（绝对定位，不参与布局） -->
     <div id="file-menu-popup" class="menu-popup"></div>
+    <div id="edit-menu-popup" class="menu-popup"></div>
 
-    <!-- 脚本加载顺序很重要 -->
-    <script src="js/tabs/globals.js"></script>
-    <script src="js/tabs/i18n.js"></script>
-    <script src="js/tabs/utils.js"></script>
-    <script src="js/tabs/tags.js"></script>
-    <script src="js/tabs/tab-manager.js"></script>
-    <script src="js/tabs/ui-refresh.js"></script>
-    <script src="js/tabs/welcome.js"></script>
-    <script src="js/tabs/project.js"></script>
-    <script src="js/tabs/filetree.js"></script>
-    <script src="js/tabs/editor.js"></script>
-    <script src="js/tabs/settings.js"></script>
-    <script src="js/tabs/shortcuts.js"></script>
-    <script src="js/tabs/tab-context-menu.js"></script>
-    <script src="js/tabs/file-drop.js"></script>
-    <script src="js/tabs/debug.js"></script>
-    <script src="js/tabs/account.js"></script>
-    <script src="js/tabs/init.js"></script>
+    <!-- 脚本加载顺序很重要（defer：不阻塞 HTML 解析，按顺序执行，DOMContentLoaded 前完成） -->
+    <script src="js/tabs/globals.js" defer></script>
+    <script src="js/tabs/i18n.js" defer></script>
+    <script src="js/tabs/utils.js" defer></script>
+    <script src="js/tabs/tags.js" defer></script>
+    <script src="js/tabs/tab-manager.js" defer></script>
+    <script src="js/tabs/ui-refresh.js" defer></script>
+    <script src="js/tabs/welcome.js" defer></script>
+    <script src="js/tabs/project.js" defer></script>
+    <script src="js/tabs/filetree.js" defer></script>
+    <script src="js/tabs/editor.js" defer></script>
+    <script src="js/tabs/settings.js" defer></script>
+    <script src="js/tabs/shortcuts.js" defer></script>
+    <script src="js/tabs/command-palette.js" defer></script>
+    <script src="js/tabs/tab-context-menu.js" defer></script>
+    <script src="js/tabs/file-drop.js" defer></script>
+    <script src="js/tabs/debug.js" defer></script>
+    <script src="js/tabs/account.js" defer></script>
+    <script src="js/tabs/init.js" defer></script>
 </body>
 </html>

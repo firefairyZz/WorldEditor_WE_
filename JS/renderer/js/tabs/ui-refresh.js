@@ -10,15 +10,12 @@ function refreshAllUITexts() {
         }
     });
     updateFileMenuTexts();
+    if (typeof updateEditMenuTexts === 'function') updateEditMenuTexts();
     if (tabs['welcome']) {
         const welcomePage = tabs['welcome'].element.querySelector('.welcome-new');
         if (welcomePage) {
-            welcomePage.querySelectorAll('.action-btn').forEach(btn => {
-                const icon = btn.querySelector('.action-icon').textContent;
-                const label = btn.querySelector('.action-label');
-                if (icon === '📂') label.textContent = t('ui.open_folder');
-                else if (icon === '📄') label.textContent = t('ui.new_project');
-                else if (icon === '✏️') label.textContent = t('ui.new_file');
+            welcomePage.querySelectorAll('.action-label[data-label-key]').forEach(label => {
+                label.textContent = t(label.dataset.labelKey);
             });
             const recentTitle = welcomePage.querySelector('.recent-title');
             if (recentTitle) recentTitle.textContent = t('ui.recent_projects');

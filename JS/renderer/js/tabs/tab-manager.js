@@ -2,6 +2,13 @@
 function updateMaximizeIcon(isMaximized) {
     const btn = document.getElementById('btn-maximize');
     btn.innerHTML = isMaximized ? '&#xE923;' : '&#xE922;';
+    if (isMaximized) {
+        document.body.classList.add('is-maximized');
+        document.documentElement.classList.add('is-maximized');
+    } else {
+        document.body.classList.remove('is-maximized');
+        document.documentElement.classList.remove('is-maximized');
+    }
 }
 window.weAPI.onMaximizedChanged(updateMaximizeIcon);
 
@@ -72,9 +79,18 @@ function updateFileMenuTexts() {
     if (fileBtn) fileBtn.textContent = t('ui.file');
     if (!menu) return;
     menu.innerHTML = `
-        <div class="menu-item" data-action="new">${t('ui.new_project')}</div>
-        <div class="menu-item" data-action="open">${t('ui.open_folder')}</div>
-        <div class="menu-item" data-action="save">${t('ui.save')}</div>
+        <div class="menu-item" data-action="new">
+            <span class="menu-label">${t('ui.new_project')}</span>
+            <span class="menu-shortcut">Ctrl + N</span>
+        </div>
+        <div class="menu-item" data-action="open">
+            <span class="menu-label">${t('ui.open_folder')}</span>
+            <span class="menu-shortcut">Ctrl + O</span>
+        </div>
+        <div class="menu-item" data-action="save">
+            <span class="menu-label">${t('ui.save')}</span>
+            <span class="menu-shortcut">Ctrl + S</span>
+        </div>
         <div class="menu-separator"></div>
         <div class="menu-item" data-action="switch-mode">${t('ui.switch_editor_mode') || '切换编辑器模式'}</div>
         <div class="menu-separator"></div>
@@ -105,8 +121,130 @@ if (fileMenuBtn) {
     fileMenuBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         fileMenuPopup?.classList.toggle('show');
+        editMenuPopup?.classList.remove('show');
     });
-    document.addEventListener('click', () => fileMenuPopup?.classList.remove('show'));
+    fileMenuPopup?.addEventListener('click', (e) => e.stopPropagation());
+}
+
+// ========== 编辑菜单 ==========
+let editMenuPopup;
+function updateEditMenuTexts() {
+    const btn = document.getElementById('btn-edit-menu');
+    if (btn) btn.textContent = t('ui.edit');
+    const menu = document.getElementById('edit-menu-popup');
+    if (!menu) return;
+    menu.innerHTML = `
+        <div class="menu-item" data-action="undo">
+            <span class="menu-label">${t('ui.undo') || '撤销'}</span>
+            <span class="menu-shortcut">Ctrl + Z</span>
+        </div>
+        <div class="menu-item" data-action="redo">
+            <span class="menu-label">${t('ui.redo') || '恢复'}</span>
+            <span class="menu-shortcut">Ctrl + Y</span>
+        </div>
+        <div class="menu-separator"></div>
+        <div class="menu-item" data-action="cut">
+            <span class="menu-label">${t('ui.cut') || '剪切'}</span>
+            <span class="menu-shortcut">Ctrl + X</span>
+        </div>
+        <div class="menu-item" data-action="copy">
+            <span class="menu-label">${t('ui.copy') || '复制'}</span>
+            <span class="menu-shortcut">Ctrl + C</span>
+        </div>
+        <div class="menu-item" data-action="paste">
+            <span class="menu-label">${t('ui.paste') || '粘贴'}</span>
+            <span class="menu-shortcut">Ctrl + V</span>
+        </div>
+        <div class="menu-separator"></div>
+        <div class="menu-item" data-action="find">
+            <span class="menu-label">${t('ui.find') || '查找'}</span>
+            <span class="menu-shortcut">Ctrl + F</span>
+        </div>
+        <div class="menu-item" data-action="replace">
+            <span class="menu-label">${t('ui.find_replace') || '替换'}</span>
+            <span class="menu-shortcut">Ctrl + H</span>
+        </div>
+    `;
+    menu.querySelectorAll('.menu-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const action = item.dataset.action;
+            handleEditAction(action);
+            menu.classList.remove('show');
+        });
+    });
+}
+
+function handleEditAction(action) {
+    // 获取当前活动的编辑器（Quill 或 Markdown）
+    const isMarkdown = markdownEditor && markdownEditor.offsetParent !== null;
+
+    if (action === 'undo' || action === 'redo') {
+        if (isMarkdown) {
+            // Markdown 模式：用 document.execCommand 作兜底
+            document.execCommand(action === 'undo' ? 'undo' : 'redo');
+        } else if (typeof quill !== 'undefined' && quill) {
+            if (action === 'undo') quill.undo();
+            else quill.redo();
+        }
+    } else if (action === 'cut') {
+        if (isMarkdown) {
+            document.execCommand('cut');
+        } else if (typeof quill !== 'undefined' && quill) {
+            const sel = quill.getSelection();
+            if (sel && sel.length > 0) {
+                const text = quill.getText(sel.index, sel.length);
+                navigator.clipboard?.writeText(text);
+                quill.deleteText(sel.index, sel.length);
+            }
+        }
+    } else if (action === 'copy') {
+        if (isMarkdown) {
+            document.execCommand('copy');
+        } else if (typeof quill !== 'undefined' && quill) {
+            const sel = quill.getSelection();
+            if (sel && sel.length > 0) {
+                const text = quill.getText(sel.index, sel.length);
+                navigator.clipboard?.writeText(text);
+            }
+        }
+    } else if (action === 'paste') {
+        if (isMarkdown) {
+            markdownEditor.focus();
+            document.execCommand('paste');
+        } else if (typeof quill !== 'undefined' && quill) {
+            if (navigator.clipboard?.readText) {
+                navigator.clipboard.readText().then(text => {
+                    const sel = quill.getSelection(true);
+                    if (sel) quill.insertText(sel.index, text);
+                });
+            }
+        }
+    } else if (action === 'find') {
+        if (findBar) findBar.show(false);
+    } else if (action === 'replace') {
+        if (findBar) findBar.show(true);
+    }
+}
+
+// 初始化编辑菜单
+const editMenuBtn = document.getElementById('btn-edit-menu');
+editMenuPopup = document.getElementById('edit-menu-popup');
+if (editMenuBtn) {
+    updateEditMenuTexts();
+    editMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const rect = editMenuBtn.getBoundingClientRect();
+        editMenuPopup.style.top = rect.bottom + 'px';
+        editMenuPopup.style.left = rect.left + 'px';
+        editMenuPopup.style.right = 'auto';
+        editMenuPopup?.classList.toggle('show');
+        fileMenuPopup?.classList.remove('show');
+    });
+    editMenuPopup?.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => {
+        editMenuPopup?.classList.remove('show');
+        fileMenuPopup?.classList.remove('show');
+    });
 }
 
 // 标签栏设置按钮

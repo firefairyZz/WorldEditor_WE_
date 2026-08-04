@@ -26,9 +26,28 @@ window.onload = async () => {
     if (typeof applyBackgroundMaterial === 'function') {
         applyBackgroundMaterial(bgMaterial, settings.materialTint ?? 78, settings.materialOverlay ?? 30, settings.materialBarTint ?? 100);
     }
+    // 应用背景遮罩透明度（独立于材质，始终生效，用于覆盖背景图片）
+    if (typeof applyOverlay === 'function') {
+        applyOverlay(settings.materialOverlay ?? 30);
+    }
+    // 应用背景图片
+    if (settings.backgroundImageEnabled && settings.backgroundImage) {
+        try {
+            const dataUrl = await weAPI.getBackgroundImage(settings.backgroundImage);
+            if (dataUrl && typeof applyBackgroundImage === 'function') {
+                applyBackgroundImage(dataUrl, settings.backgroundImageOpacity ?? 100);
+            }
+        } catch (e) {}
+    }
     savedFontFamily = settings.fontFamily || 'Microsoft YaHei';
     savedFontSize = settings.fontSize || '16';
     applyFontSettings(savedFontFamily, savedFontSize);
+    // 同步编辑器相关全局变量（启动时从设置读取）
+    if (typeof toolbarShow !== 'undefined') toolbarShow = settings.toolbarShow !== false;
+    if (typeof wordCountShow !== 'undefined') wordCountShow = settings.wordCount !== false;
+    if (typeof markdownRender !== 'undefined') markdownRender = settings.markdownRender !== false;
+    if (typeof smartBracketsEnabled !== 'undefined') smartBracketsEnabled = settings.smartBrackets === true;
+    if (typeof tabCloseConfirm !== 'undefined') tabCloseConfirm = settings.tabCloseConfirm !== false;
     if (settings.autoSave) setupAutoSave(settings.autoSave);
     await loadLanguage(settings.language || 'zh_CN');
     updateFileMenuTexts();
@@ -66,12 +85,25 @@ window.onload = async () => {
     
     createWelcomeTab();
     setupDragAndDrop();
-    
+
     // 初始化标签右键菜单
     setupTabContextMenu();
-    
+
     // 初始化文件拖放
     initFileDragDrop();
+
+    // 初始化标题栏更新指示器点击事件
+    if (typeof window.initUpdateIndicatorClick === 'function') {
+        window.initUpdateIndicatorClick();
+    }
+
+    // 获取 splash 阶段的更新检查结果
+    try {
+        const result = await weAPI.checkUpdate();
+        if (result.success && result.hasUpdate && typeof showUpdateIndicator === 'function') {
+            showUpdateIndicator(result);
+        }
+    } catch (e) {}
 };
 
 // 初始化状态栏
@@ -107,6 +139,18 @@ function initStatusBar() {
 }
 
 // 更新状态栏统计
+// 缓存状态栏 DOM 引用，避免每次 keystroke 都执行 querySelector 触发布局计算
+const _statusEls = {
+    words: null, chars: null, paragraphs: null, readingTime: null
+};
+function _getStatusEl(key) {
+    let el = _statusEls[key];
+    if (el && el.isConnected) return el;
+    const id = { words: '#status-words', chars: '#status-chars', paragraphs: '#status-paragraphs', readingTime: '#status-reading-time' }[key];
+    el = id ? document.querySelector(id + ' .status-value') : null;
+    _statusEls[key] = el;
+    return el;
+}
 function updateStatusBarStats() {
     // Markdown 模式下使用 markdownEditor
     if (markdownEditor) {
@@ -123,10 +167,10 @@ function updateStatusBarStats() {
         const paragraphs = cleanText.split(/\n\n/).filter(p => p.trim()).length;
         const readingTime = Math.max(1, Math.ceil(words / 200));
 
-        const wordsEl = document.querySelector('#status-words .status-value');
-        const charsEl = document.querySelector('#status-chars .status-value');
-        const paragraphsEl = document.querySelector('#status-paragraphs .status-value');
-        const readingTimeEl = document.querySelector('#status-reading-time .status-value');
+        const wordsEl = _getStatusEl('words');
+        const charsEl = _getStatusEl('chars');
+        const paragraphsEl = _getStatusEl('paragraphs');
+        const readingTimeEl = _getStatusEl('readingTime');
         if (wordsEl) wordsEl.textContent = words;
         if (charsEl) charsEl.textContent = chars;
         if (paragraphsEl) paragraphsEl.textContent = paragraphs;
@@ -142,10 +186,10 @@ function updateStatusBarStats() {
     const paragraphs = text.split('\n\n').filter(p => p.trim()).length;
     const readingTime = Math.max(1, Math.ceil(words / 200));
 
-    const wordsEl = document.querySelector('#status-words .status-value');
-    const charsEl = document.querySelector('#status-chars .status-value');
-    const paragraphsEl = document.querySelector('#status-paragraphs .status-value');
-    const readingTimeEl = document.querySelector('#status-reading-time .status-value');
+    const wordsEl = _getStatusEl('words');
+    const charsEl = _getStatusEl('chars');
+    const paragraphsEl = _getStatusEl('paragraphs');
+    const readingTimeEl = _getStatusEl('readingTime');
 
     if (wordsEl) wordsEl.textContent = words;
     if (charsEl) charsEl.textContent = chars;

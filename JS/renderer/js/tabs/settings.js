@@ -141,7 +141,8 @@ function inline(text) {
 // 可配置的快捷键列表（排除 goto-tab-2~9，它们跟随 goto-tab-1）
 const CONFIGURABLE_SHORTCUTS = [
     'toggle-help', 'toggle-help-alt', 'save', 'new-file', 'open-project',
-    'close-tab', 'next-tab', 'prev-tab', 'goto-tab-1'
+    'close-tab', 'next-tab', 'prev-tab', 'goto-tab-1', 'find', 'replace',
+    'select-all', 'batch-tag'
 ];
 
 // 构建快捷键设置 HTML
@@ -358,6 +359,20 @@ function refreshSettingsI18n() {
             if (options[2]) options[2].textContent = `10 ${minLabel}`;
             if (options[3]) options[3].textContent = `15 ${minLabel}`;
         }
+
+        // 检查更新区域
+        const updateGroupTitle = generalSection.querySelector('#update-check-group .setting-group-title');
+        if (updateGroupTitle) { const v = t('ui.update_check'); if (v) updateGroupTitle.textContent = v; }
+        const updateBtn = generalSection.querySelector('#btn-check-update');
+        if (updateBtn) {
+            const span = updateBtn.querySelector('span');
+            if (span) { const v = t('ui.check_now'); if (v) span.textContent = v; }
+        }
+        const updateStatus = generalSection.querySelector('#update-check-status');
+        if (updateStatus && !updateStatus.dataset.checked) {
+            const v = t('ui.update_check_idle');
+            if (v) updateStatus.textContent = v;
+        }
     }
 
     // Account section
@@ -473,6 +488,10 @@ function refreshSettingsI18n() {
             const span = rows[4].querySelector('span');
             if (span) { const v = t('ui.markdown_render'); if (v) span.textContent = v; }
         }
+        if (rows[5]) {
+            const span = rows[5].querySelector('span');
+            if (span) { const v = t('ui.smart_brackets'); if (v) span.textContent = v; }
+        }
     }
 
     // Shortcuts section - rebuild from builder
@@ -566,6 +585,18 @@ function createSettingsTab() {
             <span>${t('ui.always_on_top') || '窗口置顶'}</span>
             <label class="toggle-switch"><input type="checkbox" id="always-on-top-toggle"><span class="toggle-slider"></span></label>
         </div>
+        <div class="setting-group" id="update-check-group">
+            <div class="setting-group-title">${t('ui.update_check') || '检查更新'}</div>
+            <div class="update-check-dev-hint" id="update-check-dev-hint" style="display:none"></div>
+            <div class="setting-row update-check-row">
+                <span id="update-check-status">${t('ui.update_check_idle') || '点击检查是否有新版本'}</span>
+                <button id="btn-check-update" class="btn-check-update">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                    <span>${t('ui.check_now') || '立即检查'}</span>
+                </button>
+            </div>
+            <div class="update-check-detail" id="update-check-detail" style="display:none"></div>
+        </div>
     `;
 
     // 标签设置区域
@@ -582,10 +613,15 @@ function createSettingsTab() {
                 <div class="pinned-tags-add-row">
                     <input type="text" id="pinned-tag-label" maxlength="10" placeholder="${t('ui.tag_label_placeholder') || '标签名称'}" />
                     <input type="color" id="pinned-tag-color" value="#ff6b6b" />
-                    <select id="pinned-tag-emoji">
-                        <option value="">${t('ui.no_emoji') || '无'}</option>
-                        ${TAG_EMOJIS.map(e => `<option value="${e}">${e}</option>`).join('')}
-                    </select>
+                    <div class="emoji-picker-wrapper">
+                        <button type="button" id="pinned-tag-emoji-trigger" class="emoji-trigger-btn" title="${t('ui.tag_emoji') || 'Emoji'}">
+                            <span class="emoji-trigger-icon" id="pinned-tag-emoji-display">${t('ui.no_emoji') || '无'}</span>
+                        </button>
+                        <div class="emoji-popup" id="pinned-tag-emoji-popup" style="display:none;">
+                            <div class="popup-section-label">${t('ui.tag_emoji') || 'Emoji'}</div>
+                            <div class="popup-emoji-list"></div>
+                        </div>
+                    </div>
                     <button id="btn-add-pinned-tag">${t('ui.add') || '添加'}</button>
                 </div>
             </div>
@@ -720,7 +756,7 @@ function createSettingsTab() {
                 </div>
             </div>
             <div class="setting-row" id="bg-overlay-row">
-                <span>${t('ui.bg_overlay') || '遮罩透明度'}</span>
+                <span>${t('ui.bg_overlay') || '背景遮罩透明度'}</span>
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="bg-overlay-slider" min="0" max="100" value="30" style="width:120px">
                     <span id="bg-overlay-val" style="min-width:36px;text-align:right">30%</span>
@@ -731,6 +767,28 @@ function createSettingsTab() {
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="bg-bar-tint-slider" min="0" max="100" value="100" style="width:120px">
                     <span id="bg-bar-tint-val" style="min-width:36px;text-align:right">100%</span>
+                </div>
+            </div>
+        </div>
+        <div class="setting-group" id="bg-image-group">
+            <div class="setting-group-title">${t('ui.background_image') || '背景图片'}</div>
+            <div class="setting-row">
+                <span>${t('ui.show_background_image') || '显示背景图片'}</span>
+                <label class="toggle-switch"><input type="checkbox" id="bg-image-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="setting-row" id="bg-image-file-row">
+                <span>${t('ui.bg_image_file') || '图片'}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <button type="button" id="btn-select-bg-image" style="padding:4px 12px;border:1px solid var(--border);background:var(--hover-bg);color:var(--text);border-radius:4px;cursor:pointer;font-size:12px">${t('ui.select_image') || '选择图片'}</button>
+                    <span id="bg-image-name" style="font-size:12px;color:var(--text-secondary);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t('ui.no_image_selected') || '未选择'}</span>
+                    <button type="button" id="btn-clear-bg-image" style="padding:4px 8px;border:1px solid var(--border);background:var(--hover-bg);color:var(--text);border-radius:4px;cursor:pointer;font-size:12px;display:none">${t('ui.clear') || '清除'}</button>
+                </div>
+            </div>
+            <div class="setting-row" id="bg-image-opacity-row">
+                <span>${t('ui.bg_image_opacity') || '图片透明度'}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input type="range" id="bg-image-opacity-slider" min="0" max="100" value="100" style="width:120px">
+                    <span id="bg-image-opacity-val" style="min-width:36px;text-align:right">100%</span>
                 </div>
             </div>
         </div>
@@ -780,6 +838,10 @@ function createSettingsTab() {
                 <span>${t('ui.markdown_render') || '启用 Markdown 渲染'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="md-render-toggle" checked><span class="toggle-slider"></span></label>
             </div>
+            <div class="setting-row">
+                <span>${t('ui.smart_brackets') || '智能括号/引号补全'}</span>
+                <label class="toggle-switch"><input type="checkbox" id="smart-brackets-toggle"><span class="toggle-slider"></span></label>
+            </div>
         </div>
     `;
 
@@ -796,6 +858,10 @@ function createSettingsTab() {
                     <a href="https://github.com/firefairyZz" class="about-link" data-external="true">
                         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38C13.71 14.53 16 11.53 16 8c0-4.42-3.58-8-8-8z"/></svg>
                         <span>firefairyZz</span>
+                    </a>
+                    <a href="https://github.com/firefairyZz/WorldEditor_WE_" class="about-link" data-external="true">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></svg>
+                        <span>${t('ui.open_source_repo') || '开放源代码库'}</span>
                     </a>
                 </div>
             </div>
@@ -814,6 +880,12 @@ function createSettingsTab() {
                 </aside>
                 <div class="update-notes-content" id="update-notes-container"></div>
             </div>
+        </div>
+        <div class="oss-licenses-section">
+            <div class="oss-licenses-header">
+                <h4>${t('ui.oss_licenses') || '开放源代码库'}</h4>
+            </div>
+            <div class="oss-licenses-body" id="oss-licenses-list"></div>
         </div>
     `;
 
@@ -899,7 +971,7 @@ function createSettingsTab() {
             footer.style.display = section === 'about' ? 'none' : 'flex';
             // 删除账户按钮仅在账户分区显示
             deleteAccountBtn.style.display = section === 'account' ? '' : 'none';
-            if (section === 'about') loadUpdateNotes();
+            if (section === 'about') { loadUpdateNotes(); loadOssLicenses(); }
         });
     });
 
@@ -932,9 +1004,31 @@ function createSettingsTab() {
         const bgTint = content.querySelector('#bg-tint-slider'); if (bgTint) { bgTint.value = s.materialTint ?? 78; content.querySelector('#bg-tint-val').textContent = bgTint.value + '%'; }
         const bgOverlay = content.querySelector('#bg-overlay-slider'); if (bgOverlay) { bgOverlay.value = s.materialOverlay ?? 30; content.querySelector('#bg-overlay-val').textContent = bgOverlay.value + '%'; }
         const bgBarTint = content.querySelector('#bg-bar-tint-slider'); if (bgBarTint) { bgBarTint.value = s.materialBarTint ?? 100; content.querySelector('#bg-bar-tint-val').textContent = bgBarTint.value + '%'; }
+        // 背景图片
+        const bgImgToggle = content.querySelector('#bg-image-toggle'); if (bgImgToggle) bgImgToggle.checked = s.backgroundImageEnabled === true;
+        const bgImgOpacity = content.querySelector('#bg-image-opacity-slider');
+        if (bgImgOpacity) {
+            bgImgOpacity.value = s.backgroundImageOpacity ?? 100;
+            content.querySelector('#bg-image-opacity-val').textContent = bgImgOpacity.value + '%';
+        }
+        const bgImgName = content.querySelector('#bg-image-name');
+        const bgImgClearBtn = content.querySelector('#btn-clear-bg-image');
+        if (bgImgName) {
+            bgImgName.textContent = s.backgroundImage || (t('ui.no_image_selected') || '未选择');
+            if (s.backgroundImage) bgImgName.dataset.path = s.backgroundImage;
+            if (bgImgClearBtn) bgImgClearBtn.style.display = s.backgroundImage ? '' : 'none';
+        }
+        updateBgImageRowsState(s.backgroundImageEnabled === true);
+        // 启动时应用背景图片
+        if (s.backgroundImageEnabled && s.backgroundImage) {
+            weAPI.getBackgroundImage(s.backgroundImage).then(dataUrl => {
+                if (dataUrl) applyBackgroundImage(dataUrl, s.backgroundImageOpacity ?? 100);
+            });
+        }
         const wc = content.querySelector('#word-count-toggle'); if (wc) wc.checked = s.wordCount !== false;
         const tb = content.querySelector('#toolbar-show-toggle'); if (tb) tb.checked = s.toolbarShow !== false;
         const md = content.querySelector('#md-render-toggle'); if (md) md.checked = s.markdownRender !== false;
+        const sb = content.querySelector('#smart-brackets-toggle'); if (sb) sb.checked = s.smartBrackets === true;
         savedFontFamily = s.fontFamily || 'Microsoft YaHei';
         savedFontSize = s.fontSize || '16';
         if (s.autoSave) setupAutoSave(s.autoSave);
@@ -952,7 +1046,8 @@ function createSettingsTab() {
                 const el = document.createElement('span');
                 el.className = 'tag-quick-item';
                 el.style.backgroundColor = tag.color || TAG_COLORS[0];
-                el.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label || ''}</span><span class="tag-remove">✕</span>`;
+                const emojiHtml = `<span class="tag-emoji">${tag.emoji || ''}</span>`;
+                el.innerHTML = `${emojiHtml}<span class="tag-label">${tag.label || ''}</span><span class="tag-remove">✕</span>`;
                 el.querySelector('.tag-remove').onclick = async () => {
                     tagModule.pinnedTags.splice(idx, 1);
                     await tagModule.savePinnedTags();
@@ -963,16 +1058,86 @@ function createSettingsTab() {
         }
         renderPinnedTags();
 
+        // 表情弹窗
+        const emojiTrigger = content.querySelector('#pinned-tag-emoji-trigger');
+        const emojiPopup = content.querySelector('#pinned-tag-emoji-popup');
+        const emojiDisplay = content.querySelector('#pinned-tag-emoji-display');
+        const emojiList = content.querySelector('.popup-emoji-list');
+        let pickedEmoji = '';
+
+        const renderEmojiPopup = () => {
+            emojiList.innerHTML = '';
+            TAG_EMOJIS.forEach(e => {
+                const btn = document.createElement('button');
+                btn.className = 'popup-emoji-btn' + (e === pickedEmoji ? ' active' : '');
+                btn.textContent = e;
+                btn.onclick = () => {
+                    pickedEmoji = e;
+                    emojiDisplay.textContent = e;
+                    renderEmojiPopup();
+                };
+                emojiList.appendChild(btn);
+            });
+            const noneBtn = document.createElement('button');
+            noneBtn.className = 'popup-emoji-btn' + (!pickedEmoji ? ' active' : '');
+            noneBtn.textContent = '∅';
+            noneBtn.title = t('ui.no_emoji') || '无';
+            noneBtn.onclick = () => {
+                pickedEmoji = '';
+                emojiDisplay.textContent = t('ui.no_emoji') || '无';
+                renderEmojiPopup();
+            };
+            emojiList.appendChild(noneBtn);
+        };
+
+        emojiTrigger.onclick = (e) => {
+            e.stopPropagation();
+            const willShow = emojiPopup.style.display === 'none';
+            if (willShow) {
+                emojiPopup.style.display = 'block';
+                renderEmojiPopup();
+                const rect = emojiTrigger.getBoundingClientRect();
+                const popupRect = emojiPopup.getBoundingClientRect();
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                let top = rect.bottom + 4;
+                let left = rect.left;
+                if (top + popupRect.height > vh) {
+                    top = rect.top - popupRect.height - 4;
+                }
+                if (top < 0) top = 4;
+                if (left + popupRect.width > vw) {
+                    left = Math.max(4, vw - popupRect.width - 4);
+                }
+                if (left < 4) left = 4;
+                emojiPopup.style.top = top + 'px';
+                emojiPopup.style.left = left + 'px';
+                emojiPopup.style.right = 'auto';
+            } else {
+                emojiPopup.style.display = 'none';
+            }
+        };
+        emojiPopup.onclick = (e) => e.stopPropagation();
+        const closeEmojiPopup = () => { emojiPopup.style.display = 'none'; };
+        document.addEventListener('click', closeEmojiPopup);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && emojiPopup.style.display !== 'none') {
+                closeEmojiPopup();
+            }
+        });
+
         const addPinnedBtn = content.querySelector('#btn-add-pinned-tag');
         if (addPinnedBtn) {
             addPinnedBtn.onclick = async () => {
                 const label = content.querySelector('#pinned-tag-label').value.trim();
                 if (!label) { showNotification(t('ui.enter_tag_label') || '请输入标签名称'); return; }
                 const color = content.querySelector('#pinned-tag-color').value;
-                const emoji = content.querySelector('#pinned-tag-emoji').value;
-                tagModule.pinnedTags.push({ label, color, emoji });
+                tagModule.pinnedTags.push({ label, color, emoji: pickedEmoji });
                 await tagModule.savePinnedTags();
                 content.querySelector('#pinned-tag-label').value = '';
+                pickedEmoji = '';
+                emojiDisplay.textContent = t('ui.no_emoji') || '无';
+                emojiPopup.style.display = 'none';
                 renderPinnedTags();
             };
         }
@@ -1025,10 +1190,7 @@ function createSettingsTab() {
     if (bgOverlaySlider) {
         bgOverlaySlider.addEventListener('input', () => {
             bgOverlayVal.textContent = bgOverlaySlider.value + '%';
-            const bgm = content.querySelector('#bg-material-select')?.value || 'none';
-            if (bgm !== 'none') {
-                applyOverlay(parseInt(bgOverlaySlider.value));
-            }
+            applyOverlay(parseInt(bgOverlaySlider.value));
         });
     }
     if (bgBarTintSlider) {
@@ -1041,13 +1203,12 @@ function createSettingsTab() {
         });
     }
     const bgMaterialSelect = content.querySelector('#bg-material-select');
-    // 灰化/启用材质相关设置项
+    // 灰化/启用材质相关设置项（遮罩透明度独立于材质，始终可用）
     function updateMaterialRowsState(bgm) {
         const disabled = bgm === 'none';
         const tintRow = content.querySelector('#bg-tint-row');
-        const overlayRow = content.querySelector('#bg-overlay-row');
         const barTintRow = content.querySelector('#bg-bar-tint-row');
-        for (const row of [tintRow, overlayRow, barTintRow]) {
+        for (const row of [tintRow, barTintRow]) {
             if (row) {
                 row.style.opacity = disabled ? '0.4' : '';
                 row.style.pointerEvents = disabled ? 'none' : '';
@@ -1066,6 +1227,79 @@ function createSettingsTab() {
             updateMaterialRowsState(bgm);
         });
         updateMaterialRowsState(bgMaterialSelect.value);
+    }
+    // 背景图片：灰化/启用相关行
+    function updateBgImageRowsState(enabled) {
+        const fileRow = content.querySelector('#bg-image-file-row');
+        const opacityRow = content.querySelector('#bg-image-opacity-row');
+        for (const row of [fileRow, opacityRow]) {
+            if (row) {
+                row.style.opacity = enabled ? '' : '0.4';
+                row.style.pointerEvents = enabled ? '' : 'none';
+            }
+        }
+    }
+    const bgImgToggleEl = content.querySelector('#bg-image-toggle');
+    if (bgImgToggleEl) {
+        bgImgToggleEl.addEventListener('change', async () => {
+            const enabled = bgImgToggleEl.checked;
+            updateBgImageRowsState(enabled);
+            if (enabled) {
+                const name = bgImgNameEl?.dataset?.path || '';
+                const opacity = parseInt(content.querySelector('#bg-image-opacity-slider')?.value || '100');
+                if (name) {
+                    const dataUrl = await weAPI.getBackgroundImage(name);
+                    if (dataUrl) applyBackgroundImage(dataUrl, opacity);
+                }
+            } else {
+                applyBackgroundImage(null, 0);
+            }
+        });
+    }
+    const bgImgOpacitySlider = content.querySelector('#bg-image-opacity-slider');
+    const bgImgOpacityVal = content.querySelector('#bg-image-opacity-val');
+    if (bgImgOpacitySlider) {
+        bgImgOpacitySlider.addEventListener('input', () => {
+            const v = parseInt(bgImgOpacitySlider.value);
+            bgImgOpacityVal.textContent = v + '%';
+            const layer = document.getElementById('background-image-layer');
+            if (layer && layer.style.display !== 'none') {
+                layer.style.opacity = v / 100;
+            }
+        });
+    }
+    const selectBgImgBtn = content.querySelector('#btn-select-bg-image');
+    const bgImgNameEl = content.querySelector('#bg-image-name');
+    const bgImgClearBtnEl = content.querySelector('#btn-clear-bg-image');
+    if (selectBgImgBtn) {
+        selectBgImgBtn.onclick = async () => {
+            const name = await weAPI.selectBackgroundImage();
+            if (!name) return;
+            if (bgImgNameEl) {
+                bgImgNameEl.textContent = name;
+                bgImgNameEl.dataset.path = name;
+            }
+            if (bgImgClearBtnEl) bgImgClearBtnEl.style.display = '';
+            // 自动开启开关
+            if (bgImgToggleEl && !bgImgToggleEl.checked) {
+                bgImgToggleEl.checked = true;
+                updateBgImageRowsState(true);
+            }
+            const opacity = parseInt(bgImgOpacitySlider?.value || '100');
+            const dataUrl = await weAPI.getBackgroundImage(name);
+            if (dataUrl) applyBackgroundImage(dataUrl, opacity);
+        };
+    }
+    if (bgImgClearBtnEl) {
+        bgImgClearBtnEl.onclick = async () => {
+            await weAPI.clearBackgroundImage();
+            if (bgImgNameEl) {
+                bgImgNameEl.textContent = t('ui.no_image_selected') || '未选择';
+                delete bgImgNameEl.dataset.path;
+            }
+            bgImgClearBtnEl.style.display = 'none';
+            applyBackgroundImage(null, 0);
+        };
     }
     // 重置颜色按钮
     const resetBtn = content.querySelector('#btn-reset-colors');
@@ -1265,9 +1499,14 @@ function createSettingsTab() {
         const bgTintVal = parseInt(content.querySelector('#bg-tint-slider')?.value ?? '78');
         const bgOverlayVal = parseInt(content.querySelector('#bg-overlay-slider')?.value ?? '30');
         const bgBarTintVal = parseInt(content.querySelector('#bg-bar-tint-slider')?.value ?? '100');
+        // 背景图片
+        const bgImgEnabledVal = content.querySelector('#bg-image-toggle')?.checked ?? false;
+        const bgImgOpacityVal = parseInt(content.querySelector('#bg-image-opacity-slider')?.value ?? '100');
+        const bgImgNameVal = content.querySelector('#bg-image-name')?.dataset?.path || '';
         const wcVal = content.querySelector('#word-count-toggle')?.checked ?? true;
         const tbVal = content.querySelector('#toolbar-show-toggle')?.checked ?? true;
         const mdVal = content.querySelector('#md-render-toggle')?.checked ?? true;
+        const sbVal = content.querySelector('#smart-brackets-toggle')?.checked ?? false;
 
         // 收集自定义快捷键
         const customShortcuts = collectCustomShortcuts(content);
@@ -1281,7 +1520,8 @@ function createSettingsTab() {
             colorPreset: colorPreset, customColors: customColors,
             fontFamily: fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal,
+            backgroundImageEnabled: bgImgEnabledVal, backgroundImage: bgImgNameVal, backgroundImageOpacity: bgImgOpacityVal,
             customShortcuts: customShortcuts
         });
 
@@ -1320,6 +1560,7 @@ function createSettingsTab() {
         toolbarShow = tbVal;
         wordCountShow = wcVal;
         markdownRender = mdVal;
+        smartBracketsEnabled = sbVal;
         tabCloseConfirm = tcVal;
         // Apply live effects
         applyToolbarVisibility(tbVal);
@@ -1330,6 +1571,8 @@ function createSettingsTab() {
         // 应用背景材质（必须在 applyTheme/applyColorPreset 之后，否则背景色会被覆盖）
         await weAPI.setBackgroundMaterial(bgmVal);
         applyBackgroundMaterial(bgmVal, bgTintVal, bgBarTintVal);
+        // 应用背景遮罩透明度（独立于材质，始终生效）
+        applyOverlay(bgOverlayVal);
 
         // 保存账户变更
         if (accountChanged && tempAccountName) {
@@ -1365,6 +1608,86 @@ function createSettingsTab() {
 
     // 绑定快捷键捕获事件
     bindShortcutCapture(content);
+
+    // 检查更新
+    const checkUpdateBtn = content.querySelector('#btn-check-update');
+    const updateStatusEl = content.querySelector('#update-check-status');
+    const updateDetailEl = content.querySelector('#update-check-detail');
+    const updateDevHintEl = content.querySelector('#update-check-dev-hint');
+
+    // 渲染源码环境提示
+    function renderDevHint(isDev) {
+        if (!updateDevHintEl) return;
+        if (isDev) {
+            const hint = t('ui.update_dev_hint') || '当前为源码环境，请通过 git pull 更新代码';
+            const repoUrl = t('ui.update_dev_repo') || '仓库地址';
+            updateDevHintEl.innerHTML = `<div class="dev-hint-content">${hint}<br><a href="#" class="update-release-link" data-url="https://github.com/${'firefairyZz/WorldEditor_WE_'}">${repoUrl} →</a></div>`;
+            updateDevHintEl.style.display = 'block';
+        } else {
+            updateDevHintEl.style.display = 'none';
+        }
+    }
+
+    if (checkUpdateBtn) {
+        checkUpdateBtn.onclick = async () => {
+            checkUpdateBtn.disabled = true;
+            updateStatusEl.dataset.checked = 'true';
+            updateStatusEl.textContent = t('ui.update_checking') || '正在检查...';
+            updateDetailEl.style.display = 'none';
+            try {
+                const result = await weAPI.checkUpdate();
+                renderDevHint(result.isDevEnvironment);
+                if (!result.success) {
+                    updateStatusEl.textContent = t('ui.update_check_failed') || '检查失败';
+                    updateDetailEl.textContent = result.error || '';
+                    updateDetailEl.style.display = 'block';
+                    updateDetailEl.className = 'update-check-detail update-error';
+                } else if (result.hasUpdate) {
+                    updateStatusEl.textContent = `${t('ui.update_available') || '发现新版本'}: v${result.latestVersion}`;
+                    const viewNotes = t('ui.view_release') || '查看发布页';
+                    const devNote = result.isDevEnvironment
+                        ? `<br><span class="update-dev-note">${t('ui.update_dev_pull_hint') || '源码环境：请执行 git pull 获取最新代码'}</span>`
+                        : '';
+                    updateDetailEl.innerHTML = `${t('ui.current_version') || '当前版本'}: v${result.currentVersion} → v${result.latestVersion}${devNote}<br><a href="#" class="update-release-link" data-url="${result.releaseUrl}">${viewNotes} →</a>`;
+                    updateDetailEl.style.display = 'block';
+                    updateDetailEl.className = 'update-check-detail update-available';
+                    if (!result.isDevEnvironment) showUpdateIndicator(result);
+                } else {
+                    updateStatusEl.textContent = `${t('ui.update_latest') || '已是最新版本'} (v${result.currentVersion})`;
+                    updateDetailEl.textContent = '';
+                    updateDetailEl.style.display = 'none';
+                    hideUpdateIndicator();
+                }
+            } catch (e) {
+                updateStatusEl.textContent = t('ui.update_check_failed') || '检查失败';
+                updateDetailEl.textContent = e.message;
+                updateDetailEl.style.display = 'block';
+                updateDetailEl.className = 'update-check-detail update-error';
+            }
+            checkUpdateBtn.disabled = false;
+        };
+        // 发布页链接点击
+        if (updateDetailEl) {
+            updateDetailEl.addEventListener('click', (e) => {
+                const link = e.target.closest('.update-release-link');
+                if (link) {
+                    e.preventDefault();
+                    const url = link.dataset.url;
+                    if (url) weAPI.openExternalLink(url);
+                }
+            });
+        }
+        if (updateDevHintEl) {
+            updateDevHintEl.addEventListener('click', (e) => {
+                const link = e.target.closest('.update-release-link');
+                if (link) {
+                    e.preventDefault();
+                    const url = link.dataset.url;
+                    if (url) weAPI.openExternalLink(url);
+                }
+            });
+        }
+    }
 
     addTab(id, t('ui.settings'), content, true);
 }
@@ -1441,7 +1764,24 @@ function applyBarTint(barTint) {
     if (titleBar) titleBar.style.removeProperty('border-bottom');
 }
 
+// 应用背景图片：dataUrl 为 null 时隐藏图片层
+// opacity: 0-100
+function applyBackgroundImage(dataUrl, opacity) {
+    const layer = document.getElementById('background-image-layer');
+    if (!layer) return;
+    if (dataUrl) {
+        layer.style.backgroundImage = `url("${dataUrl}")`;
+        layer.style.opacity = Math.max(0, Math.min(1, (opacity ?? 100) / 100));
+        layer.style.display = 'block';
+    } else {
+        layer.style.backgroundImage = '';
+        layer.style.display = 'none';
+    }
+}
+window.applyBackgroundImage = applyBackgroundImage;
+
 // 恢复不透明状态（材质为"无"时调用）
+// 注意：--overlay-tint 由 applyOverlay 独立控制（背景遮罩透明度），不在此重置
 function resetMaterialStyles() {
     const { bgSidebar, bgMain, gapColor, border } = readThemeColors();
     document.body.style.setProperty('--content-tint', bgSidebar);
@@ -1449,7 +1789,6 @@ function resetMaterialStyles() {
     document.body.style.setProperty('--bg-main', bgMain);
     document.body.style.setProperty('--border', border);
     document.body.style.setProperty('--gap-color', gapColor);
-    document.body.style.setProperty('--overlay-tint', 'transparent');
     document.body.style.setProperty('--title-bar-tint', bgSidebar);
     const titleBar = document.getElementById('title-bar');
     if (titleBar) titleBar.style.removeProperty('border-bottom');
@@ -1462,8 +1801,8 @@ function resetMaterialStyles() {
 // barTint: 标题栏不透明度（0-100）
 function applyBackgroundMaterial(material, tint, overlay, barTint) {
     const active = material && material !== 'none';
-    document.body.classList.toggle('material-active', active);
     document.documentElement.classList.toggle('material-active', active);
+    document.body.classList.toggle('material-active', active);
     document.body.dataset.bgMaterial = material || 'none';
     window.__lastMaterialSettings = { material, tint, overlay, barTint };
 
@@ -1472,7 +1811,6 @@ function applyBackgroundMaterial(material, tint, overlay, barTint) {
         return;
     }
     applyTint(tint);
-    applyOverlay(overlay);
     applyBarTint(barTint);
 }
 
@@ -1795,6 +2133,283 @@ async function loadUpdateNotes() {
     }
 }
 
+// ========== 开放源代码库 ==========
+const OSS_LICENSES = [
+    {
+        name: 'Electron',
+        version: 'latest',
+        license: 'MIT License',
+        url: 'https://github.com/electron/electron',
+        description: 'Cross-platform desktop application framework',
+        licenseText: `MIT License
+
+Copyright (c) 2013-2024 GitHub Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+    },
+    {
+        name: 'Node.js',
+        version: 'latest',
+        license: 'MIT License',
+        url: 'https://github.com/nodejs/node',
+        description: 'JavaScript runtime built on Chrome V8 engine',
+        licenseText: `MIT License
+
+Copyright (c) Joyent, Inc. and other Node contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+    },
+    {
+        name: 'Lucide Icons',
+        version: '1.28.0',
+        license: 'ISC License',
+        url: 'https://github.com/lucide-icons/lucide',
+        description: 'Beautiful & consistent icon toolkit',
+        licenseText: `ISC License
+
+Copyright (c) 2024, Lucide Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.`
+    },
+    {
+        name: 'Quill',
+        version: '2.0.2',
+        license: 'BSD 3-Clause License',
+        url: 'https://github.com/quilljs/quill',
+        description: 'Powerful rich text editor for the web',
+        licenseText: `BSD 3-Clause License
+
+Copyright (c) 2024, Quill Contributors
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
+    },
+    {
+        name: 'KaTeX',
+        version: 'latest',
+        license: 'MIT License',
+        url: 'https://github.com/KaTeX/KaTeX',
+        description: 'Fast, easy-to-use math LaTeX rendering',
+        licenseText: `MIT License
+
+Copyright (c) 2013-2024 KaTeX Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+    },
+    {
+        name: 'archiver',
+        version: 'latest',
+        license: 'MIT License',
+        url: 'https://github.com/archiverjs/node-archiver',
+        description: 'ZIP stream archiver for Node.js',
+        licenseText: `MIT License
+
+Copyright (c) 2012-2024 archiver contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+    },
+    {
+        name: 'unzipper',
+        version: 'latest',
+        license: 'MIT License',
+        url: 'https://github.com/ZJONSSON/node-unzipper',
+        description: 'ZIP extraction for Node.js',
+        licenseText: `MIT License
+
+Copyright (c) 2012-2024 unzipper contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+    }
+];
+
+function loadOssLicenses() {
+    const container = document.getElementById('oss-licenses-list');
+    if (!container) return;
+    if (container.dataset.loaded) return;
+    container.dataset.loaded = 'true';
+
+    const viewText = t('ui.oss_view_license') || '查看许可证';
+    const closeText = t('ui.oss_close') || '关闭';
+
+    let html = '';
+    OSS_LICENSES.forEach((lib, idx) => {
+        const licenseId = `oss-license-${idx}`;
+        html += `<div class="oss-license-item">
+            <div class="oss-license-header">
+                <div class="oss-license-info">
+                    <span class="oss-license-name">${escapeHtml(lib.name)}</span>
+                    <span class="oss-license-version">v${escapeHtml(lib.version)}</span>
+                    <span class="oss-license-badge">${escapeHtml(lib.license)}</span>
+                </div>
+                <div class="oss-license-actions">
+                    <a href="#" class="oss-license-toggle" data-target="${licenseId}">${viewText}</a>
+                </div>
+            </div>
+            <div class="oss-license-body" id="${licenseId}" style="display:none">
+                <div class="oss-license-desc">${escapeHtml(lib.description)}</div>
+                <pre class="oss-license-text">${escapeHtml(lib.licenseText)}</pre>
+            </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+
+    // 绑定展开/折叠事件
+    container.querySelectorAll('.oss-license-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = btn.dataset.target;
+            const target = document.getElementById(targetId);
+            if (target) {
+                const isHidden = target.style.display === 'none';
+                target.style.display = isHidden ? 'block' : 'none';
+                btn.textContent = isHidden ? closeText : viewText;
+            }
+        });
+    });
+
+    // 绑定外部链接点击
+    container.addEventListener('click', (e) => {
+        const link = e.target.closest('.oss-license-name, .oss-license-version');
+        if (link) {
+            e.preventDefault();
+            const lib = OSS_LICENSES[parseInt(link.closest('.oss-license-item').dataset.idx || '0')];
+            if (lib && lib.url) weAPI.openExternalLink(lib.url);
+        }
+    });
+
+    // 点击库名/版本号跳转仓库
+    container.querySelectorAll('.oss-license-item').forEach((item, idx) => {
+        item.dataset.idx = idx;
+        const nameEl = item.querySelector('.oss-license-name');
+        const versionEl = item.querySelector('.oss-license-version');
+        nameEl.style.cursor = 'pointer';
+        versionEl.style.cursor = 'pointer';
+        nameEl.title = t('ui.oss_view_repo') || '查看仓库';
+        versionEl.title = t('ui.oss_view_repo') || '查看仓库';
+        nameEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            weAPI.openExternalLink(OSS_LICENSES[idx].url);
+        });
+        versionEl.addEventListener('click', (e) => {
+            e.preventDefault();
+            weAPI.openExternalLink(OSS_LICENSES[idx].url);
+        });
+    });
+}
+
 function applyToolbarVisibility(show) {
     const tb = document.getElementById('quill-toolbar');
     if (tb) tb.style.display = show ? '' : 'none';
@@ -1803,3 +2418,43 @@ function applyWordCountVisibility(show) {
     const wc = document.getElementById('word-count');
     if (wc) wc.style.display = show ? '' : 'none';
 }
+
+// ========== 标题栏更新指示器 ==========
+let lastUpdateResult = null;
+
+function showUpdateIndicator(result) {
+    lastUpdateResult = result;
+    const btn = document.getElementById('btn-update-available');
+    const sep = document.getElementById('update-separator');
+    if (!btn) return;
+    const title = (t('ui.update_available_title') || '发现新版本') + `: v${result.latestVersion}`;
+    btn.title = title;
+    btn.style.display = '';
+    if (sep) sep.style.display = '';
+}
+
+function hideUpdateIndicator() {
+    lastUpdateResult = null;
+    const btn = document.getElementById('btn-update-available');
+    const sep = document.getElementById('update-separator');
+    if (btn) btn.style.display = 'none';
+    if (sep) sep.style.display = 'none';
+}
+
+// 标题栏更新指示器点击事件（跳转到设置页检查更新）
+window.initUpdateIndicatorClick = function() {
+    const btn = document.getElementById('btn-update-available');
+    if (btn) {
+        btn.onclick = () => {
+            createSettingsTab();
+            setTimeout(() => {
+                const navItems = document.querySelectorAll('.settings-nav .nav-item');
+                navItems.forEach(n => n.classList.remove('active'));
+                const generalNav = document.querySelector('.settings-nav .nav-item[data-section="general"]');
+                if (generalNav) generalNav.click();
+                const checkBtn = document.getElementById('btn-check-update');
+                if (checkBtn) checkBtn.click();
+            }, 100);
+        };
+    }
+};

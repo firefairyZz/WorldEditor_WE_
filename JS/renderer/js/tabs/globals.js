@@ -11,6 +11,7 @@ let savedFontSize = '16';
 let toolbarShow = true;
 let wordCountShow = true;
 let markdownRender = true;
+let smartBracketsEnabled = false;
 let tabCloseConfirm = true;
 
 // 编辑器主题颜色预设

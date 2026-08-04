@@ -4,6 +4,17 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// 防抖：高频事件合并为最后一次触发后执行，常用于 text-change/resize 等场景以减少布局抖动
+function debounce(fn, wait = 250) {
+    let timer = null;
+    const debounced = function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => { fn.apply(this, args); timer = null; }, wait);
+    };
+    debounced.cancel = () => { clearTimeout(timer); timer = null; };
+    return debounced;
+}
+
 function showPrompt(title, placeholder = '', options = {}) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');

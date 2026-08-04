@@ -3,6 +3,16 @@ let wordCountTimer = null;
 let editorStats = { words: 0, chars: 0, headings: 0 };
 let markdownEditor = null;
 let markdownPreviewVisible = true;
+
+// updateEditorStats 的防抖版本：减少打字过程中的布局抖动
+let _debouncedStatsTimer = null;
+function debouncedUpdateEditorStats() {
+    if (_debouncedStatsTimer) clearTimeout(_debouncedStatsTimer);
+    _debouncedStatsTimer = setTimeout(() => {
+        updateEditorStats();
+        _debouncedStatsTimer = null;
+    }, 250);
+}
 let isSaving = false;
 let pendingSave = false;
 
@@ -197,6 +207,8 @@ async function openProjectFile(safeId, filename) {
         }
         quill.root.addEventListener('mousedown', hidePlaceholder);
         quill.root.addEventListener('keydown', hidePlaceholder);
+        // 智能括号/引号自动补全
+        quill.root.addEventListener('keydown', handleSmartBrackets);
 
         // 点击空白区域：光标定位到最近行
         editorDiv.addEventListener('click', (e) => {
@@ -329,7 +341,7 @@ async function openProjectFile(safeId, filename) {
     updateEditorStats();
 
     quill.off('text-change', project._changeHandler);
-    project._changeHandler = () => { project.dirty = true; updateStatusBar(); updateEditorStats(); };
+    project._changeHandler = () => { project.dirty = true; updateStatusBar(); debouncedUpdateEditorStats(); };
     quill.on('text-change', project._changeHandler);
 
     const tree = document.getElementById(`file-tree-${safeId}`);
@@ -357,6 +369,10 @@ function editorToolbar() {
             <button class="ql-strike" title="${t('ui.strike') || 'Strikethrough'}"></button>
         </span>
         <span class="ql-formats">
+            <select class="ql-color" title="${t('ui.text_color') || 'Text Color'}"></select>
+            <select class="ql-background" title="${t('ui.background_color') || 'Background Color'}"></select>
+        </span>
+        <span class="ql-formats">
             <button class="ql-list" value="ordered" title="${t('ui.ordered_list') || 'Ordered List'}"></button>
             <button class="ql-list" value="bullet" title="${t('ui.bullet_list') || 'Bullet List'}"></button>
             <button class="ql-list" value="check" title="${t('ui.check_list') || 'Check List'}"></button>
@@ -364,6 +380,9 @@ function editorToolbar() {
         <span class="ql-formats">
             <button class="ql-blockquote" title="${t('ui.quote') || 'Quote'}"></button>
             <button class="ql-code-block" title="${t('ui.code_block') || 'Code Block'}"></button>
+        </span>
+        <span class="ql-formats">
+            <select class="ql-align" title="${t('ui.align') || 'Alignment'}"></select>
         </span>
         <span class="ql-formats last-format">
             <button class="ql-link" title="${t('ui.link') || 'Link'}"></button>
@@ -379,16 +398,6 @@ function editorToolbar() {
             <button class="custom-btn btn-toggle-toc" title="${t('ui.toggle_toc') || 'Toggle TOC'}">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M3 9h14V7H3v2zm0 4h14v-2H3v2zm0 4h14v-2H3v2zm16-4h2v-2h-2v2zm0 4h2v-2h-2v2zm0-8h2V7h-2v2z"/></svg>
             </button>
-        </span>
-        <span class="editor-stats">
-            <span class="stat-item" title="${t('ui.word_count') || 'Word Count'}">
-                <span class="stat-label">${t('ui.words') || 'Words'}:</span>
-                <span class="stat-value" id="stat-words">0</span>
-            </span>
-            <span class="stat-item" title="${t('ui.char_count') || 'Character Count'}">
-                <span class="stat-label">${t('ui.chars') || 'Chars'}:</span>
-                <span class="stat-value" id="stat-chars">0</span>
-            </span>
         </span>
     `;
     return toolbar;
@@ -819,20 +828,6 @@ async function openMarkdownFile(safeId, filename) {
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
             </button>
         </span>
-        <span class="editor-stats">
-            <span class="stat-item" title="${t('ui.word_count') || 'Word Count'}">
-                <span class="stat-label">${t('ui.words') || 'Words'}:</span>
-                <span class="stat-value" id="stat-words">0</span>
-            </span>
-            <span class="stat-item" title="${t('ui.char_count') || 'Character Count'}">
-                <span class="stat-label">${t('ui.chars') || 'Chars'}:</span>
-                <span class="stat-value" id="stat-chars">0</span>
-            </span>
-            <span class="stat-item" title="${t('ui.preview_mode') || 'Preview'}">
-                <span class="stat-label">${t('ui.preview') || '预览'}:</span>
-                <span class="stat-value" id="stat-preview">${markdownPreviewVisible ? 'ON' : 'OFF'}</span>
-            </span>
-        </span>
     `;
     quillWrapper.appendChild(mdToolbar);
 
@@ -878,6 +873,8 @@ async function openMarkdownFile(safeId, filename) {
         renderMarkdownPreview(textarea.value, preview);
         updateMarkdownStats(textarea.value);
     });
+    // 智能括号/引号自动补全
+    textarea.addEventListener('keydown', handleSmartBracketsTextarea);
 
     // 工具栏事件
     mdToolbar.querySelector('.md-format').onchange = (e) => {
@@ -925,13 +922,10 @@ async function openMarkdownFile(safeId, filename) {
     mdToolbar.querySelector('.btn-md-preview-toggle').onclick = () => {
         markdownPreviewVisible = !markdownPreviewVisible;
         const previewPane = mdContainer.querySelector('.md-preview-pane');
-        const statPreview = mdToolbar.querySelector('#stat-preview');
         if (markdownPreviewVisible) {
             previewPane.classList.remove('md-hidden');
-            statPreview.textContent = 'ON';
         } else {
             previewPane.classList.add('md-hidden');
-            statPreview.textContent = 'OFF';
         }
     };
 
@@ -1088,20 +1082,78 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
     };
 }
 
-function renderMarkdownPreview(text, previewEl) {
+async function renderMarkdownPreview(text, previewEl) {
     if (!previewEl) return;
     previewEl.innerHTML = markdownToHtmlString(text);
+    // 渲染 KaTeX 公式
+    if (window.katex) {
+        previewEl.querySelectorAll('.katex-render').forEach(el => {
+            try {
+                window.katex.render(el.dataset.formula || '', el, {
+                    displayMode: el.dataset.display === 'true',
+                    throwOnError: false
+                });
+            } catch (e) { el.textContent = el.dataset.formula || ''; }
+        });
+    }
 }
 
 function markdownToHtmlString(text) {
-    let html = text
-        // 代码块（必须在最前处理，避免内部语法被重复替换）
+    // 先处理表格：需要识别表头分隔行，链式 replace 难以处理，单独提取
+    const renderTable = (tableText) => {
+        const lines = tableText.trim().split('\n');
+        if (lines.length < 2) return tableText;
+        // 第二行必须是分隔行 |---|---|
+        if (!/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(lines[1])) return tableText;
+        const parseRow = (line) => {
+            const cells = line.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+            return cells;
+        };
+        const headerCells = parseRow(lines[0]);
+        let html = '<table class="md-table"><thead><tr>';
+        headerCells.forEach(c => html += `<th>${inlineMd(c)}</th>`);
+        html += '</tr></thead><tbody>';
+        for (let i = 2; i < lines.length; i++) {
+            const cells = parseRow(lines[i]);
+            html += '<tr>';
+            cells.forEach(c => html += `<td>${inlineMd(c)}</td>`);
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        return html;
+    };
+    // 行内格式（粗体/斜体/代码/链接等），供表格单元格使用
+    const inlineMd = (s) => {
+        return s
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/~~(.*?)~~/g, '<s>$1</s>');
+    };
+
+    // 提取表格块（连续以 | 开头或含 | 分隔的行）
+    const tableBlocks = [];
+    let processed = text.replace(/((?:^\|.*(?:\n|$))+)/gm, (block) => {
+        const idx = tableBlocks.length;
+        tableBlocks.push(renderTable(block));
+        return `\u0000TABLE_${idx}\u0000`;
+    });
+
+    let html = processed
+        // 代码块
         .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="lang-$1">$2</code></pre>')
+        // 块级公式 $$...$$
+        .replace(/\$\$([\s\S]+?)\$\$/g, (_, formula) =>
+            `<span class="katex-render" data-formula="${formula.replace(/"/g, '&quot;').trim()}" data-display="true"></span>`)
+        // 行内公式 $...$
+        .replace(/\$([^\$\n]+?)\$/g, (_, formula) =>
+            `<span class="katex-render" data-formula="${formula.replace(/"/g, '&quot;').trim()}" data-display="false"></span>`)
         // 行内代码
         .replace(/`([^`]+)`/g, '<code>$1</code>')
-        // 图片（必须在链接前处理）
+        // 图片
         .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;max-height:300px" />')
-        // 项目内跳转链接: [text](project:file#heading)
+        // 项目内跳转链接
         .replace(/\[([^\]]+)\]\(project:([^)\s]+)\)/g, (_, t, rest) => {
             const [file, heading] = rest.split('#');
             const anchorAttr = heading ? ` data-heading="${heading}"` : '';
@@ -1128,7 +1180,10 @@ function markdownToHtmlString(text) {
         // 段落
         .replace(/\n\n/g, '</p><p>')
         // 换行
-        .replace(/\n/g, '<br>');
+        .replace(/\n/g, '<br>')
+        // 还原表格占位符
+        .replace(/\u0000TABLE_(\d+)\u0000/g, (_, idx) => tableBlocks[parseInt(idx)]);
+
     return `<p>${html}</p>`;
 }
 
@@ -1812,4 +1867,170 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// ====== 智能括号/引号自动补全 ======
+const PAIRS = {
+    '(': ')',
+    '[': ']',
+    '{': '}',
+};
+const QUOTES = new Set(['"', "'"]);
+const CLOSE_BRACKETS = new Set([')', ']', '}']);
+
+// 判断光标前一个字符是否为字母/数字/下划线（用于判断是否应跳过引号补全）
+function isWordChar(ch) {
+    return ch && /\w/.test(ch);
+}
+
+// Quill 富文本编辑器：智能括号/引号补全
+function handleSmartBrackets(e) {
+    if (!smartBracketsEnabled) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const key = e.key;
+
+    // 括号补全
+    if (PAIRS[key]) {
+        e.preventDefault();
+        const range = quill.getSelection();
+        if (!range) return;
+        const close = PAIRS[key];
+        if (range.length > 0) {
+            // 选中文本：用括号包裹
+            const selected = quill.getText(range.index, range.length);
+            quill.deleteText(range.index, range.length, Quill.sources.USER);
+            quill.insertText(range.index, key + selected + close, Quill.sources.USER);
+            quill.setSelection(range.index + 1, selected.length, Quill.sources.USER);
+        } else {
+            // 无选中：插入成对括号，光标居中
+            quill.insertText(range.index, key + close, Quill.sources.USER);
+            quill.setSelection(range.index + 1, 0, Quill.sources.USER);
+        }
+        return;
+    }
+
+    // 引号补全
+    if (QUOTES.has(key)) {
+        const range = quill.getSelection();
+        if (!range) return;
+        // 光标前是字母/数字时不补全（可能是缩写如 don't）
+        const beforeText = range.index > 0 ? quill.getText(range.index - 1, 1) : '';
+        if (isWordChar(beforeText)) return;
+
+        e.preventDefault();
+        if (range.length > 0) {
+            // 选中文本：用引号包裹
+            const selected = quill.getText(range.index, range.length);
+            quill.deleteText(range.index, range.length, Quill.sources.USER);
+            quill.insertText(range.index, key + selected + key, Quill.sources.USER);
+            quill.setSelection(range.index + 1, selected.length, Quill.sources.USER);
+        } else {
+            // 无选中：插入成对引号，光标居中
+            quill.insertText(range.index, key + key, Quill.sources.USER);
+            quill.setSelection(range.index + 1, 0, Quill.sources.USER);
+        }
+        return;
+    }
+
+    // 输入右括号/右引号时，若已存在配对，跳过（光标自动右移）
+    if (CLOSE_BRACKETS.has(key) || QUOTES.has(key)) {
+        const range = quill.getSelection();
+        if (!range || range.length > 0) return;
+        const nextChar = quill.getText(range.index, 1);
+        if (nextChar === key) {
+            e.preventDefault();
+            quill.setSelection(range.index + 1, 0, Quill.sources.USER);
+            return;
+        }
+    }
+
+    // Backspace 删除成对空括号/引号
+    if (e.key === 'Backspace') {
+        const range = quill.getSelection();
+        if (!range || range.length > 0) return;
+        if (range.index < 2) return;
+        const before = quill.getText(range.index - 1, 1);
+        const after = quill.getText(range.index, 1);
+        // 匹配成对
+        const isPair = (PAIRS[before] && PAIRS[before] === after) ||
+                       (QUOTES.has(before) && before === after);
+        if (isPair) {
+            e.preventDefault();
+            quill.deleteText(range.index - 1, 2, Quill.sources.USER);
+            quill.setSelection(range.index - 1, 0, Quill.sources.USER);
+        }
+    }
+}
+
+// Markdown 编辑器（textarea）：智能括号/引号补全
+function handleSmartBracketsTextarea(e) {
+    if (!smartBracketsEnabled) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const ta = e.target;
+    const key = e.key;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const val = ta.value;
+
+    // 括号补全
+    if (PAIRS[key]) {
+        e.preventDefault();
+        const close = PAIRS[key];
+        if (start !== end) {
+            // 选中文本：用括号包裹
+            const selected = val.substring(start, end);
+            ta.value = val.substring(0, start) + key + selected + close + val.substring(end);
+            ta.selectionStart = start + 1;
+            ta.selectionEnd = end + 1;
+        } else {
+            ta.value = val.substring(0, start) + key + close + val.substring(start);
+            ta.selectionStart = ta.selectionEnd = start + 1;
+        }
+        ta.dispatchEvent(new Event('input'));
+        return;
+    }
+
+    // 引号补全
+    if (QUOTES.has(key)) {
+        const beforeChar = start > 0 ? val[start - 1] : '';
+        if (isWordChar(beforeChar)) return;
+
+        e.preventDefault();
+        if (start !== end) {
+            const selected = val.substring(start, end);
+            ta.value = val.substring(0, start) + key + selected + key + val.substring(end);
+            ta.selectionStart = start + 1;
+            ta.selectionEnd = end + 1;
+        } else {
+            ta.value = val.substring(0, start) + key + key + val.substring(start);
+            ta.selectionStart = ta.selectionEnd = start + 1;
+        }
+        ta.dispatchEvent(new Event('input'));
+        return;
+    }
+
+    // 跳过已有的右括号/右引号
+    if (CLOSE_BRACKETS.has(key) || QUOTES.has(key)) {
+        if (start === end && val[start] === key) {
+            e.preventDefault();
+            ta.selectionStart = ta.selectionEnd = start + 1;
+        }
+        return;
+    }
+
+    // Backspace 删除成对空括号/引号
+    if (e.key === 'Backspace' && start === end && start > 0) {
+        const before = val[start - 1];
+        const after = val[start];
+        const isPair = (PAIRS[before] && PAIRS[before] === after) ||
+                       (QUOTES.has(before) && before === after);
+        if (isPair) {
+            e.preventDefault();
+            ta.value = val.substring(0, start - 1) + val.substring(start + 1);
+            ta.selectionStart = ta.selectionEnd = start - 1;
+            ta.dispatchEvent(new Event('input'));
+        }
+    }
 }

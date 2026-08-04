@@ -10,7 +10,7 @@ const SETTINGS_PATH = path.join(USER_DIR, 'settings.json');
 const ACCOUNT_PATH = path.join(USER_DIR, 'account.json');
 const ACCOUNT_AVATAR_DIR = path.join(USER_DIR, 'avatars');
 const LANG_DIR = path.join(USER_DIR, 'lang');
-const APP_VERSION = "0.4.2";
+const APP_VERSION = "0.6.0";
 
 if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR);
 if (!fs.existsSync(path.join(__dirname, 'resources'))) fs.mkdirSync(path.join(__dirname, 'resources'));
@@ -43,7 +43,7 @@ if (!fs.existsSync(defaultLangPath)) {
     const defaultContent = `# WE 中文语言文件
 ui.file = 文件
 ui.new_project = 新建项目
-ui.open_folder = 打开文件夹
+ui.open_folder = 打开项目
 ui.new_file = 新建文件
 ui.recent_projects = 最近打开的项目
 ui.settings = 设置
@@ -230,6 +230,32 @@ function parseLibFile(lang) {
 // 全局 IPC 处理器
 ipcMain.handle('get-version', () => APP_VERSION);
 
+// ========== 检查更新 ==========
+const { net } = require('electron');
+const UPDATE_REPO = 'firefairyZz/WorldEditor_WE_';
+
+function compareVersions(v1, v2) {
+    const p1 = String(v1).replace(/^v/, '').split('.').map(Number);
+    const p2 = String(v2).replace(/^v/, '').split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+        const a = p1[i] || 0, b = p2[i] || 0;
+        if (a > b) return 1;
+        if (a < b) return -1;
+    }
+    return 0;
+}
+
+ipcMain.handle('check-update', async () => {
+    // 优先使用 splash 阶段缓存的结果
+    if (appSettings._pendingUpdateCheck) {
+        const result = appSettings._pendingUpdateCheck;
+        appSettings._pendingUpdateCheck = null;
+        return result;
+    }
+    // 否则实时检查
+    return await checkUpdateInternal();
+});
+
 ipcMain.handle('toggle-devtools', () => {
     if (mainWin) {
         if (mainWin.webContents.isDevToolsOpened()) {
@@ -318,8 +344,8 @@ ipcMain.handle('save-account', (event, account) => {
 function syncOwnerToProjects(userId, account) {
     try {
         const avatarDataUrl = getAvatarDataUrl(account);
-        const recent = loadRecent();
-        for (const folder of recent) {
+        const allFolders = [...loadRecent(), ...loadPinned()];
+        for (const folder of allFolders) {
             const metaPath = path.join(folder, '.metadata');
             if (!fs.existsSync(metaPath)) continue;
             try {
@@ -495,18 +521,68 @@ function normalizeFolder(f) {
     return path.resolve(f).replace(/[\\/]$/, '');
 }
 
-function loadRecent() {
-    if (!fs.existsSync(RECENT_PATH)) return [];
-    try { return JSON.parse(fs.readFileSync(RECENT_PATH, 'utf-8')); } catch { return []; }
+// recent.json 结构: { pinned: [path...], recent: [path...] }
+function loadRecentData() {
+    if (!fs.existsSync(RECENT_PATH)) return { pinned: [], recent: [] };
+    try {
+        const data = JSON.parse(fs.readFileSync(RECENT_PATH, 'utf-8'));
+        // 兼容旧格式（纯数组）
+        if (Array.isArray(data)) return { pinned: [], recent: data };
+        if (!data.pinned) data.pinned = [];
+        if (!data.recent) data.recent = [];
+        return data;
+    } catch { return { pinned: [], recent: [] }; }
 }
-function saveRecent(folders) { fs.writeFileSync(RECENT_PATH, JSON.stringify(folders, null, 2)); }
+function saveRecentData(data) { fs.writeFileSync(RECENT_PATH, JSON.stringify(data, null, 2)); }
+
+function loadRecent() { return loadRecentData().recent; }
+function saveRecent(folders) {
+    const data = loadRecentData();
+    data.recent = folders;
+    saveRecentData(data);
+}
+function loadPinned() { return loadRecentData().pinned; }
+function savePinned(folders) {
+    const data = loadRecentData();
+    data.pinned = folders;
+    saveRecentData(data);
+}
+
 function addRecent(folder) {
     folder = normalizeFolder(folder);
-    let recent = loadRecent().map(f => normalizeFolder(f));
+    let data = loadRecentData();
+    // 如果项目已固定，不添加到 recent（保持 pinned 状态不变）
+    const pinnedNorm = data.pinned.map(f => normalizeFolder(f));
+    if (pinnedNorm.includes(folder)) return;
+    let recent = data.recent.map(f => normalizeFolder(f));
     recent = recent.filter(p => p !== folder);
     recent.unshift(folder);
-    const unique = [...new Set(recent)];
-    saveRecent(unique.slice(0, 10));
+    data.recent = [...new Set(recent)].slice(0, 10);
+    saveRecentData(data);
+}
+
+function addPinned(folder) {
+    folder = normalizeFolder(folder);
+    let data = loadRecentData();
+    let pinned = data.pinned.map(f => normalizeFolder(f));
+    pinned = pinned.filter(p => p !== folder);
+    pinned.unshift(folder);
+    data.pinned = [...new Set(pinned)];
+    // 同时从 recent 中移除
+    data.recent = data.recent.map(f => normalizeFolder(f)).filter(p => p !== folder);
+    saveRecentData(data);
+}
+
+function removePinned(folder) {
+    folder = normalizeFolder(folder);
+    let data = loadRecentData();
+    data.pinned = data.pinned.map(f => normalizeFolder(f)).filter(p => p !== folder);
+    saveRecentData(data);
+}
+
+function isPinned(folder) {
+    folder = normalizeFolder(folder);
+    return loadPinned().map(f => normalizeFolder(f)).includes(folder);
 }
 
 // 项目文件读写
@@ -874,11 +950,13 @@ function createMainWindow() {
             const newFolder = path.join(parent, newName);
             if (fs.existsSync(newFolder)) return { success: false, error: '目标文件夹已存在' };
             fs.renameSync(oldFolder, newFolder);
-            // 更新最近项目列表
-            let recent = loadRecent();
-            recent = recent.map(p => normalizeFolder(p) === normalizeFolder(oldFolder) ? normalizeFolder(newFolder) : normalizeFolder(p));
-            recent = [...new Set(recent)];
-            saveRecent(recent);
+            // 更新最近项目和固定项目列表
+            let data = loadRecentData();
+            data.recent = data.recent.map(p => normalizeFolder(p) === normalizeFolder(oldFolder) ? normalizeFolder(newFolder) : normalizeFolder(p));
+            data.pinned = data.pinned.map(p => normalizeFolder(p) === normalizeFolder(oldFolder) ? normalizeFolder(newFolder) : normalizeFolder(p));
+            data.recent = [...new Set(data.recent)];
+            data.pinned = [...new Set(data.pinned)];
+            saveRecentData(data);
             return { success: true, newFolder };
         } catch (e) { return { success: false, error: e.message }; }
     });
@@ -948,10 +1026,11 @@ function createMainWindow() {
 
             if (!deleted) return { success: false, error: '删除失败：文件夹可能被占用或权限不足。请尝试以管理员身份运行本程序后重试。' };
 
-            // 从最近项目列表中移除
-            let recent = loadRecent();
-            recent = recent.filter(p => normalizeFolder(p) !== normalizeFolder(folder));
-            saveRecent(recent);
+            // 从最近项目和固定项目中移除
+            let data = loadRecentData();
+            data.recent = data.recent.filter(p => normalizeFolder(p) !== normalizeFolder(folder));
+            data.pinned = data.pinned.filter(p => normalizeFolder(p) !== normalizeFolder(folder));
+            saveRecentData(data);
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     });
@@ -999,6 +1078,49 @@ function createMainWindow() {
     ipcMain.handle('select-folder', async () => {
         const result = await dialog.showOpenDialog({ properties: ['openDirectory'], defaultPath: USER_DIR });
         return result.filePaths[0] || null;
+    });
+
+    // 选择背景图片：复制到 User/bg-image.<ext>，返回文件名
+    ipcMain.handle('select-background-image', async () => {
+        const result = await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] }],
+            defaultPath: USER_DIR
+        });
+        if (!result.filePaths[0]) return null;
+        const filePath = result.filePaths[0];
+        const ext = path.extname(filePath).slice(1).toLowerCase();
+        const destName = `bg-image.${ext}`;
+        const destPath = path.join(USER_DIR, destName);
+        // 清理旧图
+        try {
+            fs.readdirSync(USER_DIR).forEach(f => {
+                if (f.startsWith('bg-image.')) fs.unlinkSync(path.join(USER_DIR, f));
+            });
+        } catch (e) {}
+        fs.copyFileSync(filePath, destPath);
+        return destName;
+    });
+
+    // 读取背景图片为 dataURL
+    ipcMain.handle('get-background-image', async (event, imageName) => {
+        if (!imageName) return null;
+        const imgPath = path.join(USER_DIR, imageName);
+        if (!fs.existsSync(imgPath)) return null;
+        const data = fs.readFileSync(imgPath);
+        const ext = path.extname(imageName).slice(1).toLowerCase();
+        const mime = ext === 'jpg' ? 'jpeg' : ext;
+        return `data:image/${mime};base64,${data.toString('base64')}`;
+    });
+
+    // 清除背景图片
+    ipcMain.handle('clear-background-image', async () => {
+        try {
+            fs.readdirSync(USER_DIR).forEach(f => {
+                if (f.startsWith('bg-image.')) fs.unlinkSync(path.join(USER_DIR, f));
+            });
+        } catch (e) {}
+        return true;
     });
 
     // 从文件路径保存文件（用于拖放）
@@ -1053,27 +1175,117 @@ function createMainWindow() {
     });
 
     ipcMain.handle('get-recent-projects', () => {
-        let recent = loadRecent();
-        const valid = [];
-        for (const folder of recent) {
-            const absPath = path.resolve(folder);
-            if (fs.existsSync(absPath)) {
-                try {
-                    const stat = fs.statSync(absPath);
-                    valid.push({
-                        path: absPath,
-                        name: path.basename(absPath),
-                        modified: stat.mtimeMs
-                    });
-                } catch (e) { /* 忽略 */ }
+        const buildList = (folders) => {
+            const valid = [];
+            for (const folder of folders) {
+                const absPath = path.resolve(folder);
+                if (fs.existsSync(absPath)) {
+                    try {
+                        const stat = fs.statSync(absPath);
+                        valid.push({
+                            path: absPath,
+                            name: path.basename(absPath),
+                            modified: stat.mtimeMs
+                        });
+                    } catch (e) { /* 忽略 */ }
+                }
             }
+            return valid;
+        };
+
+        let data = loadRecentData();
+        let pinned = buildList(data.pinned);
+        let recent = buildList(data.recent);
+
+        // 清理无效路径
+        const validPinnedPaths = pinned.map(p => p.path);
+        const validRecentPaths = recent.map(p => p.path);
+        if (validPinnedPaths.length !== data.pinned.length || validRecentPaths.length !== data.recent.length) {
+            saveRecentData({ pinned: validPinnedPaths, recent: validRecentPaths });
         }
-        if (valid.length !== recent.length) saveRecent(valid.map(p => p.path));
-        return valid;
+        return { pinned, recent };
+    });
+
+    ipcMain.handle('toggle-pin-project', (event, folder) => {
+        try {
+            if (isPinned(folder)) {
+                removePinned(folder);
+                return { success: true, pinned: false };
+            } else {
+                addPinned(folder);
+                return { success: true, pinned: true };
+            }
+        } catch (e) { return { success: false, error: e.message }; }
+    });
+
+    ipcMain.handle('is-project-pinned', (event, folder) => {
+        return isPinned(folder);
     });
 }
 
+// ====== 教程初始化 ======
+const TUTORIAL_SRC_DIR = path.join(__dirname, 'resources', 'Tutorial', '使用教程(CN)');
+
+function initTutorial() {
+    // 开发环境跳过
+    if (!app.isPackaged) return;
+
+    const userDataDir = app.getPath('userData');
+    const tutorialDir = path.join(userDataDir, 'Tutorial', '使用教程(CN)');
+
+    // 如果 userData 里没有教程，从打包资源复制一份
+    if (!fs.existsSync(tutorialDir)) {
+        try {
+            fs.mkdirSync(path.dirname(tutorialDir), { recursive: true });
+            copyFolderSync(TUTORIAL_SRC_DIR, tutorialDir);
+        } catch (e) {
+            console.error('复制教程失败:', e);
+            return;
+        }
+    }
+}
+
+function copyFolderSync(src, dest) {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            copyFolderSync(srcPath, destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+}
+
+function initRecentJson() {
+    // 确保 recent.json 存在
+    if (!fs.existsSync(RECENT_PATH)) {
+        saveRecentData({ pinned: [], recent: [] });
+    }
+
+    // 首次打开：将使用教程固定到 pinned
+    const tutorialDir = app.isPackaged
+        ? path.join(app.getPath('userData'), 'Tutorial', '使用教程(CN)')
+        : TUTORIAL_SRC_DIR;
+
+    if (fs.existsSync(tutorialDir)) {
+        const data = loadRecentData();
+        const tutorialNorm = normalizeFolder(tutorialDir);
+        const pinnedNorm = data.pinned.map(f => normalizeFolder(f));
+        if (!pinnedNorm.includes(tutorialNorm)) {
+            data.pinned.unshift(tutorialDir);
+            saveRecentData(data);
+        }
+    }
+}
+
 app.whenReady().then(() => {
+    // 初始化教程和 recent.json（在主窗口打开前）
+    initTutorial();
+    initRecentJson();
+
     createSplash();
 
     // 发送状态到 splash 的辅助函数
@@ -1083,33 +1295,94 @@ app.whenReady().then(() => {
         }
     };
 
-    // 模拟加载步骤并更新 splash
+    // 保存更新检查结果供主窗口使用
+    let updateCheckResult = null;
+
+    // 步骤 1：初始化
     sendSplashStatus('正在初始化应用...', 10);
 
-    setTimeout(() => {
-        sendSplashStatus('正在检查项目文件...', 30);
-    }, 400);
+    // 步骤 2：检查更新（在 splash 阶段完成，结果传递给主窗口）
+    setTimeout(async () => {
+        sendSplashStatus('正在检查更新...', 25);
+        try {
+            updateCheckResult = await checkUpdateInternal();
+        } catch (e) {
+            updateCheckResult = { success: false };
+        }
+        sendSplashStatus(updateCheckResult && updateCheckResult.hasUpdate
+            ? `发现新版本 v${updateCheckResult.latestVersion}`
+            : '已是最新版本', 40);
 
-    setTimeout(() => {
-        sendSplashStatus('正在加载配置...', 50);
-    }, 900);
-
-    setTimeout(() => {
-        sendSplashStatus('正在初始化界面...', 75);
-    }, 1400);
-
-    setTimeout(() => {
-        sendSplashStatus('加载完成', 100);
-        // 加载完成后等待2秒，然后关闭 splash 并创建主窗口
+        // 步骤 3：继续加载
         setTimeout(() => {
-            if (splash && !splash.isDestroyed()) {
-                splash.close();
-                splash = null;
+            sendSplashStatus('正在加载配置...', 60);
+        }, 300);
+
+        setTimeout(() => {
+            sendSplashStatus('正在初始化界面...', 80);
+        }, 800);
+
+        setTimeout(() => {
+            // 检查是否有需要传递给主窗口的更新信息
+            if (updateCheckResult && updateCheckResult.hasUpdate && mainWin) {
+                // 主窗口创建后会通过 IPC 获取此结果
+                appSettings._pendingUpdateCheck = updateCheckResult;
             }
-            createMainWindow();
-        }, 2000);
-    }, 1800);
+            sendSplashStatus('加载完成', 100);
+            setTimeout(() => {
+                if (splash && !splash.isDestroyed()) {
+                    splash.close();
+                    splash = null;
+                }
+                createMainWindow();
+            }, 800);
+        }, 1400);
+    }, 400);
 });
+
+// 内部更新检查函数（可在 splash 阶段调用）
+function checkUpdateInternal() {
+    return new Promise((resolve) => {
+        const request = net.request({
+            method: 'GET',
+            url: `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,
+            useSessionCookies: false,
+        });
+        request.setHeader('User-Agent', 'WorldEditor-Update-Checker');
+        request.setHeader('Accept', 'application/vnd.github+json');
+        request.on('response', (response) => {
+            if (response.statusCode !== 200) {
+                resolve({ success: false, isDevEnvironment: !app.isPackaged });
+                return;
+            }
+            let body = '';
+            response.on('data', (chunk) => { body += chunk.toString(); });
+            response.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    if (!data || !data.tag_name) {
+                        resolve({ success: false, isDevEnvironment: !app.isPackaged });
+                        return;
+                    }
+                    const latestVersion = data.tag_name.replace(/^v/, '');
+                    const hasUpdate = compareVersions(latestVersion, APP_VERSION) > 0;
+                    resolve({
+                        success: true,
+                        hasUpdate,
+                        isDevEnvironment: !app.isPackaged,
+                        currentVersion: APP_VERSION,
+                        latestVersion,
+                        releaseUrl: data.html_url || `https://github.com/${UPDATE_REPO}/releases/tag/v${latestVersion}`,
+                    });
+                } catch (e) { resolve({ success: false, isDevEnvironment: !app.isPackaged }); }
+            });
+        });
+        request.on('error', () => resolve({ success: false, isDevEnvironment: !app.isPackaged }));
+        request.on('aborted', () => resolve({ success: false, isDevEnvironment: !app.isPackaged }));
+        setTimeout(() => { request.abort(); resolve({ success: false, isDevEnvironment: !app.isPackaged }); }, 8000);
+        request.end();
+    });
+}
 
 ipcMain.handle('open-external-link', async (event, url) => {
     try {

@@ -44,6 +44,335 @@ const rootDropBound = new WeakSet();
 // 排序顺序：'asc' 升序 | 'desc' 降序
 let fileSortOrder = 'asc';
 
+// ====== 多选状态 ======
+// selectedItems: Map<path, { type: 'file'|'folder', element: HTMLElement }>
+const multiSelectState = {
+    safeId: null,
+    items: new Map(),
+    lastClickedPath: null,
+    toolbar: null
+};
+
+function clearSelection(safeId) {
+    if (safeId && multiSelectState.safeId !== safeId) return;
+    multiSelectState.items.forEach(item => {
+        item.element.classList.remove('selected');
+    });
+    multiSelectState.items.clear();
+    multiSelectState.lastClickedPath = null;
+    hideMultiSelectToolbar();
+}
+
+function toggleSelectItem(path, type, element, safeId) {
+    if (multiSelectState.safeId !== safeId) {
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (multiSelectState.items.has(path)) {
+        multiSelectState.items.delete(path);
+        element.classList.remove('selected');
+    } else {
+        multiSelectState.items.set(path, { type, element });
+        element.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectItem(path, type, element, safeId) {
+    if (multiSelectState.safeId !== safeId) {
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (!multiSelectState.items.has(path)) {
+        multiSelectState.items.set(path, { type, element });
+        element.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectRange(path, type, element, safeId, container) {
+    if (multiSelectState.safeId !== safeId) {
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (!multiSelectState.lastClickedPath) {
+        selectItem(path, type, element, safeId);
+        return;
+    }
+
+    // 获取所有可见的文件和文件夹元素
+    const allItems = [];
+    container.querySelectorAll('.tree-file, .tree-folder-header').forEach(el => {
+        if (el.classList.contains('tree-folder-header')) {
+            const folderDiv = el.closest('.tree-folder');
+            if (folderDiv && folderDiv.parentElement === container) {
+                allItems.push(el);
+            }
+        } else {
+            if (el.parentElement === container) {
+                allItems.push(el);
+            }
+        }
+    });
+
+    // 找到起始和结束索引
+    let startIdx = -1, endIdx = -1;
+    for (let i = 0; i < allItems.length; i++) {
+        const el = allItems[i];
+        const itemPath = el.classList.contains('tree-folder-header')
+            ? el.closest('.tree-folder').dataset.folderPath
+            : el.dataset.file;
+        if (itemPath === multiSelectState.lastClickedPath) startIdx = i;
+        if (itemPath === path) endIdx = i;
+    }
+    if (startIdx === -1 || endIdx === -1) {
+        selectItem(path, type, element, safeId);
+        return;
+    }
+    if (startIdx > endIdx) [startIdx, endIdx] = [endIdx, startIdx];
+
+    // 清除当前选择
+    multiSelectState.items.forEach(item => item.element.classList.remove('selected'));
+    multiSelectState.items.clear();
+
+    for (let i = startIdx; i <= endIdx; i++) {
+        const el = allItems[i];
+        if (el.classList.contains('tree-folder-header')) {
+            const folderDiv = el.closest('.tree-folder');
+            const folderPath = folderDiv.dataset.folderPath;
+            multiSelectState.items.set(folderPath, { type: 'folder', element: el });
+        } else {
+            multiSelectState.items.set(el.dataset.file, { type: 'file', element: el });
+        }
+        el.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectAllVisible(safeId, container) {
+    if (multiSelectState.safeId !== safeId) {
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    multiSelectState.items.clear();
+    // 递归遍历所有可见的文件和文件夹
+    function traverse(parent) {
+        const children = parent.children;
+        for (const child of children) {
+            if (child.classList.contains('tree-folder')) {
+                const header = child.querySelector(':scope > .tree-folder-header');
+                const content = child.querySelector(':scope > .tree-folder-content');
+                if (header) {
+                    const folderPath = child.dataset.folderPath;
+                    if (folderPath) {
+                        multiSelectState.items.set(folderPath, { type: 'folder', element: header });
+                        header.classList.add('selected');
+                    }
+                }
+                if (content && content.style.display !== 'none') {
+                    traverse(content);
+                }
+            } else if (child.classList.contains('tree-file')) {
+                const filePath = child.dataset.file;
+                if (filePath) {
+                    multiSelectState.items.set(filePath, { type: 'file', element: child });
+                    child.classList.add('selected');
+                }
+            }
+        }
+    }
+    traverse(container);
+    updateMultiSelectToolbar();
+}
+
+function hideMultiSelectToolbar() {
+    if (multiSelectState.toolbar) {
+        multiSelectState.toolbar.remove();
+        multiSelectState.toolbar = null;
+    }
+}
+
+function updateMultiSelectToolbar() {
+    const count = multiSelectState.items.size;
+    if (count === 0) {
+        hideMultiSelectToolbar();
+        return;
+    }
+    if (!multiSelectState.toolbar) {
+        multiSelectState.toolbar = document.createElement('div');
+        multiSelectState.toolbar.className = 'multi-select-toolbar';
+        document.body.appendChild(multiSelectState.toolbar);
+    }
+    const safeId = multiSelectState.safeId;
+    const projectPath = tabs[safeId]?.projectPath;
+
+    multiSelectState.toolbar.innerHTML = `
+        <span class="multi-select-count">${count} ${t('ui.items_selected') || '项已选'}</span>
+        <button class="multi-select-btn" data-action="tag">${t('ui.batch_tag') || '批量加标签'}</button>
+        <button class="multi-select-btn" data-action="remove-tag">${t('ui.batch_remove_tag') || '批量删标签'}</button>
+        <button class="multi-select-btn multi-select-danger" data-action="delete">${t('ui.delete') || '删除'}</button>
+        <button class="multi-select-btn" data-action="cancel">✕</button>
+    `;
+
+    // 定位工具栏
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (treeContainer) {
+        const rect = treeContainer.getBoundingClientRect();
+        multiSelectState.toolbar.style.left = rect.left + 'px';
+        multiSelectState.toolbar.style.top = (rect.bottom - 40) + 'px';
+        multiSelectState.toolbar.style.width = rect.width + 'px';
+    }
+
+    multiSelectState.toolbar.querySelector('[data-action="tag"]').onclick = () => batchAddTags(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="remove-tag"]').onclick = () => batchRemoveTags(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="delete"]').onclick = () => batchDelete(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="cancel"]').onclick = () => clearSelection(safeId);
+}
+
+async function batchAddTags(safeId, projectPath) {
+    if (!projectPath || multiSelectState.items.size === 0) return;
+    const paths = Array.from(multiSelectState.items.keys());
+    window.tagModule.openTagPicker(paths[0], async (tag) => {
+        // 对所有选中项应用相同标签
+        for (const path of paths) {
+            await window.tagModule.addTag(path, tag.label, tag.color, tag.emoji);
+        }
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        clearSelection(safeId);
+        showNotification(`${t('ui.tags_added') || '已添加标签'} (${paths.length})`);
+    });
+}
+
+function batchRemoveTags(safeId, projectPath) {
+    if (!projectPath || multiSelectState.items.size === 0) return;
+    const paths = Array.from(multiSelectState.items.keys());
+
+    // 收集所有选中项的标签（去重）
+    const tagMap = new Map(); // tagKey -> { tag, count }
+    for (const p of paths) {
+        const tags = window.tagModule?.getTagsForFile(p) || [];
+        for (const tag of tags) {
+            const key = `${tag.label}|${tag.color}|${tag.emoji}`;
+            if (tagMap.has(key)) {
+                tagMap.get(key).count++;
+            } else {
+                tagMap.set(key, { tag, count: 1 });
+            }
+        }
+    }
+
+    if (tagMap.size === 0) {
+        showNotification(t('ui.no_tags_to_remove') || '选中项没有标签');
+        return;
+    }
+
+    // 创建选择面板
+    const overlay = document.createElement('div');
+    overlay.className = 'tag-picker-overlay';
+    overlay.innerHTML = `<div class="tag-picker" style="max-width: 360px;">
+        <div class="tag-picker-header">
+            <h3>${t('ui.batch_remove_tag') || '批量删标签'}</h3>
+            <button class="tag-picker-close" type="button">×</button>
+        </div>
+        <div class="tag-picker-body">
+            <p style="font-size:12px;color:var(--text-sec);margin-bottom:8px;">${paths.length} ${t('ui.items') || '项'} — ${t('ui.select_tags_to_remove') || '选择要删除的标签'}</p>
+            <div class="batch-remove-tag-list"></div>
+        </div>
+        <div class="tag-actions">
+            <button class="btn-cancel" type="button">${t('ui.cancel')}</button>
+            <button class="btn-save" type="button">${t('ui.delete') || '删除'}</button>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const listEl = overlay.querySelector('.batch-remove-tag-list');
+    const selectedTagIds = new Set();
+
+    for (const [key, { tag, count }] of tagMap) {
+        const item = document.createElement('div');
+        item.className = 'batch-remove-tag-item';
+        item.innerHTML = `
+            <span class="tag-item" style="background-color:${tag.color}">
+                <span class="tag-emoji">${tag.emoji || ''}</span>
+                <span class="tag-label">${tag.label || ''}</span>
+            </span>
+            <span style="font-size:11px;color:var(--text-sec);">${count}/${paths.length}</span>
+        `;
+        item.onclick = () => {
+            if (selectedTagIds.has(key)) {
+                selectedTagIds.delete(key);
+                item.classList.remove('selected');
+            } else {
+                selectedTagIds.add(key);
+                item.classList.add('selected');
+            }
+        };
+        listEl.appendChild(item);
+    }
+
+    const closeOverlay = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) closeOverlay(); };
+    overlay.querySelector('.tag-picker-close').onclick = closeOverlay;
+    overlay.querySelector('.btn-cancel').onclick = closeOverlay;
+    overlay.querySelector('.btn-save').onclick = async () => {
+        if (selectedTagIds.size === 0) { closeOverlay(); return; }
+        let removed = 0;
+        for (const p of paths) {
+            const tags = window.tagModule?.getTagsForFile(p) || [];
+            for (const tag of tags) {
+                const key = `${tag.label}|${tag.color}|${tag.emoji}`;
+                if (selectedTagIds.has(key)) {
+                    await window.tagModule.removeTag(p, tag.id);
+                    removed++;
+                }
+            }
+        }
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        clearSelection(safeId);
+        showNotification(`${t('ui.tags_removed') || '已删除标签'} (${removed})`);
+    };
+}
+
+async function batchDelete(safeId, projectPath) {
+    if (!projectPath || multiSelectState.items.size === 0) return;
+    const count = multiSelectState.items.size;
+    const ok = confirm((t('ui.batch_delete_confirm') || '确定删除选中的') + ` ${count} ` + (t('ui.items') || '项') + '?');
+    if (!ok) return;
+
+    let successCount = 0;
+    let lastFileList = tabs[safeId].fileList;
+    for (const [path, item] of multiSelectState.items) {
+        try {
+            if (item.type === 'file') {
+                const res = await weAPI.deleteFile(projectPath, path);
+                if (res.success) {
+                    successCount++;
+                    lastFileList = res.fileList;
+                    if (tabs[safeId].currentFile === path) {
+                        tabs[safeId].currentFile = null;
+                        if (quill) quill.setText('');
+                    }
+                }
+            } else {
+                const res = await weAPI.deleteFolder(projectPath, path);
+                if (res.success) {
+                    successCount++;
+                    lastFileList = res.fileList;
+                    if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(path + '/')) {
+                        tabs[safeId].currentFile = null;
+                        if (quill) quill.setText('');
+                    }
+                }
+            }
+        } catch (e) { /* 忽略单个失败 */ }
+    }
+
+    tabs[safeId].fileList = lastFileList;
+    refreshFileTree(safeId, tabs[safeId].fileList);
+    clearSelection(safeId);
+    showNotification(`${t('ui.deleted') || '已删除'} ${successCount}/${count}`);
+}
+
 function renderTreeNodes(container, tree, basePath = '') {
     const folders = Object.keys(tree).filter(k => k !== '_files');
     folders.sort();
@@ -52,10 +381,34 @@ function renderTreeNodes(container, tree, basePath = '') {
         const folderPath = basePath ? `${basePath}/${folder}` : folder;
         const folderDiv = document.createElement('div');
         folderDiv.className = 'tree-folder';
+        folderDiv.dataset.folderPath = folderPath;
         const header = document.createElement('div');
         header.className = 'tree-folder-header';
-        header.innerHTML = `<span class="tree-arrow">${ARROW_COLLAPSED}</span><span class="folder-name">${folder}</span>`;
-        header.onclick = () => {
+        // 显示文件夹标签
+        const folderTags = window.tagModule?.getTagsForFile(folderPath) || [];
+        const folderTagsHtml = folderTags.length > 0
+            ? '<span class="file-tags">' + folderTags.map(tag =>
+                `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
+              ).join('') + '</span>'
+            : '';
+        header.innerHTML = `<span class="tree-arrow">${ARROW_COLLAPSED}</span><span class="folder-name">${folder}</span>${folderTagsHtml}`;
+        header.onclick = (e) => {
+            // Ctrl+点击 = 切换多选
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleSelectItem(folderPath, 'folder', header, container.closest('[id^="file-tree-"]').id.replace('file-tree-', ''));
+                multiSelectState.lastClickedPath = folderPath;
+                return;
+            }
+            // Shift+点击 = 范围选择
+            if (e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+                selectRange(folderPath, 'folder', header, sid, container);
+                return;
+            }
             const content = folderDiv.querySelector('.tree-folder-content');
             const arrow = header.querySelector('.tree-arrow');
             if (content.style.display === 'none') {
@@ -156,6 +509,23 @@ function renderTreeNodes(container, tree, basePath = '') {
         fileDiv.onclick = (e) => {
             e.stopPropagation();
             const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            // Ctrl+点击 = 切换多选
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                toggleSelectItem(filePath, 'file', fileDiv, safeId);
+                multiSelectState.lastClickedPath = filePath;
+                return;
+            }
+            // Shift+点击 = 范围选择
+            if (e.shiftKey) {
+                e.preventDefault();
+                selectRange(filePath, 'file', fileDiv, safeId, container);
+                return;
+            }
+            // 普通点击 = 清除多选，打开文件
+            if (multiSelectState.items.size > 0) {
+                clearSelection(safeId);
+            }
             openProjectFile(safeId, filePath);
         };
 
@@ -351,6 +721,11 @@ function showFolderContextMenu(e, folderPath, container) {
     const projectPath = tabs[safeId]?.projectPath;
     const folderName = folderPath.split('/').pop();
 
+    const tagItem = document.createElement('div');
+    tagItem.className = 'context-item';
+    tagItem.textContent = t('ui.manage_tags') || '管理标签';
+    tagItem.onclick = () => { menu.remove(); openTagManager(folderPath, container); };
+
     const renameItem = document.createElement('div');
     renameItem.className = 'context-item';
     renameItem.textContent = t('ui.rename') || '重命名';
@@ -397,6 +772,8 @@ function showFolderContextMenu(e, folderPath, container) {
         }
     };
 
+    menu.appendChild(tagItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
     menu.appendChild(renameItem);
     menu.appendChild(deleteItem);
 
@@ -481,8 +858,28 @@ function refreshFileTree(safeId, files) {
     const treeContainer = document.getElementById(`file-tree-${safeId}`);
     if (!treeContainer) return;
     treeContainer.innerHTML = '';
+    // 清除多选状态
+    if (multiSelectState.safeId === safeId) clearSelection(safeId);
     const tree = buildFileTree(files);
     renderTreeNodes(treeContainer, tree);
+
+    // 点击空白区域清除选择
+    treeContainer.onclick = (e) => {
+        if (e.target === treeContainer) {
+            clearSelection(safeId);
+        }
+    };
+
+    // Ctrl+A 全选（在文件树内）
+    treeContainer.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            selectAllVisible(safeId, treeContainer);
+        }
+        if (e.key === 'Escape') {
+            clearSelection(safeId);
+        }
+    });
 
     // 根容器作为 drop 目标（拖到根目录），只绑定一次
     if (!rootDropBound.has(treeContainer)) {

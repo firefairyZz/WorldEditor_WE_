@@ -3,6 +3,7 @@
 const DEFAULT_SHORTCUTS = {
     'toggle-help':    { key: 'F1',           ctrl: false, shift: false, label: 'ui.show_shortcuts',   group: 'view' },
     'toggle-help-alt':{ key: '/',            ctrl: true,  shift: false, label: 'ui.show_shortcuts2',  group: 'view' },
+    'command-palette':{ key: 'p',            ctrl: true,  shift: false, label: 'ui.command_palette', group: 'view' },
     'save':           { key: 's',            ctrl: true,  shift: false, label: 'ui.save_current',     group: 'file' },
     'new-file':       { key: 'n',            ctrl: true,  shift: false, label: 'ui.new_file',         group: 'file' },
     'open-project':   { key: 'o',            ctrl: true,  shift: false, label: 'ui.open_project',     group: 'file' },
@@ -18,6 +19,11 @@ const DEFAULT_SHORTCUTS = {
     'goto-tab-7':     { key: '7',            ctrl: true,  shift: false, label: 'ui.goto_tab',         group: 'tab' },
     'goto-tab-8':     { key: '8',            ctrl: true,  shift: false, label: 'ui.goto_tab',         group: 'tab' },
     'goto-tab-9':     { key: '9',            ctrl: true,  shift: false, label: 'ui.goto_tab',         group: 'tab' },
+    'find':           { key: 'f',            ctrl: true,  shift: false, label: 'ui.find',             group: 'view' },
+    'replace':        { key: 'h',            ctrl: true,  shift: false, label: 'ui.find_replace',     group: 'view' },
+    'command-mode':   { key: 'p',            ctrl: true,  shift: true,  label: 'ui.command_palette',  group: 'view' },
+    'select-all':     { key: 'a',            ctrl: true,  shift: false, label: 'ui.select_all',       group: 'file' },
+    'batch-tag':      { key: 't',            ctrl: true,  shift: false, label: 'ui.batch_tag',        group: 'file' },
 };
 
 // 当前生效的快捷键（合并用户自定义）
@@ -169,11 +175,61 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
+    // Ctrl+P / Ctrl+Shift+P - 全局命令面板（不受 isInput 限制，但在命令面板自身输入框中不触发）
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        if (commandPalette && commandPalette.isVisible) return;
+        e.preventDefault();
+        // Ctrl+Shift+P → 命令模式（带 > 前缀）
+        if (e.shiftKey) commandPalette.toggle('>');
+        else commandPalette.toggle();
+        return;
+    }
+
+    // Ctrl+F - 查找（不受 isInput 限制，但在命令面板/查找栏自身中不触发）
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        if (commandPalette && commandPalette.isVisible) return;
+        if (findBar && findBar.isVisible) { e.preventDefault(); findBar.findInput.focus(); return; }
+        e.preventDefault();
+        if (findBar) findBar.show(false);
+        return;
+    }
+
+    // Ctrl+H - 查找和替换
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        if (commandPalette && commandPalette.isVisible) return;
+        e.preventDefault();
+        if (findBar) findBar.show(true);
+        return;
+    }
+
     // Ctrl+S - 保存当前文件（在输入框中也生效）
     if (matchesShortcut(e, activeShortcuts['save'])) {
         e.preventDefault();
         saveCurrentFile();
         return;
+    }
+
+    // Ctrl+A - 全选文件树中的文件（仅当焦点在文件树区域时）
+    if (matchesShortcut(e, activeShortcuts['select-all'])) {
+        if (activeTabId && tabs[activeTabId]?.projectPath) {
+            const treeContainer = document.getElementById(`file-tree-${activeTabId}`);
+            if (treeContainer && treeContainer.contains(document.activeElement)) {
+                e.preventDefault();
+                selectAllVisible(activeTabId, treeContainer);
+                return;
+            }
+        }
+    }
+
+    // Ctrl+T - 批量加标签（仅当选中多个文件时）
+    if (matchesShortcut(e, activeShortcuts['batch-tag'])) {
+        if (multiSelectState.items.size > 0 && multiSelectState.safeId) {
+            e.preventDefault();
+            const sid = multiSelectState.safeId;
+            const projectPath = tabs[sid]?.projectPath;
+            batchAddTags(sid, projectPath);
+            return;
+        }
     }
 
     // 以下快捷键在输入框中不生效

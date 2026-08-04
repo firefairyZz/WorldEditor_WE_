@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
 JS/node_modules/
-LUCIDE/
+JS/renderer/lib/Lucide/
 
 # Build output
 dist/
@@ -32,17 +32,12 @@ __pycache__/
 .vscode/
 .idea/
 
-# Backup folders (old version snapshots)
-0.4.0-betabak/
-JS/0.4.0-betabak/
-
 # User data (runtime generated - privacy)
 JS/User/account.json
 JS/User/settings.json
 JS/User/avatars/
 JS/User/recent.json
 JS/User/test/
-JS/User/test - 副本/
 
 # User-created project folders (exclude all subdirs, keep only lang/)
 JS/User/*/
@@ -53,8 +48,6 @@ JS/User/*/
 
 # Recent projects list (contains file paths - privacy)
 JS/resources/recent.json
-0.4.0-betabak/resources/recent.json
-Python_Vision/resources/recent.json
 
 # Electron test runtime data (cache, cookies, local storage - privacy)
 JS/test/.userData/

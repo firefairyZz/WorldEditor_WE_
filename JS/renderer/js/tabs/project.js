@@ -99,6 +99,13 @@ function createNewProjectTab() {
                             </label>
                         </div>
                     </div>
+                    <hr>
+                    <div class="form-group">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="new-project-pin" />
+                            <strong>${t('ui.pin_to_welcome') || '将此项目固定到启程页'}</strong>
+                        </label>
+                    </div>
                 </div>
             </div>
             <div class="new-project-footer">
@@ -140,10 +147,14 @@ function createNewProjectTab() {
         const desc = content.querySelector('#new-project-desc').value.trim();
         const template = content.querySelector('input[name="template"]:checked')?.value || 'empty';
         const projectMode = content.querySelector('input[name="project-mode"]:checked')?.value || 'rich';
+        const shouldPin = content.querySelector('#new-project-pin')?.checked || false;
         try {
             const folder = await weAPI.getDefaultProjectPath(name);
             const result = await weAPI.createProject(folder, name, desc, template, projectMode);
             if (result.success) {
+                if (shouldPin) {
+                    await weAPI.togglePinProject(folder);
+                }
                 closeTab(id);
                 openProjectDirectly({ folder, name, fileList: result.fileList, projectMode: result.projectMode, owner: result.owner });
                 showNotification(t('ui.project_created') || '项目已创建');
@@ -193,7 +204,10 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
 
     const projectNameEl = document.createElement('h3');
     projectNameEl.className = 'project-name-editable';
-    projectNameEl.textContent = name;
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'project-name-text';
+    nameSpan.textContent = name;
+    projectNameEl.appendChild(nameSpan);
     projectNameEl.title = t('ui.double_click_rename') || '双击重命名';
     projectNameEl.contentEditable = 'false';
     projectNameEl.spellcheck = false;
@@ -202,28 +216,28 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     const beginEdit = () => {
         if (editState.editing) return;
         editState.editing = true;
-        editState.original = projectNameEl.textContent.trim();
-        projectNameEl.contentEditable = 'true';
+        editState.original = nameSpan.textContent.trim();
+        nameSpan.contentEditable = 'true';
         projectNameEl.classList.add('editing');
-        projectNameEl.focus();
+        nameSpan.focus();
         const range = document.createRange();
-        range.selectNodeContents(projectNameEl);
+        range.selectNodeContents(nameSpan);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
     };
     const endEdit = async (cancel = false) => {
         if (!editState.editing) return;
-        const newName = cancel ? editState.original : projectNameEl.textContent.trim();
-        projectNameEl.contentEditable = 'false';
+        const newName = cancel ? editState.original : nameSpan.textContent.trim();
+        nameSpan.contentEditable = 'false';
         projectNameEl.classList.remove('editing');
         editState.editing = false;
         if (cancel) {
-            projectNameEl.textContent = editState.original;
+            nameSpan.textContent = editState.original;
             return;
         }
         if (!newName) {
-            projectNameEl.textContent = editState.original;
+            nameSpan.textContent = editState.original;
             showNotification(t('ui.name_required') || '名称不能为空');
             return;
         }
@@ -232,7 +246,7 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
         const res = await weAPI.renameProject(oldPath, newName);
         if (res.success) {
             tabs[safeId].projectPath = res.newFolder;
-            projectNameEl.textContent = newName;
+            nameSpan.textContent = newName;
             // 更新标签页标题
             const tabEl = tabs[safeId]?.tabElement;
             if (tabEl) {
@@ -242,14 +256,14 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
             if (tabs[safeId]) tabs[safeId].title = newName;
             showNotification(t('ui.renamed') || '已重命名');
         } else {
-            projectNameEl.textContent = editState.original;
+            nameSpan.textContent = editState.original;
             showNotification((t('ui.rename_failed') || '重命名失败') + ': ' + (res.error || ''));
         }
     };
     projectNameEl.addEventListener('dblclick', beginEdit);
-    projectNameEl.addEventListener('blur', () => endEdit(false));
-    projectNameEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); projectNameEl.blur(); }
+    nameSpan.addEventListener('blur', () => endEdit(false));
+    nameSpan.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); nameSpan.blur(); }
         else if (e.key === 'Escape') { e.preventDefault(); endEdit(true); }
     });
 
@@ -276,7 +290,7 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
                 </div>
             </div>
         </div>
-        <div class="file-tree-wrapper" id="file-tree-${safeId}"></div>
+        <div class="file-tree-wrapper" id="file-tree-${safeId}" tabindex="0"></div>
         <div class="sidebar-footer">
             <button id="btn-add-file-${safeId}">+ ${t('ui.new_file')}</button>
         </div>
@@ -323,13 +337,35 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     divider.className = 'sidebar-divider';
     sidebar.insertBefore(divider, sidebar.children[owner ? 2 : 1] || null);
 
-    // 在项目名右侧添加删除按钮
+    // 在项目名右侧添加固定按钮和删除按钮
+    const pinProjectBtn = document.createElement('button');
+    pinProjectBtn.className = 'btn-pin-project init-hidden';
+    pinProjectBtn.title = t('ui.pin_project') || '固定项目';
+    pinProjectBtn.innerHTML = `<img class="pin-icon" src="../resources/pin.svg" alt="">`;
+    pinProjectBtn.onclick = async () => {
+        const result = await weAPI.togglePinProject(folder);
+        if (result.success) {
+            pinProjectBtn.classList.toggle('active', result.pinned);
+            pinProjectBtn.title = t(result.pinned ? 'ui.unpin_project' : 'ui.pin_project') || (result.pinned ? '取消固定' : '固定项目');
+            showNotification(t(result.pinned ? 'ui.project_pinned' : 'ui.project_unpinned') || (result.pinned ? '已固定' : '已取消固定'));
+            if (window.refreshRecentProjects) await window.refreshRecentProjects();
+        }
+    };
+
     const deleteProjectBtn = document.createElement('button');
     deleteProjectBtn.className = 'btn-delete-project';
     deleteProjectBtn.title = t('ui.delete_project') || '删除项目';
-    deleteProjectBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M5 7h14M10 7V5a1 1 0 011-1h2a1 1 0 011 1v2M6 7l1 12a1 1 0 001 1h8a1 1 0 001-1l1-12" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    deleteProjectBtn.innerHTML = '<svg class="delete-icon" viewBox="0 0 24 24" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M5 7h14M10 7V5a1 1 0 011-1h2a1 1 0 011 1v2M6 7l1 12a1 1 0 001 1h8a1 1 0 001-1l1-12" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     deleteProjectBtn.onclick = () => deleteProject(safeId);
+    projectNameEl.appendChild(pinProjectBtn);
     projectNameEl.appendChild(deleteProjectBtn);
+
+    // 初始化固定按钮状态（先隐藏，获取后再显示，避免闪烁）
+    weAPI.isProjectPinned(folder).then(isPinned => {
+        pinProjectBtn.classList.toggle('active', isPinned);
+        pinProjectBtn.title = t(isPinned ? 'ui.unpin_project' : 'ui.pin_project') || (isPinned ? '取消固定' : '固定项目');
+        pinProjectBtn.classList.remove('init-hidden');
+    });
 
     const addBtn = sidebar.querySelector(`#btn-add-file-${safeId}`);
     addBtn.onclick = () => addFileToProject(safeId);
