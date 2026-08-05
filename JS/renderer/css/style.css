@@ -1,10 +1,30 @@
 /* ====== 全局重置与基础 ====== */
 * { margin:0; padding:0; box-sizing:border-box; }
 
+/* ╔══════════════════════════════════════════════════════════════════╗
+   ║  ⚠️  材质渲染 — html/body 必须保持以下配置                           ║
+   ║                                                                  ║
+   ║  background: transparent   → 让 OS 材质（Mica/Acrylic）透出来      ║
+   ║  禁止设置 border-radius    → 圆角由 Win11 OS 原生处理               ║
+   ║  禁止设置 overflow: hidden → 会裁切 OS 原生圆角                     ║
+   ║                                                                 ║
+   ║  常见错误（会导致 bug）：                                           ║
+   ║    ✗ 给 html/body 加 border-radius: 8px/12px 模拟圆角             ║
+   ║      → 与 OS 原生圆角冲突，出现缝隙/错位                             ║
+   ║    ✗ 设 background: 非透明色                                      ║
+   ║      → 挡住 Mica/Acrylic 材质                                     ║
+   ║    ✗ 用 transparent: true + CSS clip-path 模拟圆角                ║
+   ║      → 丢失 OS 阴影，DWM 拖影                                      ║
+   ║                                                                  ║
+   ║  材质视觉由三层 CSS 变量控制（见 settings.js）：                      ║
+   ║    --overlay-tint    → #main 遮罩层（间隙/边框）                    ║
+   ║    --content-tint    → 内容区背景                                  ║
+   ║    --title-bar-tint  → 标题栏背景                                  ║
+   ║  材质激活时三层半透明，材质=none 时三层实心                            ║
+   ╚══════════════════════════════════════════════════════════════════╝ */
 html, body {
     height: 100vh;
     overflow: hidden;
-    /* 对齐测试文件：body 背景始终透明，不透明由各子区块承担 */
     background: transparent;
     color: var(--text);
     display: flex;
@@ -13,11 +33,6 @@ html, body {
     font-size: var(--font-size, 14px);
     font-weight: var(--font-weight-normal, 400);
     transition: color 0.3s;
-    border-radius: 12px;
-}
-body.is-maximized,
-html.is-maximized {
-    border-radius: 0;
 }
 
 /* ====== 全局滚动条美化 ====== */
@@ -2639,17 +2654,17 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .editor-toolbar {
     display: flex !important;
     flex-wrap: wrap;
-    gap: 2px;
-    padding: 6px 8px;
+    gap: 0;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--border) !important;
     background: var(--bg-sidebar);
     align-items: center;
 }
 .editor-toolbar .ql-formats {
     display: inline-flex;
-    gap: 2px;
-    padding: 0 4px;
-    border-right: 1px solid var(--border);
+    gap: 0;
+    padding: 0;
+    border-right: none;
 }
 .editor-toolbar .ql-formats.last-format { border-right: none; }
 .editor-toolbar button {
@@ -2657,7 +2672,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     border: none;
     background: transparent;
     color: var(--text);
-    border-radius: var(--radius-sm);
+    border-radius: 0;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2669,14 +2684,85 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .editor-toolbar button.ql-active { color: var(--accent); background: var(--hover-bg); }
 .editor-toolbar select {
     height: 28px;
+    min-width: 28px;
     background: var(--bg-main);
     color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: none;
+    border-radius: 0;
     font-size: 12px;
-    padding: 0 6px;
+    padding: 0 4px;
     cursor: pointer;
 }
+.editor-toolbar .ql-snow .ql-picker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-width: 28px;
+    width: auto;
+    border-radius: 0;
+    padding: 0;
+}
+.editor-toolbar .ql-snow .ql-picker-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    height: 28px;
+    width: auto;
+}
+.editor-toolbar .ql-snow .ql-color-picker,
+.editor-toolbar .ql-snow .ql-icon-picker {
+    width: 28px;
+}
+.editor-toolbar .ql-snow .ql-align {
+    width: auto;
+    min-width: 28px;
+}
+
+/* Quill snow 主题暗色适配：覆盖硬编码的 #444 图标色和 #fff 下拉背景 */
+.editor-toolbar .ql-snow .ql-stroke,
+.ql-snow .ql-stroke { stroke: var(--text) !important; }
+.editor-toolbar .ql-snow .ql-stroke-miter,
+.ql-snow .ql-stroke-miter { stroke: var(--text) !important; }
+.editor-toolbar .ql-snow .ql-fill,
+.ql-snow .ql-fill,
+.ql-snow .ql-stroke.ql-fill { fill: var(--text) !important; }
+.editor-toolbar .ql-snow .ql-picker,
+.ql-snow .ql-picker { color: var(--text) !important; }
+.editor-toolbar .ql-snow .ql-picker-label,
+.ql-snow .ql-picker-label { color: var(--text) !important; }
+.ql-snow .ql-picker.ql-expanded .ql-picker-label { color: var(--text-sec) !important; }
+.ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-fill { fill: var(--text-sec) !important; }
+.ql-snow .ql-picker.ql-expanded .ql-picker-label .ql-stroke { stroke: var(--text-sec) !important; }
+.ql-snow .ql-picker-options {
+    background-color: var(--bg-sidebar) !important;
+    border-color: var(--border) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.ql-toolbar.ql-snow .ql-picker.ql-expanded .ql-picker-label { border-color: var(--border) !important; }
+.ql-toolbar.ql-snow .ql-picker.ql-expanded .ql-picker-options { border-color: var(--border) !important; }
+/* hover/active 态用强调色 */
+.ql-snow .ql-toolbar button:hover .ql-stroke,
+.ql-snow.ql-toolbar button:hover .ql-stroke,
+.ql-snow .ql-toolbar button.ql-active .ql-stroke,
+.ql-snow.ql-toolbar button.ql-active .ql-stroke,
+.ql-snow .ql-toolbar .ql-picker-label:hover .ql-stroke,
+.ql-snow.ql-toolbar .ql-picker-label:hover .ql-stroke { stroke: var(--accent) !important; }
+.ql-snow .ql-toolbar button:hover .ql-fill,
+.ql-snow.ql-toolbar button:hover .ql-fill,
+.ql-snow .ql-toolbar button.ql-active .ql-fill,
+.ql-snow.ql-toolbar button.ql-active .ql-fill,
+.ql-snow .ql-toolbar .ql-picker-label:hover .ql-fill,
+.ql-snow.ql-toolbar .ql-picker-label:hover .ql-fill { fill: var(--accent) !important; }
+.ql-snow .ql-toolbar button:hover,
+.ql-snow.ql-toolbar button:hover,
+.ql-snow .ql-toolbar button.ql-active,
+.ql-snow.ql-toolbar button.ql-active,
+.ql-snow .ql-toolbar .ql-picker-label:hover,
+.ql-snow.ql-toolbar .ql-picker-label:hover,
+.ql-snow .ql-toolbar .ql-picker-label.ql-active,
+.ql-snow.ql-toolbar .ql-picker-label.ql-active { color: var(--accent) !important; }
 
 .custom-btn {
     width: 28px !important;
@@ -2684,7 +2770,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     border: none;
     background: transparent;
     color: var(--text);
-    border-radius: var(--radius-sm);
+    border-radius: 0;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2697,9 +2783,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
 .editor-actions {
     display: inline-flex;
-    gap: 4px;
-    padding: 0 4px;
-    border-right: 1px solid var(--border);
+    gap: 0;
+    padding: 0;
+    border-right: none;
     align-items: center;
 }
 
@@ -3696,13 +3782,13 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    margin: 0 5px;
+    margin: 0;
     height: 26px;
     font-size: 12px;
     color: var(--text-secondary);
     background: var(--content-tint, var(--bg-sidebar));
     border-top: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 0;
 }
 .status-left, .status-right {
     display: flex;

@@ -1216,14 +1216,19 @@ function createSettingsTab() {
         }
     }
     if (bgMaterialSelect) {
-        bgMaterialSelect.addEventListener('change', () => {
+        // ⚠️ 调用顺序：先 await IPC（等 OS 材质生效）→ 再改 CSS
+        // 如果先改 CSS（变半透明），OS 材质还没切完，会看到桌面 → 拖影
+        bgMaterialSelect.addEventListener('change', async () => {
             const bgm = bgMaterialSelect.value;
             const tint = parseInt(bgTintSlider?.value || '78');
             const overlay = parseInt(bgOverlaySlider?.value || '30');
             const barTint = parseInt(bgBarTintSlider?.value || '100');
+            console.log(`[renderer] 下拉框切换 → 先发IPC给OS weAPI.setBackgroundMaterial('${bgm}')`);
+            // 1. 先通知主进程切换 OS 材质，等待完成
+            await weAPI.setBackgroundMaterial(bgm);
+            console.log(`[renderer] OS材质已切换 → 再应用CSS applyBackgroundMaterial('${bgm}', tint=${tint}, overlay=${overlay}, barTint=${barTint})`);
+            // 2. OS材质生效后再改CSS，防止半透明时材质还没生效导致拖影
             applyBackgroundMaterial(bgm, tint, overlay, barTint);
-            // 通知主进程切换 OS 材质
-            weAPI.setBackgroundMaterial(bgm);
             updateMaterialRowsState(bgm);
         });
         updateMaterialRowsState(bgMaterialSelect.value);
@@ -1569,10 +1574,10 @@ function createSettingsTab() {
         refreshSettingsI18n();
 
         // 应用背景材质（必须在 applyTheme/applyColorPreset 之后，否则背景色会被覆盖）
+        console.log(`[renderer] 设置页"应用"按钮 → weAPI.setBackgroundMaterial('${bgmVal}')`);
         await weAPI.setBackgroundMaterial(bgmVal);
-        applyBackgroundMaterial(bgmVal, bgTintVal, bgBarTintVal);
-        // 应用背景遮罩透明度（独立于材质，始终生效）
-        applyOverlay(bgOverlayVal);
+        console.log(`[renderer] 设置页"应用"按钮 → applyBackgroundMaterial('${bgmVal}', tint=${bgTintVal}, overlay=${bgOverlayVal}, barTint=${bgBarTintVal})`);
+        applyBackgroundMaterial(bgmVal, bgTintVal, bgOverlayVal, bgBarTintVal);
 
         // 保存账户变更
         if (accountChanged && tempAccountName) {
@@ -1781,7 +1786,6 @@ function applyBackgroundImage(dataUrl, opacity) {
 window.applyBackgroundImage = applyBackgroundImage;
 
 // 恢复不透明状态（材质为"无"时调用）
-// 注意：--overlay-tint 由 applyOverlay 独立控制（背景遮罩透明度），不在此重置
 function resetMaterialStyles() {
     const { bgSidebar, bgMain, gapColor, border } = readThemeColors();
     document.body.style.setProperty('--content-tint', bgSidebar);
@@ -1789,6 +1793,7 @@ function resetMaterialStyles() {
     document.body.style.setProperty('--bg-main', bgMain);
     document.body.style.setProperty('--border', border);
     document.body.style.setProperty('--gap-color', gapColor);
+    document.body.style.setProperty('--overlay-tint', gapColor);
     document.body.style.setProperty('--title-bar-tint', bgSidebar);
     const titleBar = document.getElementById('title-bar');
     if (titleBar) titleBar.style.removeProperty('border-bottom');
@@ -1801,16 +1806,20 @@ function resetMaterialStyles() {
 // barTint: 标题栏不透明度（0-100）
 function applyBackgroundMaterial(material, tint, overlay, barTint) {
     const active = material && material !== 'none';
+    console.log(`[renderer] applyBackgroundMaterial | material=${material} tint=${tint} overlay=${overlay} barTint=${barTint} active=${active}`);
     document.documentElement.classList.toggle('material-active', active);
     document.body.classList.toggle('material-active', active);
     document.body.dataset.bgMaterial = material || 'none';
     window.__lastMaterialSettings = { material, tint, overlay, barTint };
 
     if (!active) {
+        console.log(`[renderer] applyBackgroundMaterial → 调用 resetMaterialStyles()`);
         resetMaterialStyles();
         return;
     }
+    console.log(`[renderer] applyBackgroundMaterial → applyTint(${tint}) + applyOverlay(${overlay}) + applyBarTint(${barTint})`);
     applyTint(tint);
+    applyOverlay(overlay);
     applyBarTint(barTint);
 }
 
@@ -1882,12 +1891,14 @@ function applyColorPreset(presetName, customColors) {
         const m = target.dataset.bgMaterial || 'none';
         if (m && m !== 'none') {
             const saved = window.__lastMaterialSettings || {};
+            console.log(`[renderer] applyColorPreset 主题切换 → 重新应用材质 applyBackgroundMaterial('${m}')`);
             applyBackgroundMaterial(m, saved.tint ?? 78, saved.overlay ?? 30, saved.barTint ?? 100);
         }
     }
     // 通知主进程更新窗口背景色（主题变了，none 时的回退色也要变）
     if (typeof weAPI !== 'undefined' && weAPI.setBackgroundMaterial) {
         const m = target.dataset.bgMaterial || 'none';
+        console.log(`[renderer] applyColorPreset 主题切换 → weAPI.setBackgroundMaterial('${m}')`);
         weAPI.setBackgroundMaterial(m);
     }
 }
@@ -1931,18 +1942,21 @@ function updateStatusBar() {
     
     // 检查是否有新的状态栏结构
     const existingStatus = statusBar.querySelector('.status-left .status-item');
-    if (existingStatus) {
-        // 更新新的状态栏结构
-        if (tabs[activeTabId].dirty) {
-            existingStatus.innerHTML = `<span class="status-label">${t('ui.modified') || '已修改'}</span>`;
-            existingStatus.classList.add('dirty');
-        } else {
-            existingStatus.innerHTML = `<span class="status-label">${t('ui.saved') || '已保存'}</span>`;
-            existingStatus.classList.remove('dirty');
+    if (!existingStatus) {
+        // 结构不存在则先重建
+        if (typeof window.initStatusBar === 'function') {
+            window.initStatusBar();
         }
-    } else {
-        // 保持向后兼容
-        statusBar.textContent = tabs[activeTabId].dirty ? t('ui.modified') : t('ui.saved');
+    }
+    const statusItem = statusBar.querySelector('.status-left .status-item');
+    if (statusItem) {
+        if (tabs[activeTabId].dirty) {
+            statusItem.innerHTML = `<span class="status-label">${t('ui.modified') || '已修改'}</span>`;
+            statusItem.classList.add('dirty');
+        } else {
+            statusItem.innerHTML = `<span class="status-label">${t('ui.saved') || '已保存'}</span>`;
+            statusItem.classList.remove('dirty');
+        }
     }
 }
 

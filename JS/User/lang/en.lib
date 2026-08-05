@@ -1,4 +1,4 @@
-﻿ui.file = File
+ui.file = File
 ui.new_project = New Project
 ui.open_folder = Open Project
 ui.new_file = New File
@@ -238,6 +238,7 @@ ui.preview = Preview
 ui.preview_mode = Preview
 ui.enter_image_url = Enter image URL
 ui.jump_link_markdown_hint = Use [text](project:file#heading) in Markdown for internal jumps
+ui.project_not_found = Target project not found
 ui.no_such_heading = Heading not found, file opened
 ui.delete_project = Delete Project
 ui.delete_project_warning = Warning: This will delete the project and all its files!

@@ -6,3 +6,4 @@ set "PATH=C:\Program Files\nodejs;%PATH%"
 cd /d "%~dp0"
 :: 直接启动 Electron（使用项目本地的 electron.cmd）
 call npm start
+ 

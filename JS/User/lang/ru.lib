@@ -1,4 +1,4 @@
-﻿# WE Русский языковой файл
+# WE Русский языковой файл
 ui.file = Файл
 ui.new_project = Новый проект
 ui.open_folder = Открыть проект
@@ -240,6 +240,7 @@ ui.preview = Предпросмотр
 ui.preview_mode = Предпросмотр
 ui.enter_image_url = Введите URL изображения
 ui.jump_link_markdown_hint = Используйте [текст](project:файл#заголовок) в Markdown для внутренних переходов
+ui.project_not_found = Целевой проект не найден
 ui.no_such_heading = Заголовок не найден, файл открыт
 ui.delete_project = Удалить проект
 ui.delete_project_warning = Внимание: проект и все его файлы будут удалены!

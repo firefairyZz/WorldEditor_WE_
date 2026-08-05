@@ -23,6 +23,7 @@ window.onload = async () => {
     }
     // 应用背景材质（Mica/Acrylic/Tabbed）
     const bgMaterial = settings.backgroundMaterial || 'none';
+    console.log(`[renderer] init.js onload → 初始材质=${bgMaterial}`);
     if (typeof applyBackgroundMaterial === 'function') {
         applyBackgroundMaterial(bgMaterial, settings.materialTint ?? 78, settings.materialOverlay ?? 30, settings.materialBarTint ?? 100);
     }
@@ -181,9 +182,23 @@ function updateStatusBarStats() {
     if (!quill) return;
 
     const text = quill.getText();
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    const chars = text.length;
-    const paragraphs = text.split('\n\n').filter(p => p.trim()).length;
+    const cleanText = text.replace(/\n$/, '');
+    // 字数：中文按字符计，英文按单词计
+    let words = 0;
+    if (cleanText.trim()) {
+        const chineseChars = (cleanText.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const nonChineseText = cleanText.replace(/[\u4e00-\u9fa5]/g, ' ').trim();
+        const nonChineseWords = nonChineseText ? nonChineseText.split(/\s+/).filter(Boolean).length : 0;
+        words = chineseChars + nonChineseWords;
+    }
+    const chars = cleanText.length;
+    // 段落：Quill 每个块（p/h1/h2/li 等）对应一个 \n，用 getLines() 统计非空行
+    const lines = quill.getLines();
+    let paragraphs = 0;
+    for (const line of lines) {
+        const lineText = line.domNode?.textContent || '';
+        if (lineText.trim()) paragraphs++;
+    }
     const readingTime = Math.max(1, Math.ceil(words / 200));
 
     const wordsEl = _getStatusEl('words');
@@ -197,5 +212,6 @@ function updateStatusBarStats() {
     if (readingTimeEl) readingTimeEl.textContent = readingTime + '分钟';
 }
 
-// 暴露到全局以便 editor.js 调用
+// 暴露到全局以便其他模块调用
+window.initStatusBar = initStatusBar;
 window.updateStatusBarStats = updateStatusBarStats;

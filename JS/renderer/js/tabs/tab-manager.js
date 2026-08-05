@@ -389,6 +389,8 @@ function switchTab(id) {
     if (id === 'welcome') {
         const recentContainer = document.querySelector('#recent-list');
         if (recentContainer) loadRecentProjectsNew(recentContainer);
+    } else {
+        if (typeof updateStatusBarStats === 'function') updateStatusBarStats();
     }
 }
 

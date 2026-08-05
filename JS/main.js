@@ -4,17 +4,33 @@ const fs = require('fs');
 const archiver = require('archiver');
 const unzipper = require('unzipper');
 
-const USER_DIR = path.join(__dirname, 'User');
-const RECENT_PATH = path.join(__dirname, 'resources', 'recent.json');
+// 打包后使用 userData 目录（可写），开发时使用项目目录
+const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
+
+const USER_DIR = path.join(DATA_DIR, 'User');
+const RECENT_PATH = path.join(DATA_DIR, 'resources', 'recent.json');
 const SETTINGS_PATH = path.join(USER_DIR, 'settings.json');
 const ACCOUNT_PATH = path.join(USER_DIR, 'account.json');
 const ACCOUNT_AVATAR_DIR = path.join(USER_DIR, 'avatars');
 const LANG_DIR = path.join(USER_DIR, 'lang');
 const APP_VERSION = "0.6.0";
 
-if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR);
-if (!fs.existsSync(path.join(__dirname, 'resources'))) fs.mkdirSync(path.join(__dirname, 'resources'));
-if (!fs.existsSync(LANG_DIR)) fs.mkdirSync(LANG_DIR);
+if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR, { recursive: true });
+if (!fs.existsSync(path.join(DATA_DIR, 'resources'))) fs.mkdirSync(path.join(DATA_DIR, 'resources'), { recursive: true });
+if (!fs.existsSync(LANG_DIR)) fs.mkdirSync(LANG_DIR, { recursive: true });
+
+// 打包后首次运行：从 asar 复制语言文件到可写目录
+if (app.isPackaged) {
+    const bundledLangDir = path.join(__dirname, 'User', 'lang');
+    if (fs.existsSync(bundledLangDir)) {
+        for (const file of fs.readdirSync(bundledLangDir)) {
+            const destFile = path.join(LANG_DIR, file);
+            if (!fs.existsSync(destFile)) {
+                try { fs.copyFileSync(path.join(bundledLangDir, file), destFile); } catch (e) {}
+            }
+        }
+    }
+}
 
 let splash = null;
 let mainWin = null;
@@ -640,18 +656,29 @@ function createSplash() {
 }
 
 function createMainWindow() {
-    const preset = appSettings.colorPreset || 'default-dark';
-    const isLight = preset.includes('light') || preset === 'we-light';
     const material = appSettings.backgroundMaterial || 'none';
     const validMaterial = (material === 'transparent') ? 'none' : material;
-    // 对齐测试文件：材质激活时窗口背景透明让 OS 材质透过；无材质时用主题不透明色
-    const bgColor = (material === 'none' || material === 'transparent')
-        ? (isLight ? '#e8e8e8' : '#2a2a2a')
-        : '#00000000';
+    // ╔══════════════════════════════════════════════════════════════════════════════╗
+    // ║  ⚠️  材质渲染核心配置 — 禁止修改以下参数（详见下方说明）                             ║
+    // ║                                                                              ║
+    // ║  transparent: 不要设置（默认 false）。设为 true 会丢失 OS 原生                    ║
+    // ║    圆角和阴影，且 DWM 合成异常会导致控件拖影。                                     ║
+    // ║  backgroundColor: 必须 '#00000000'（透明）。让材质能透出来。                    ║
+    // ║    运行时由 set-background-material IPC 按材质类型动态切换，                      ║
+    // ║    不要在此处根据材质类型做条件判断（会与运行时切换冲突）。                            ║
+    // ║  backgroundMaterial: 从 appSettings 读取，运行时可切换。                         ║
+    // ║                                                                              ║
+    // ║  正确流程：窗口创建时始终透明 → 运行时按材质类型切换                                 ║
+    // ║    切到材质：setBackgroundColor('#00000000') + setBackgroundMaterial         ║
+    // ║    切到 none ：setBackgroundColor(实心主题色) + setBackgroundMaterial('none')   ║
+    // ║                                                                              ║
+    // ║  参考实现：JS/test/mica-test.js（测试通过的基准）                                 ║
+    // ╚══════════════════════════════════════════════════════════════════════════════╝
+    console.log(`[createMainWindow] 初始化窗口 | material=${material} validMaterial=${validMaterial} backgroundColor=#00000000`);
     mainWin = new BrowserWindow({
         width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
         show: false,
-        backgroundColor: bgColor,
+        backgroundColor: '#00000000',
         backgroundMaterial: validMaterial,
         icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
@@ -694,28 +721,67 @@ function createMainWindow() {
         return mainWin.isAlwaysOnTop();
     });
     ipcMain.handle('is-always-on-top', () => mainWin.isAlwaysOnTop());
-    ipcMain.on('set-background-color', (event, color) => mainWin.setBackgroundColor(color));
 
-    // 实时切换背景材质（云母/亚克力/标签式）
-    // 对齐测试文件 set-material：none 时设不透明主题色，其他材质设透明
+    // ╔══════════════════════════════════════════════════════════════════╗
+    // ║  ⚠️  材质切换 IPC — 禁止简化或合并分支                             ║
+    // ║                                                                    ║
+    // ║  两个分支必须独立处理 backgroundColor：                            ║
+    // ║    none  → setBackgroundColor(实心主题色)  材质关闭，实心兜底       ║
+    // ║    材质  → setBackgroundColor('#00000000') 材质激活，透明让光透过   ║
+    // ║                                                                    ║
+    // ║  常见错误（会导致 bug）：                                          ║
+    // ║    ✗ 只切 backgroundMaterial 不改 backgroundColor                  ║
+    // ║      → 从 none 切到材质时，实心背景会挡住材质                      ║
+    // ║    ✗ 窗口创建时根据材质类型条件设置 backgroundColor                 ║
+    // ║      → 与运行时切换冲突，重启后材质失效                            ║
+    // ║    ✗ 设 transparent: true 来"解决"材质问题                         ║
+    // ║      → 丢失 OS 圆角/阴影，DWM 拖影                                ║
+    // ║                                                                    ║
+    // ║  渲染进程调用顺序：先 await IPC（等 OS 材质生效），再改 CSS         ║
+    // ║  否则 CSS 先变半透明时材质还没生效，会看到桌面 → 拖影              ║
+    // ║                                                                    ║
+    // ║  参考实现：JS/test/mica-test.js                                    ║
+    // ╚══════════════════════════════════════════════════════════════════╝
     ipcMain.handle('set-background-material', (event, material) => {
-        if (!mainWin) return false;
+        const ts = new Date().toISOString();
+        console.log(`\n[set-background-material ${ts}] ====== 开始切换 ======`);
+        console.log(`[set-background-material] 收到请求 | material=${material}`);
+        if (!mainWin) {
+            console.log(`[set-background-material] ✗ mainWin 为空，终止`);
+            return false;
+        }
+        console.log(`[set-background-material] 窗口状态 | isDestroyed=${mainWin.isDestroyed()} isVisible=${mainWin.isVisible()} isMaximized=${mainWin.isMaximized()}`);
         try {
+            const prevMaterial = appSettings.backgroundMaterial;
             appSettings.backgroundMaterial = material;
             const validMaterial = (material === 'transparent') ? 'none' : material;
-            mainWin.setBackgroundMaterial(validMaterial);
-            if (material === 'none' || material === 'transparent') {
-                // 无材质：恢复不透明主题色，避免露出桌面
+            console.log(`[set-background-material] 前值=${prevMaterial} 新值=${material} validMaterial=${validMaterial}`);
+
+            if (validMaterial === 'none') {
+                // 切到 none：恢复实心背景（对齐测试文件）
+                console.log(`[set-background-material] → none: setBackgroundMaterial('none') + setBackgroundColor(实心)`);
+                mainWin.setBackgroundMaterial('none');
                 const preset = appSettings.colorPreset || 'default-dark';
                 const isLight = preset.includes('light') || preset === 'we-light';
-                mainWin.setBackgroundColor(isLight ? '#e8e8e8' : '#2a2a2a');
+                const solidBg = isLight ? '#e8e8e8' : '#2a2a2a';
+                mainWin.setBackgroundColor(solidBg);
+                console.log(`[set-background-material] ✓ none完成 | backgroundColor=${solidBg}`);
             } else {
-                // 材质激活：窗口背景透明让 OS 材质透过
+                // 切到材质：先恢复透明背景，再切材质
+                // 必须重置 backgroundColor，因为之前可能是 'none' 状态设了实心背景
+                console.log(`[set-background-material] → 材质: setBackgroundColor('#00000000') + setBackgroundMaterial('${validMaterial}')`);
                 mainWin.setBackgroundColor('#00000000');
+                mainWin.setBackgroundMaterial(validMaterial);
+                console.log(`[set-background-material] ✓ 材质完成`);
             }
+
+            const actualBgColor = mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '(无API)';
+            console.log(`[set-background-material] 验证 | 当前backgroundColor=${actualBgColor}`);
+            console.log(`[set-background-material] ====== 切换完成 ======\n`);
             return true;
         } catch (e) {
-            console.error('set-background-material error:', e);
+            console.error(`[set-background-material] ✗ 异常:`, e.message);
+            console.error(`[set-background-material] 堆栈:`, e.stack);
             return false;
         }
     });

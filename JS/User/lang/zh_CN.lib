@@ -1,4 +1,4 @@
-﻿ui.file = 文件
+ui.file = 文件
 ui.new_project = 新建项目
 ui.open_folder = 打开项目
 ui.new_file = 新建文件
@@ -226,6 +226,7 @@ ui.preview = 预览
 ui.preview_mode = 预览
 ui.enter_image_url = 请输入图片地址
 ui.jump_link_markdown_hint = 在 Markdown 中使用 [文字](project:文件#标题) 格式创建内部跳转链接
+ui.project_not_found = 未找到目标项目
 ui.no_such_heading = 未找到标题，已打开文件
 ui.open_project_first = 请先打开一个项目
 ui.switch_editor_mode = 切换编辑器模式

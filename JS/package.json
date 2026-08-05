@@ -1,6 +1,6 @@
 {
   "name": "we-electron",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "main": "main.js",
   "scripts": {
     "start": "electron ."
@@ -10,6 +10,7 @@
     "unzipper": "^0.12.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "electron-builder": "^26.15.3"
   }
 }

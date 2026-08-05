@@ -50,7 +50,6 @@ contextBridge.exposeInMainWorld('weAPI', {
     // 打开外部链接（使用系统默认浏览器）
     openExternalLink: (url) => ipcRenderer.invoke('open-external-link', url),
 
-    setBackgroundColor: (color) => ipcRenderer.send('set-background-color', color),
     setBackgroundMaterial: (material) => ipcRenderer.invoke('set-background-material', material),
 
     // 文件拖放支持

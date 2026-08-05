@@ -300,7 +300,16 @@ async function openProjectFile(safeId, filename) {
             if (link.classList.contains('jump-link') || link.hasAttribute('data-jump')) {
                 e.preventDefault();
                 e.stopPropagation();
-                const data = JSON.parse(link.getAttribute('data-jump') || '{}');
+                let data = {};
+                const jumpAttr = link.getAttribute('data-jump');
+                if (jumpAttr) {
+                    try { data = JSON.parse(jumpAttr); } catch {}
+                } else if (href.startsWith('project:')) {
+                    // Markdown 预览链接格式：project:filename#heading
+                    const rest = href.substring('project:'.length);
+                    const [file, heading] = rest.split('#');
+                    data = { file: decodeURIComponent(file || ''), heading: heading || '' };
+                }
                 handleJumpLinkClick(data);
                 return;
             }
@@ -648,7 +657,7 @@ async function showJumpLinkDialog(safeId) {
             const heading = headingSelect.value;
             // formatText：直接在选中文字上应用 projectLink 格式
             quill.formatText(sel.index, sel.length, 'projectLink', {
-                project: safeId,
+                project: project.title || safeId,
                 file: filename,
                 heading: heading
             }, Quill.sources.USER);
@@ -703,7 +712,15 @@ function handleJumpLinkClick(data) {
     if (data.url) {
         weAPI.openExternalLink(data.url);
     } else if (data.file) {
-        const safeId = data.project;
+        // 兼容：先按 safeId 精确匹配（旧链接），再按项目名匹配（可移植链接），最后回退到当前活跃项目
+        let targetSafeId = data.project;
+        if (!targetSafeId || !tabs[targetSafeId]) {
+            targetSafeId = Object.keys(tabs).find(id => tabs[id]?.title === data.project);
+        }
+        if (!targetSafeId) {
+            targetSafeId = (typeof activeTabId !== 'undefined' && activeTabId) || currentQuillProjectId;
+        }
+        const safeId = targetSafeId;
         if (safeId && tabs[safeId]) {
             // 切换到目标项目（使用 switchTab 直接切换）
             if (typeof switchTab === 'function') {
@@ -748,7 +765,7 @@ function handleJumpLinkClick(data) {
                 }, 300);
             }, 100);
         } else {
-            showNotification(t('ui.project_not_found') || '目标项目未打开');
+            showNotification(t('ui.project_not_found') || '未找到目标项目');
         }
     }
 }

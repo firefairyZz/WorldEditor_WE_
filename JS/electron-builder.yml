@@ -7,6 +7,13 @@ files:
   - "**/*"
   - "!node_modules/.bin"
   - "!**/*.map"
+  # 排除开发者本地用户数据（隐私），仅保留 lang/ 语言文件
+  - "!User/account.json"
+  - "!User/settings.json"
+  - "!User/avatars"
+  - "!User/recent.json"
+  - "!User/test"
+  - "!resources/recent.json"
 
 
 win:

@@ -1,4 +1,4 @@
-﻿ui.file = ファイル
+ui.file = ファイル
 ui.new_project = 新規プロジェクト
 ui.open_folder = プロジェクトを開く
 ui.new_file = 新規ファイル
@@ -239,6 +239,7 @@ ui.preview = プレビュー
 ui.preview_mode = プレビュー
 ui.enter_image_url = 画像URLを入力
 ui.jump_link_markdown_hint = Markdown内で[テキスト](project:ファイル#見出し)形式で内部ジャンプを作成
+ui.project_not_found = 対象プロジェクトが見つかりません
 ui.no_such_heading = 見出しが見つかりません、ファイルを開きました
 ui.delete_project = プロジェクト削除
 ui.delete_project_warning = 警告：プロジェクトとその全ファイルが削除されます！
