@@ -27,6 +27,7 @@ function showPrompt(title, placeholder = '', options = {}) {
             <div class="prompt-type-switch">
                 <button class="prompt-type-btn active" data-type="file">${t('ui.file') || '文件'}</button>
                 <button class="prompt-type-btn" data-type="folder">${t('ui.folder') || '文件夹'}</button>
+                <button class="prompt-type-btn" data-type="nodegraph">${t('ui.nodegraph') || '节点图'}</button>
             </div>` : ''}
             <input id="prompt-input" type="text" placeholder="${escapeHtml(placeholder)}" class="prompt-input" />
             <div class="prompt-actions">
@@ -49,7 +50,10 @@ function showPrompt(title, placeholder = '', options = {}) {
                     btn.classList.add('active');
                     selectedType = btn.dataset.type;
                     weLog.debug('utils', 'showPrompt: 切换类型', { selectedType });
-                    const label = selectedType === 'file' ? (t('ui.file_name') || '文件名') : (t('ui.folder_name') || '文件夹名');
+                    let label;
+                    if (selectedType === 'file') label = t('ui.file_name') || '文件名';
+                    else if (selectedType === 'folder') label = t('ui.folder_name') || '文件夹名';
+                    else label = t('ui.nodegraph_name') || '节点图名称';
                     input.placeholder = label;
                 };
             });

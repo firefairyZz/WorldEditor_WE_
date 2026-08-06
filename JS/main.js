@@ -775,11 +775,11 @@ function createMainWindow() {
         mainWin.setAlwaysOnTop(true);
     }
 
+    // 最大化/还原事件：原生窗口接管 DWM 合成，无需手动恢复材质
     mainWin.on('maximize', () => mainWin.webContents.send('maximized-change', true));
     mainWin.on('unmaximize', () => mainWin.webContents.send('maximized-change', false));
-    mainWin.on('resize', () => mainWin.webContents.send('maximized-change', mainWin.isMaximized()));
 
-    // 首次显示
+    // 首次显示：构造期已指定 backgroundMaterial，show() 即可
     mainWin.once('ready-to-show', () => mainWin.show());
 
     ipcMain.on('minimize-window', () => mainWin.minimize());
@@ -837,22 +837,11 @@ function createMainWindow() {
             console.log(`       切换前 backgroundColor=${prevBgColor}`);
 
             if (validMaterial === 'none') {
-                // —— 分支A：切回 none ——
-                // 只动 backgroundMaterial，不动 backgroundColor。
-                // none 时的不透明视觉由 CSS 变量（--overlay-tint / --content-tint 等）提供，
-                // 不需要窗口级实心背景兜底（会导致切回材质时背景不透明挡死 OS 材质）。
                 console.log(`[4/6] 分支A (none) → setBackgroundMaterial('none')`);
                 mainWin.setBackgroundMaterial('none');
                 console.log(`         ✓ 完成`);
             } else {
-                // —— 分支B：切到材质，只动 backgroundMaterial ——
-                // 对齐测试文件 mica-test.js：窗口构造时 backgroundColor 已是 '#00000000'（透明），
-                // 运行时切材质只需 setBackgroundMaterial，不需要再动 backgroundColor。
-                // 注意：setBackgroundColor 运行时不接受 [0,0,0,0] 数组（Electron 33 会抛
-                // "conversion failure"），传 '#00000000' 字符串又会被存成 #000000 纯黑挡死材质。
-                // 因此运行时不能调 setBackgroundColor，靠构造期定型的透明背景即可。
-                console.log(`[4/6] 分支B (${validMaterial}) → 只调 setBackgroundMaterial`);
-                console.log(`       · 调用 setBackgroundMaterial('${validMaterial}') ...`);
+                console.log(`[4/6] 分支B (${validMaterial}) → setBackgroundMaterial`);
                 mainWin.setBackgroundMaterial(validMaterial);
                 console.log(`         ✓ 完成`);
             }

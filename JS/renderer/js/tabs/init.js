@@ -39,19 +39,11 @@ window.onload = async () => {
 
         weLog.info('init', '→ 应用背景材质/遮罩/图片');
         // 应用背景材质（Mica/Acrylic/Tabbed）
+        // 注意：OS 层面材质由主进程在 ready-to-show 时通过 setBackgroundMaterial 设置，
+        // 渲染进程不再通过 IPC 调用 setBackgroundMaterial（对齐 mica-test.js）。
+        // 之前的渲染进程 IPC 调用会触发 DWM 重新合成，导致最大化时崩溃。
         const bgMaterial = settings.backgroundMaterial || 'none';
-        weLog.info('init', `背景材质=${bgMaterial}`);
-        // 先通过 IPC 确保 OS 层面材质生效，再应用 CSS 半透明
-        // 窗口构造时的 backgroundMaterial 参数在 renderer 加载期间可能未稳定合成，
-        // 需要显式重新调用以确保 DWM 合成完成，避免 CSS 半透明叠加时出现拖影
-        if (bgMaterial !== 'none') {
-            try {
-                await weAPI.setBackgroundMaterial(bgMaterial);
-                weLog.info('init', `← OS 材质已应用: ${bgMaterial}`);
-            } catch (e) {
-                weLog.error('init', 'setBackgroundMaterial 失败', e && e.stack ? e.stack : String(e));
-            }
-        }
+        weLog.info('init', `背景材质=${bgMaterial}（OS 层已由主进程设置，此处仅应用 CSS）`);
         if (typeof applyBackgroundMaterial === 'function') {
             applyBackgroundMaterial(bgMaterial, settings.materialTint ?? 78, settings.materialOverlay ?? 30, settings.materialBarTint ?? 100);
         }
@@ -150,6 +142,10 @@ window.onload = async () => {
         setupTabContextMenu();
 
         weLog.info('init', '→ 初始化文件拖放');
+        // 监听最大化/还原：仅更新图标（原生窗口接管 DWM 合成，材质不会丢失）
+        weAPI.onMaximizedChanged((isMaximized) => {
+            document.body.classList.toggle('is-maximized', isMaximized);
+        });
         // 初始化文件拖放
         initFileDragDrop();
 

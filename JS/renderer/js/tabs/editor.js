@@ -3,6 +3,8 @@ let wordCountTimer = null;
 let editorStats = { words: 0, chars: 0, headings: 0 };
 let markdownEditor = null;
 let markdownPreviewVisible = true;
+// 嵌入项目编辑区的节点图实例：safeId -> { lf, graphFile, dirty }
+const embeddedNodeGraphs = {};
 
 // updateEditorStats 的防抖版本：减少打字过程中的布局抖动
 let _debouncedStatsTimer = null;
@@ -144,6 +146,24 @@ async function openProjectFile(safeId, filename) {
         return;
     }
 
+    // === 节点图文件：在右侧嵌入节点图编辑区 ===
+    if (filename.endsWith('.node.json')) {
+        weLog.info('editor', 'openProjectFile: 检测到节点图文件，走嵌入分支', { filename });
+        await openEmbeddedNodeGraph(safeId, filename);
+        return;
+    }
+
+    // === 普通文本文件：隐藏节点图，显示 Quill ===
+    const embedEl = document.getElementById(`ng-embed-${safeId}`);
+    const quillWrapper = document.getElementById(`quill-${safeId}`);
+    if (embedEl) embedEl.style.display = 'none';
+    if (quillWrapper) quillWrapper.style.display = '';
+    // 清理已嵌入的节点图实例（暂存脏状态后释放）
+    if (embeddedNodeGraphs[safeId]) {
+        weLog.debug('editor', 'openProjectFile: 销毁前一个嵌入节点图', { prevFile: embeddedNodeGraphs[safeId].graphFile });
+        destroyEmbeddedNodeGraph(safeId);
+    }
+
     // 清除旧的 TOC 面板（可能在其他标签页中）
     if (tocPanel) {
         weLog.debug('editor', 'openProjectFile: 清理旧 TOC 面板');
@@ -203,7 +223,6 @@ async function openProjectFile(safeId, filename) {
         content = result.content;
     }
 
-    const quillWrapper = document.getElementById(`quill-${safeId}`);
     if (!quillWrapper) {
         weLog.warn('editor', 'openProjectFile: quillWrapper 元素不存在', { safeId });
         return;
@@ -1746,6 +1765,36 @@ async function saveCurrentFile(silent) {
     isSaving = true;
     pendingSave = false;
 
+    // 嵌入节点图：走节点图保存逻辑
+    if (embeddedNodeGraphs[activeTabId] && project.currentFile.endsWith('.node.json')) {
+        weLog.info('editor', 'saveCurrentFile: 走嵌入节点图保存分支', { file: project.currentFile });
+        try {
+            const inst = embeddedNodeGraphs[activeTabId];
+            const data = inst.lf.getGraphData();
+            const content = JSON.stringify(data, null, 2);
+            showNotification(t('ui.saving') || '正在保存...', 0);
+            const res = await weAPI.saveFile(project.projectPath, project.currentFile, content);
+            if (res.success) {
+                inst.dirty = false;
+                project.dirty = false;
+                if (project.fileCache) delete project.fileCache[project.currentFile];
+                const status = document.getElementById(`ng-status-${activeTabId}`);
+                if (status) status.textContent = '';
+                updateStatusBar();
+                showNotification(t('ui.saved') || '已保存');
+            } else {
+                showNotification((t('ui.save_failed') || '保存失败') + ': ' + res.error);
+            }
+        } catch (e) {
+            weLog.error('editor', 'saveCurrentFile: 节点图保存异常', e && e.stack ? e.stack : String(e));
+            showNotification((t('ui.save_failed') || '保存失败') + ': ' + e.message);
+        } finally {
+            isSaving = false;
+            if (pendingSave) { setTimeout(() => { pendingSave = false; saveCurrentFile(silent); }, 0); }
+        }
+        return;
+    }
+
     const projectMode = project.projectMode || 'rich';
     let content;
     if (projectMode === 'markdown') {
@@ -1830,6 +1879,34 @@ async function addFileToProject(safeId) {
             weLog.error('editor', 'addFileToProject: 创建文件夹失败', { error: res.error });
             showNotification((t('ui.create_failed') || '创建失败') + ': ' + res.error);
         }
+    } else if (result.type === 'nodegraph') {
+        weLog.info('editor', 'addFileToProject: 走了创建节点图分支', { name });
+        // 自动补全后缀（如果用户未加）
+        let graphFileName = name.trim();
+        if (!graphFileName.endsWith('.node.json')) {
+            // 如果已经以 .json 结尾但不以 .node.json 结尾则替换，否则追加
+            if (graphFileName.endsWith('.json')) {
+                graphFileName = graphFileName.replace(/\.json$/, '.node.json');
+            } else {
+                graphFileName = graphFileName + '.node.json';
+            }
+        }
+        // 创建空节点图文件（空 JSON：nodes+edges）
+        const emptyJson = JSON.stringify({ nodes: [], edges: [] }, null, 2);
+        const createRes = await weAPI.saveFile(project.projectPath, graphFileName, emptyJson);
+        if (createRes.success) {
+            const updated = await weAPI.openProject(project.projectPath);
+            if (updated.success) {
+                project.fileList = updated.fileList;
+                refreshFileTree(safeId, updated.fileList);
+            }
+            showNotification(t('ui.nodegraph_created') || '节点图已创建');
+            // 立即在右侧编辑区打开
+            openProjectFile(safeId, graphFileName);
+        } else {
+            weLog.error('editor', 'addFileToProject: 创建节点图文件失败', { error: createRes.error });
+            showNotification((t('ui.create_failed') || '创建失败') + ': ' + createRes.error);
+        }
     } else {
         weLog.info('editor', 'addFileToProject: 走了创建文件分支', { name });
         const res = await weAPI.addFile(project.projectPath, name);
@@ -1846,6 +1923,248 @@ async function addFileToProject(safeId) {
         }
     }
     weLog.info('editor', '← addFileToProject 完成');
+}
+
+// ========== 嵌入模式节点图 ==========
+
+function destroyEmbeddedNodeGraph(safeId) {
+    weLog.info('editor', '→ destroyEmbeddedNodeGraph', { safeId });
+    const inst = embeddedNodeGraphs[safeId];
+    if (!inst) return;
+    try {
+        if (inst.lf) {
+            // 保存脏状态到 fileCache 再销毁
+            if (inst.dirty) {
+                const project = tabs[safeId];
+                if (project) {
+                    project.fileCache = project.fileCache || {};
+                    try {
+                        const data = inst.lf.getGraphData();
+                        project.fileCache[inst.graphFile] = JSON.stringify(data, null, 2);
+                        weLog.debug('editor', 'destroyEmbeddedNodeGraph: 脏数据已缓存', { graphFile: inst.graphFile });
+                    } catch (e) {}
+                }
+            }
+            inst.lf.destroy?.();
+        }
+    } catch (e) {
+        weLog.warn('editor', 'destroyEmbeddedNodeGraph: 销毁异常', String(e));
+    }
+    const embedEl = document.getElementById(`ng-embed-${safeId}`);
+    if (embedEl) embedEl.innerHTML = '';
+    delete embeddedNodeGraphs[safeId];
+}
+
+async function saveEmbeddedNodeGraph(safeId) {
+    const inst = embeddedNodeGraphs[safeId];
+    const project = tabs[safeId];
+    if (!inst || !project) return;
+    try {
+        const data = inst.lf.getGraphData();
+        const json = JSON.stringify(data, null, 2);
+        const res = await weAPI.saveFile(project.projectPath, inst.graphFile, json);
+        if (res.success) {
+            inst.dirty = false;
+            const status = document.getElementById(`ng-status-${safeId}`);
+            if (status) status.textContent = '';
+            showNotification(t('ui.saved') || '已保存');
+            weLog.info('editor', 'saveEmbeddedNodeGraph: 保存成功', { graphFile: inst.graphFile });
+        } else {
+            showNotification((t('ui.save_failed') || '保存失败') + ': ' + res.error);
+        }
+    } catch (e) {
+        weLog.error('editor', 'saveEmbeddedNodeGraph: 异常', e && e.stack ? e.stack : String(e));
+    }
+}
+
+async function openEmbeddedNodeGraph(safeId, filename) {
+    weLog.info('editor', '→ openEmbeddedNodeGraph', { safeId, filename });
+    const project = tabs[safeId];
+    const embedEl = document.getElementById(`ng-embed-${safeId}`);
+    const quillWrapper = document.getElementById(`quill-${safeId}`);
+    if (!embedEl || !project) {
+        weLog.warn('editor', 'openEmbeddedNodeGraph: 容器或项目不存在');
+        return;
+    }
+
+    // 切换显示：隐藏 Quill，显示节点图
+    embedEl.style.display = 'flex';
+    if (quillWrapper) quillWrapper.style.display = 'none';
+    // 清理旧实例
+    if (embeddedNodeGraphs[safeId]) destroyEmbeddedNodeGraph(safeId);
+
+    const LogicFlow = typeof getLogicFlowClass === 'function' ? getLogicFlowClass() : null;
+    if (!LogicFlow) {
+        weLog.warn('editor', 'openEmbeddedNodeGraph: LogicFlow 未加载');
+        embedEl.innerHTML = `<div style="padding:20px;color:var(--text-muted,#999)">节点图库未加载，请重启应用</div>`;
+        return;
+    }
+
+    // 构建内嵌节点图 UI
+    embedEl.innerHTML = `
+        <div class="node-graph-toolbar">
+            <button class="ng-btn" data-tool="select" title="${t('ui.ng_select') || '选择/拖拽'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-3 7z"/></svg>
+            </button>
+            <div class="ng-toolbar-divider"></div>
+            <button class="ng-btn" data-tool="rect" title="${t('ui.ng_rect') || '矩形'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+            </button>
+            <button class="ng-btn" data-tool="circle" title="${t('ui.ng_circle') || '圆形'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></svg>
+            </button>
+            <button class="ng-btn" data-tool="diamond" title="${t('ui.ng_diamond') || '菱形'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4l8 8-8 8-8-8z"/></svg>
+            </button>
+            <button class="ng-btn" data-tool="ellipse" title="${t('ui.ng_ellipse') || '椭圆'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+            </button>
+            <div class="ng-toolbar-divider"></div>
+            <button class="ng-btn" data-action="delete" title="${t('ui.ng_delete') || '删除选中'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>
+            </button>
+            <div class="ng-toolbar-divider"></div>
+            <button class="ng-btn" data-action="save" title="${t('ui.save') || '保存'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+            </button>
+            <div class="ng-toolbar-spacer"></div>
+            <span class="ng-status" id="ng-status-${safeId}"></span>
+        </div>
+        <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
+            <div class="node-graph-canvas" id="ng-canvas-embed-${safeId}"></div>
+            <div class="ng-coords" id="ng-coords-${safeId}">0, 0</div>
+        </div>
+    `;
+
+    let lf;
+    try {
+        lf = new LogicFlow({
+            container: embedEl.querySelector(`#ng-canvas-embed-${safeId}`),
+            grid: { size: 20, type: 'dot', config: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#888', opacity: 0.4 } },
+            background: { color: 'transparent' },
+            keyboard: { enabled: true },
+            style: typeof buildLogicFlowTheme === 'function' ? buildLogicFlowTheme() : {},
+            edgeType: 'polyline',
+        });
+    } catch (e) {
+        weLog.error('editor', 'openEmbeddedNodeGraph: LogicFlow 初始化失败', String(e));
+        return;
+    }
+
+    embeddedNodeGraphs[safeId] = { lf, graphFile: filename, dirty: false };
+    const inst = embeddedNodeGraphs[safeId];
+
+    function markDirty() {
+        inst.dirty = true;
+        project.dirty = true;
+        updateStatusBar();
+        const status = document.getElementById(`ng-status-${safeId}`);
+        if (status) status.textContent = '●';
+    }
+    lf.on('node:add,node:delete,node:dnd-add,edge:add,edge:delete,node:text-update,edge:text-update', markDirty);
+    lf.on('node:delete,edge:delete', markDirty);
+
+    // 工具栏交互：工具选择 + 点击画布创建
+    const toolbar = embedEl.querySelector('.node-graph-toolbar');
+    const canvasEl = embedEl.querySelector(`#ng-canvas-embed-${safeId}`);
+    const coordsEl = embedEl.querySelector(`#ng-coords-${safeId}`);
+
+    // 工具状态：null = 选择/拖拽模式，'rect'/'circle'/'diamond'/'ellipse' = 创建模式
+    let activeTool = null;
+
+    function setActiveTool(tool) {
+        activeTool = tool;
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => {
+            b.classList.toggle('active', b.dataset.tool === tool);
+        });
+        canvasEl.style.cursor = tool ? 'crosshair' : '';
+    }
+
+    // 默认选中"选择"工具
+    setActiveTool(null);
+    toolbar.querySelector('.ng-btn[data-tool="select"]').classList.add('active');
+
+    toolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.ng-btn');
+        if (!btn) return;
+        const tool = btn.dataset.tool;
+        const action = btn.dataset.action;
+        if (tool) {
+            setActiveTool(tool === 'select' ? null : tool);
+        } else if (action === 'delete') {
+            const { nodes, edges } = lf.getSelectElements(true);
+            if (nodes.length > 0) lf.deleteNode(nodes[0].id);
+            if (edges.length > 0) lf.deleteEdge(edges[0].id);
+            markDirty();
+        } else if (action === 'save') {
+            saveEmbeddedNodeGraph(safeId);
+        }
+    });
+
+    // Esc 退出创建模式
+    canvasEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activeTool) {
+            setActiveTool(null);
+            toolbar.querySelector('.ng-btn[data-tool="select"]')?.classList.add('active');
+        }
+    });
+
+    // 鼠标移动更新坐标
+    canvasEl.addEventListener('mousemove', (e) => {
+        const rect = canvasEl.getBoundingClientRect();
+        try {
+            const pt = lf.getPointByClient(e.clientX, e.clientY);
+            if (coordsEl) coordsEl.textContent = `${Math.round(pt.x)}, ${Math.round(pt.y)}`;
+        } catch {}
+    });
+    canvasEl.addEventListener('mouseleave', () => {
+        if (coordsEl) coordsEl.textContent = '';
+    });
+
+    // 点击画布：创建模式下在点击位置创建节点
+    canvasEl.addEventListener('click', (e) => {
+        if (!activeTool) return;
+        try {
+            const pt = lf.getPointByClient(e.clientX, e.clientY);
+            lf.addNode({
+                type: activeTool,
+                x: pt.x,
+                y: pt.y,
+                text: t('ui.ng_node') || '节点',
+            });
+            markDirty();
+        } catch (err) {
+            weLog.error('editor', '点击画布创建节点失败', String(err));
+        }
+    });
+
+    // 读取数据（缓存优先）
+    let jsonStr = null;
+    if (project.fileCache && project.fileCache[filename] !== undefined) {
+        jsonStr = project.fileCache[filename];
+    } else {
+        const result = await weAPI.readFile(project.projectPath, filename);
+        if (result.success) jsonStr = result.content || null;
+    }
+    try {
+        const data = jsonStr ? JSON.parse(jsonStr) : { nodes: [], edges: [] };
+        lf.render(data);
+    } catch (e) {
+        weLog.warn('editor', 'openEmbeddedNodeGraph: 解析数据失败，渲染空画布', String(e));
+        lf.render({ nodes: [], edges: [] });
+    }
+
+    // 标记为当前文件
+    project.currentFile = filename;
+    project.dirty = false;
+
+    // 高亮文件树
+    const tree = document.getElementById(`file-tree-${safeId}`);
+    tree?.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+    tree?.querySelector(`[data-file="${filename}"]`)?.classList.add('active');
+
+    updateStatusBar();
+    weLog.info('editor', '← openEmbeddedNodeGraph 完成', { filename });
 }
 
 // ========== 切换编辑器模式（单向转化） ==========

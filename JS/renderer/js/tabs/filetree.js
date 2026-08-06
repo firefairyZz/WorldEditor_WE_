@@ -30,6 +30,8 @@ function buildFileTree(files) {
 }
 
 function stripExt(name) {
+    // 节点图文件：去掉 .node.json 整个后缀
+    if (name.endsWith('.node.json')) return name.slice(0, -10);
     const idx = name.lastIndexOf('.');
     return idx > 0 ? name.substring(0, idx) : name;
 }
@@ -540,7 +542,9 @@ function renderTreeNodes(container, tree, basePath = '') {
             ).join('') + '</span>';
         }
 
-        fileDiv.innerHTML = `${thumbHtml}<span class="file-name">${stripExt(file)}</span>${tagsHtml}`;
+        const isNodeGraph = file.endsWith('.node.json');
+        const badgeHtml = isNodeGraph ? `<span class="file-type-badge">${t('ui.nodegraph') || '节点图'}</span>` : '';
+        fileDiv.innerHTML = `${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${tagsHtml}`;
         fileDiv.onclick = (e) => {
             e.stopPropagation();
             const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
@@ -708,7 +712,13 @@ function showFileContextMenu(e, filePath, container) {
         if (!result) return;
         const newName = result.trim();
         if (!newName || newName === displayName) return;
-        const newFileName = newName + (fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '');
+        // 节点图文件保持 .node.json 完整后缀
+        let newFileName;
+        if (fileName.endsWith('.node.json')) {
+            newFileName = newName + '.node.json';
+        } else {
+            newFileName = newName + (fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '');
+        }
         const newPath = dirPart ? dirPart + '/' + newFileName : newFileName;
         const res = await weAPI.renameFile(projectPath, filePath, newPath);
         if (res.success) {

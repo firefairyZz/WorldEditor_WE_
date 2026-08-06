@@ -391,7 +391,10 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
 
     const editorArea = document.createElement('div');
     editorArea.className = 'project-editor';
-    editorArea.innerHTML = `<div class="quill-wrapper" id="quill-${safeId}"></div>`;
+    editorArea.innerHTML = `
+        <div class="quill-wrapper" id="quill-${safeId}"></div>
+        <div class="node-graph-embed" id="ng-embed-${safeId}" style="display:none;"></div>
+    `;
 
     layout.appendChild(sidebar);
     layout.appendChild(resizer);

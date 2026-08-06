@@ -4,13 +4,6 @@ function updateMaximizeIcon(isMaximized) {
     const btn = document.getElementById('btn-maximize');
     if (!btn) { weLog.warn('tab-manager', 'updateMaximizeIcon: btn-maximize 不存在'); return; }
     btn.innerHTML = isMaximized ? '&#xE923;' : '&#xE922;';
-    if (isMaximized) {
-        document.body.classList.add('is-maximized');
-        document.documentElement.classList.add('is-maximized');
-    } else {
-        document.body.classList.remove('is-maximized');
-        document.documentElement.classList.remove('is-maximized');
-    }
 }
 window.weAPI.onMaximizedChanged(updateMaximizeIcon);
 
@@ -99,7 +92,10 @@ function updateFileMenuTexts() {
         <div class="menu-separator"></div>
         <div class="menu-item" data-action="switch-mode">${t('ui.switch_editor_mode') || '切换编辑器模式'}</div>
         <div class="menu-separator"></div>
-        <div class="menu-item" data-action="new-nodegraph">${t('ui.new_nodegraph') || '新建节点图'}</div>
+        <div class="menu-item" data-action="new-file">
+            <span class="menu-label">${t('ui.new_file') || '新建文件'}</span>
+            <span class="menu-shortcut">Ctrl + Shift + N</span>
+        </div>
         <div class="menu-separator"></div>
         <div class="menu-item" data-action="settings">${t('ui.settings')}</div>
     `;
@@ -113,8 +109,13 @@ function updateFileMenuTexts() {
             else if (action === 'switch-mode') {
                 if (typeof switchEditorMode === 'function') switchEditorMode();
             }
-            else if (action === 'new-nodegraph') {
-                createNewNodeGraph();
+            else if (action === 'new-file') {
+                weLog.info('tab-manager', '文件菜单点击: new-file, activeTabId=', activeTabId);
+                if (activeTabId && tabs[activeTabId]?.projectPath) {
+                    if (typeof addFileToProject === 'function') addFileToProject(activeTabId);
+                } else {
+                    showNotification(t('ui.open_project_first') || '请先打开一个项目');
+                }
             }
             else if (action === 'settings') {
                 if (!tabs['settings']) createSettingsTab();
@@ -512,11 +513,16 @@ function doCloseTab(id) {
     }
     tabs[id].tabElement.remove();
     tabs[id].element.remove();
-    // 清理节点图实例
+    // 清理独立节点图实例
     if (typeof nodeGraphInstances !== 'undefined' && nodeGraphInstances[id]) {
-        weLog.debug('tab-manager', `doCloseTab: 清理节点图实例 (id=${id})`);
+        weLog.debug('tab-manager', `doCloseTab: 清理独立节点图实例 (id=${id})`);
         try { nodeGraphInstances[id].lf.clearData(); } catch (e) {}
         delete nodeGraphInstances[id];
+    }
+    // 清理嵌入项目编辑区的节点图实例
+    if (typeof embeddedNodeGraphs !== 'undefined' && embeddedNodeGraphs[id]) {
+        weLog.debug('tab-manager', `doCloseTab: 清理嵌入节点图实例 (id=${id})`);
+        if (typeof destroyEmbeddedNodeGraph === 'function') destroyEmbeddedNodeGraph(id);
     }
     delete tabs[id];
     weLog.info('tab-manager', `← doCloseTab 完成: id=${id} 已删除`);

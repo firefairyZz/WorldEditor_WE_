@@ -24,22 +24,22 @@ function buildLogicFlowTheme() {
     return {
         // 节点样式
         rect: {
-            fill: getVar('--bg-card', '#ffffff'),
+            fill: getVar('--bg-sidebar', '#ffffff'),
             stroke: getVar('--border', '#cccccc'),
             strokeWidth: 1,
         },
         circle: {
-            fill: getVar('--bg-card', '#ffffff'),
+            fill: getVar('--bg-sidebar', '#ffffff'),
             stroke: getVar('--accent', '#4a90d9'),
             strokeWidth: 2,
         },
         ellipse: {
-            fill: getVar('--bg-card', '#ffffff'),
+            fill: getVar('--bg-sidebar', '#ffffff'),
             stroke: getVar('--border', '#cccccc'),
             strokeWidth: 1,
         },
         diamond: {
-            fill: getVar('--bg-card', '#ffffff'),
+            fill: getVar('--bg-sidebar', '#ffffff'),
             stroke: getVar('--accent', '#4a90d9'),
             strokeWidth: 1,
         },
@@ -50,18 +50,18 @@ function buildLogicFlowTheme() {
         },
         // 连线样式
         line: {
-            stroke: getVar('--text-soft', '#888888'),
+            stroke: getVar('--text-secondary', '#888888'),
             strokeWidth: 2,
         },
         polyline: {
-            stroke: getVar('--text-soft', '#888888'),
+            stroke: getVar('--text-secondary', '#888888'),
             strokeWidth: 2,
         },
         // 连线文字
         edgeText: {
             color: getVar('--text', '#333333'),
             background: {
-                fill: getVar('--bg-card', '#ffffff'),
+                fill: getVar('--bg-sidebar', '#ffffff'),
                 stroke: 'transparent',
                 radius: 4,
             },
@@ -97,31 +97,36 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     content.className = 'node-graph-layout';
     content.innerHTML = `
         <div class="node-graph-toolbar">
-            <button class="ng-btn" data-action="add-rect" title="矩形">
+            <button class="ng-btn" data-tool="select" title="${t('ui.ng_select') || '选择/拖拽'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-3 7z"/></svg>
+            </button>
+            <div class="ng-toolbar-divider"></div>
+            <button class="ng-btn" data-tool="rect" title="${t('ui.ng_rect') || '矩形'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
             </button>
-            <button class="ng-btn" data-action="add-circle" title="圆形">
+            <button class="ng-btn" data-tool="circle" title="${t('ui.ng_circle') || '圆形'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></svg>
             </button>
-            <button class="ng-btn" data-action="add-diamond" title="菱形">
+            <button class="ng-btn" data-tool="diamond" title="${t('ui.ng_diamond') || '菱形'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4l8 8-8 8-8-8z"/></svg>
             </button>
-            <button class="ng-btn" data-action="add-ellipse" title="椭圆">
+            <button class="ng-btn" data-tool="ellipse" title="${t('ui.ng_ellipse') || '椭圆'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
             </button>
             <div class="ng-toolbar-divider"></div>
-            <button class="ng-btn" data-action="delete" title="删除选中">
+            <button class="ng-btn" data-action="delete" title="${t('ui.ng_delete') || '删除选中'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>
             </button>
             <div class="ng-toolbar-divider"></div>
-            <button class="ng-btn" data-action="save" title="保存">
+            <button class="ng-btn" data-action="save" title="${t('ui.save') || '保存'}">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
             </button>
             <div class="ng-toolbar-spacer"></div>
             <span class="ng-status"></span>
         </div>
-        <div class="node-graph-canvas-wrapper">
+        <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
             <div class="node-graph-canvas" id="ng-canvas-${tabId}"></div>
+            <div class="ng-coords" id="ng-coords-${tabId}">0, 0</div>
         </div>
     `;
 
@@ -136,7 +141,7 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             grid: {
                 size: 20,
                 type: 'dot',
-                config: { color: '#aaa', opacity: 0.3 },
+                config: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#888', opacity: 0.4 },
             },
             background: { color: 'transparent' },
             keyboard: { enabled: true },
@@ -162,30 +167,31 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     // 监听数据变化
     lf.on('node:add,node:delete,node:dnd-add,edge:add,edge:delete,node:text-update,edge:text-update', markDirty);
 
-    // 工具栏事件
+    // 工具栏事件（工具选择 + 画布点击创建）
     const toolbar = content.querySelector('.node-graph-toolbar');
+    const coordsEl = content.querySelector(`#ng-coords-${tabId}`);
+    let activeTool = null;
+
+    function setActiveTool(tool) {
+        activeTool = tool;
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => {
+            b.classList.toggle('active', b.dataset.tool === tool);
+        });
+        canvasEl.style.cursor = tool ? 'crosshair' : '';
+    }
+    // 默认选中"选择"工具
+    setActiveTool(null);
+    toolbar.querySelector('.ng-btn[data-tool="select"]').classList.add('active');
+
     toolbar.addEventListener('click', async (e) => {
         const btn = e.target.closest('.ng-btn');
         if (!btn) return;
+        const tool = btn.dataset.tool;
         const action = btn.dataset.action;
-        weLog.debug('node-graph', '工具栏点击', { action });
+        weLog.debug('node-graph', '工具栏点击', { tool, action });
 
-        if (action === 'add-rect' || action === 'add-circle' || action === 'add-diamond' || action === 'add-ellipse') {
-            const type = action.replace('add-', '');
-            try {
-                // 在画布中心添加节点
-                const rect = canvasEl.getBoundingClientRect();
-                const center = lf.getPointByClient(rect.width / 2, rect.height / 2);
-                lf.addNode({
-                    type: type,
-                    x: center.x,
-                    y: center.y,
-                    text: '节点',
-                });
-                markDirty();
-            } catch (err) {
-                weLog.error('node-graph', '添加节点失败', { type, error: String(err) });
-            }
+        if (tool) {
+            setActiveTool(tool === 'select' ? null : tool);
         } else if (action === 'delete') {
             const { nodes, edges } = lf.getSelectElements(true);
             if (nodes.length > 0) lf.deleteNode(nodes[0].id);
@@ -193,6 +199,42 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             markDirty();
         } else if (action === 'save') {
             await saveNodeGraph(tabId);
+        }
+    });
+
+    // Esc 退出创建模式
+    canvasEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activeTool) {
+            setActiveTool(null);
+            toolbar.querySelector('.ng-btn[data-tool="select"]')?.classList.add('active');
+        }
+    });
+
+    // 鼠标移动更新坐标
+    canvasEl.addEventListener('mousemove', (e) => {
+        try {
+            const pt = lf.getPointByClient(e.clientX, e.clientY);
+            if (coordsEl) coordsEl.textContent = `${Math.round(pt.x)}, ${Math.round(pt.y)}`;
+        } catch {}
+    });
+    canvasEl.addEventListener('mouseleave', () => {
+        if (coordsEl) coordsEl.textContent = '';
+    });
+
+    // 点击画布创建节点
+    canvasEl.addEventListener('click', (e) => {
+        if (!activeTool) return;
+        try {
+            const pt = lf.getPointByClient(e.clientX, e.clientY);
+            lf.addNode({
+                type: activeTool,
+                x: pt.x,
+                y: pt.y,
+                text: t('ui.ng_node') || '节点',
+            });
+            markDirty();
+        } catch (err) {
+            weLog.error('node-graph', '点击画布创建节点失败', String(err));
         }
     });
 
@@ -272,6 +314,20 @@ function refreshNodeGraphTheme() {
                 count++;
             } catch (e) {
                 weLog.error('node-graph', 'refreshNodeGraphTheme 失败', { tabId, error: String(e) });
+            }
+        }
+    }
+    // 同步嵌入项目编辑区的节点图实例
+    if (typeof embeddedNodeGraphs !== 'undefined') {
+        for (const safeId in embeddedNodeGraphs) {
+            const inst = embeddedNodeGraphs[safeId];
+            if (inst && inst.lf) {
+                try {
+                    inst.lf.setTheme(theme);
+                    count++;
+                } catch (e) {
+                    weLog.error('node-graph', 'refreshNodeGraphTheme 嵌入实例失败', { safeId, error: String(e) });
+                }
             }
         }
     }
