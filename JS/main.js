@@ -3,6 +3,24 @@ const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
 const unzipper = require('unzipper');
+// mica-electron：Win11 真材质（Mica/Acrylic/Tabbed）。库直接调 DwmSetWindowAttribute，
+// 并在 restore/resize 事件里自动重新 applyEffect()，解决最大化/还原后材质丢失问题。
+// 库在 Electron 27-40 下强制 transparent:true（构造时覆盖），圆角改由 setRoundedCorner() 提供。
+// 非 Win11 或 native 模块缺失时，材质方法 no-op（executeDwm 为 undefined，方法内有 if 保护）。
+const { MicaBrowserWindow, IS_WINDOWS_11: IS_WIN11_MICA } = require('mica-electron');
+
+// ═══════════════════════════════════════════════════════════════════
+//  标题栏拖动方案说明
+//  ───────────────────────────────────────────────────────────────────
+//  使用 -webkit-app-region:drag（CSS），由 Electron 在 Chromium 层处理
+//  hit-test 返回 HTCAPTION，Windows 原生接管拖动循环：
+//    · 拖动跟随、Aero snap（顶/左右/四角）、双击最大化还原过渡动画
+//  不使用 koffi/SendMessage(WM_NCLBUTTONDOWN,HTCAPTION)：mica-electron 的
+//  removeCaption() 调 DwmSetWindowAttribute(DWMWA_NCRENDERING_POLICY) 移除了
+//  Windows NC caption 渲染，SendMessage 没有 NC 处理器接收 → 无效。
+//  最大化→drag 还原由 'move' 事件监听 + unmaximize + setBounds 实现。
+// ═══════════════════════════════════════════════════════════════════
+
 
 // 打包后使用 userData 目录（可写），开发时使用项目目录
 const DATA_DIR = app.isPackaged ? app.getPath('userData') : __dirname;
@@ -717,41 +735,79 @@ function createSplash() {
     splash.loadFile('renderer/splash.html');
 }
 
+// 应用 mica-electron 材质到窗口（OS 层）
+// material: 'none' | 'mica' | 'acrylic' | 'tabbed'（'transparent' 视为 'none'）
+// 非 Win11 时仅尝试圆角（库内 executeDwm 为 undefined 会 no-op），不调材质方法，
+// 避免 enableMargin 在 frameless 下启动 1ms setInterval 空转浪费 CPU。
+function applyMicaMaterial(win, material) {
+    if (!win || win.isDestroyed()) return;
+    const m = (material === 'transparent') ? 'none' : material;
+    try {
+        if (!IS_WIN11_MICA) {
+            if (typeof win.setRoundedCorner === 'function') win.setRoundedCorner();
+            return;
+        }
+        if (m === 'none') {
+            // 关闭 DWM 材质：disableDWM → executeDwm(BACKGROUND.NONE) + disableMargin + useDWM=false
+            // 窗口仍 transparent:true，靠渲染进程 CSS 实心遮罩（resetMaterialStyles）提供不透明视觉
+            if (typeof win.disableDWM === 'function') win.disableDWM();
+        } else if (m === 'mica') {
+            win.setMicaEffect();
+        } else if (m === 'acrylic') {
+            win.setMicaAcrylicEffect();
+        } else if (m === 'tabbed') {
+            win.setMicaTabbedEffect();
+        } else {
+            if (typeof win.disableDWM === 'function') win.disableDWM();
+        }
+        // 圆角：库强制 transparent:true 会丢失 OS 原生圆角，统一用 DWM 圆角属性恢复
+        // 若实测 setRoundedCorner 在 transparent:true 下失效，渲染进程 CSS 兜底
+        if (typeof win.setRoundedCorner === 'function') win.setRoundedCorner();
+    } catch (e) {
+        console.error(`[applyMicaMaterial] 异常: ${e.message}`);
+    }
+}
+
 function createMainWindow() {
     const material = appSettings.backgroundMaterial || 'none';
     const validMaterial = (material === 'transparent') ? 'none' : material;
     // ╔══════════════════════════════════════════════════════════════════════════════╗
-    // ║  ⚠️  材质渲染核心配置 — 禁止修改以下参数（详见下方说明）                             ║
+    // ║  ⚠️  材质渲染核心配置 — 方案二：mica-electron 真材质                              ║
     // ║                                                                              ║
-    // ║  transparent: 不要设置（默认 false）。设为 true 会丢失 OS 原生                    ║
-    // ║    圆角和阴影，且 DWM 合成异常会导致控件拖影。                                     ║
-    // ║  backgroundColor: 必须 '#00000000'（透明）。让材质能透出来。                    ║
-    // ║    运行时由 set-background-material IPC 按材质类型动态切换，                      ║
-    // ║    不要在此处根据材质类型做条件判断（会与运行时切换冲突）。                            ║
-    // ║  backgroundMaterial: 从 appSettings 读取，运行时可切换。                         ║
+    // ║  使用 MicaBrowserWindow（mica-electron）替换原生 BrowserWindow。库直接调          ║
+    // ║  DwmSetWindowAttribute 实现 Mica/Acrylic/Tabbed，并在 restore/resize 事件里        ║
+    // ║  自动重新 applyEffect()，解决最大化/还原后材质丢失问题。                              ║
     // ║                                                                              ║
-    // ║  正确流程：窗口创建时始终透明 → 运行时只调 setBackgroundMaterial         ║
-    // ║    切到材质：setBackgroundMaterial(材质)                            ║
-    // ║    切到 none ：setBackgroundMaterial('none')                       ║
+    // ║  库的强制行为（构造时覆盖传入参数，无法绕开）：                                       ║
+    // ║    · backgroundColor → '#00ffffff'（alpha=0 透明，等效 '#00000000'）              ║
+    // ║    · transparent → true（Electron 27-40 分支，保 DWM 材质合成）                   ║
+    // ║  此处传入的 backgroundColor:'#00000000' 会被库覆盖，保留仅为字面记录意图。            ║
     // ║                                                                              ║
-    // ║  参考实现：JS/test/mica-test.js（测试通过的基准）                                 ║
+    // ║  backgroundMaterial（Electron 原生封装）不再使用：与 transparent:true 冲突，         ║
+    // ║  改用库的 setMicaEffect()/setMicaAcrylicEffect()/setMicaTabbedEffect()。           ║
+    // ║  圆角：transparent:true 丢失 OS 原生圆角，改由 setRoundedCorner()（DWM 圆角属性）。  ║
+    // ║                                                                              ║
+    // ║  正确流程：                                                                   ║
+    // ║    窗口创建（库强制透明）→ ready-to-show 时 show() + applyMicaMaterial() 激活材质   ║
+    // ║    切到材质：applyMicaMaterial(win, 'mica'/'acrylic'/'tabbed')                   ║
+    // ║    切到 none ：applyMicaMaterial(win, 'none') → win.disableDWM()                ║
+    // ║    最大化/还原：库 restore/resize 自动 applyEffect（动画后），此处不再同步重应用    ║
+    // ║                                                                              ║
+    // ║  运行时绝不调 setBackgroundColor（会挡死材质）。CSS 三层遮罩由渲染进程控制。          ║
     // ╚══════════════════════════════════════════════════════════════════════════════╝
     console.log(`\n========== [createMainWindow] 创建窗口 ==========`);
     console.log(`  appSettings.backgroundMaterial=${material}`);
     console.log(`  validMaterial=${validMaterial}`);
-    console.log(`  构造参数: backgroundColor='#00000000' backgroundMaterial='${validMaterial}'`);
-    mainWin = new BrowserWindow({
+    console.log(`  IS_WIN11_MICA=${IS_WIN11_MICA}`);
+    console.log(`  构造参数: MicaBrowserWindow frame:false（库强制 transparent:true + backgroundColor:'#00ffffff'）`);
+    mainWin = new MicaBrowserWindow({
         width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
         show: false,
-        backgroundColor: '#00000000',
-        backgroundMaterial: validMaterial,
+        backgroundColor: '#00000000',  // 库会强制覆盖为 '#00ffffff'，保留仅为记录意图
         icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
-    console.log(`[createMainWindow] 窗口已创建 | id=${mainWin.id}`);
-    if (mainWin.getBackgroundColor) {
-        console.log(`[createMainWindow] 构造后 backgroundColor=${mainWin.getBackgroundColor()} (不显示alpha属正常)`);
-    }
+    console.log(`[createMainWindow] 窗口已创建 | id=${mainWin.id} | useDWM=${mainWin.useDWM}`);
     mainWin.loadFile('renderer/main.html');
 
     // 外部链接统一用系统浏览器打开，阻止 target="_blank" 创建新 Electron 窗口
@@ -775,16 +831,59 @@ function createMainWindow() {
         mainWin.setAlwaysOnTop(true);
     }
 
-    // 最大化/还原事件：原生窗口接管 DWM 合成，无需手动恢复材质
-    mainWin.on('maximize', () => mainWin.webContents.send('maximized-change', true));
-    mainWin.on('unmaximize', () => mainWin.webContents.send('maximized-change', false));
+    // 最大化/还原事件：仅通知渲染进程更新图标与 is-maximized 标记；
+    // 材质重应用延迟 280ms 后再执行（Win11 最大化过渡动画约 200-250ms），
+    // 之前同步调用会在动画中途调用 DwmSetWindowAttribute → Windows 中止过渡 → "最大化非常生硬"。
+    // mica-electron 库自身的 restore/resize 监听（restore→applyEffect, resize→60ms 后 applyEffect）
+    // 已经作为一层兜底，此处延迟重应用是在过渡结束后兜底刷新，避免肉眼可见的材质闪黑/丢失。
+    let matApplyTimer = null;
+    const scheduleApplyMaterial = () => {
+        if (matApplyTimer) clearTimeout(matApplyTimer);
+        matApplyTimer = setTimeout(() => {
+            applyMicaMaterial(mainWin, appSettings.backgroundMaterial);
+        }, 280);
+    };
+    // 最大化状态拖动标题栏不还原是 frameless+transparent 的已知限制：
+    // mica-electron 的 removeCaption() 已移除 Windows NC caption，
+    // 没有 NC 处理器接收拖动 → 逐帧 setBounds 无法触发系统动画/Aero snap，
+    // 主进程 'move' 事件检测又会与最大化动画产生竞态 → 撤销最大化。
+    // 用户可通过双击标题栏（drag region 双击系统自动还原）或点最大化按钮还原。
+    let lastNormalBounds = null;
+    const saveNormalBounds = () => {
+        if (!mainWin || mainWin.isDestroyed()) return;
+        if (!mainWin.isMaximized()) {
+            lastNormalBounds = mainWin.getBounds();
+        }
+    };
+    mainWin.on('move', saveNormalBounds);
+    mainWin.on('resize', saveNormalBounds);
+    mainWin.once('ready-to-show', () => { saveNormalBounds(); });
 
-    // 首次显示：构造期已指定 backgroundMaterial，show() 即可
-    mainWin.once('ready-to-show', () => mainWin.show());
+    // 最大化/还原事件：通知渲染进程 + 延迟重应用材质（280ms 等 DWM 动画完成）
+    mainWin.on('maximize', () => {
+        console.log('[maximize] event fired');
+        mainWin.webContents.send('maximized-change', true);
+        scheduleApplyMaterial();
+    });
+    mainWin.on('unmaximize', () => {
+        console.log('[unmaximize] event fired');
+        mainWin.webContents.send('maximized-change', false);
+        scheduleApplyMaterial();
+    });
+
+    // 首次显示：show() 触发库的 show 事件（初始化 frameless caption 等），
+    // 随后激活材质。首次 show 时 useDWM=false，库的 applyEffect no-op，
+    // 必须主动调一次 set 方法让 useDWM=true，后续 restore/resize 才能自动重应用。
+    mainWin.once('ready-to-show', () => {
+        mainWin.show();
+        applyMicaMaterial(mainWin, appSettings.backgroundMaterial);
+    });
 
     ipcMain.on('minimize-window', () => mainWin.minimize());
     ipcMain.on('maximize-window', () => mainWin.isMaximized() ? mainWin.unmaximize() : mainWin.maximize());
+    ipcMain.on('unmaximize-window', () => { if (mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()) mainWin.unmaximize(); });
     ipcMain.on('close-window', () => mainWin.close());
+
     ipcMain.handle('set-always-on-top', (event, flag) => {
         mainWin.setAlwaysOnTop(flag);
         return mainWin.isAlwaysOnTop();
@@ -792,71 +891,46 @@ function createMainWindow() {
     ipcMain.handle('is-always-on-top', () => mainWin.isAlwaysOnTop());
 
     // ╔══════════════════════════════════════════════════════════════════╗
-    // ║  ⚠️  材质切换 IPC — 禁止简化或合并分支                             ║
+    // ║  ⚠️  材质切换 IPC — 方案二：mica-electron                            ║
     // ║                                                                    ║
-    // ║  两个分支：                                                        ║
-    // ║    none  → 只调 setBackgroundMaterial('none')                     ║
-    // ║    材质  → 只调 setBackgroundMaterial                              ║
+    // ║  按材质类型调 mica-electron 对应方法（见 applyMicaMaterial）：          ║
+    // ║    mica    → mainWin.setMicaEffect()                              ║
+    // ║    acrylic → mainWin.setMicaAcrylicEffect()                       ║
+    // ║    tabbed  → mainWin.setMicaTabbedEffect()                        ║
+    // ║    none    → mainWin.disableDWM()（关闭 DWM，靠 CSS 实心遮罩）       ║
+    // ║  非材质方法均附带 setRoundedCorner()（transparent:true 下保圆角）       ║
     // ║                                                                    ║
-    // ║  核心原则：运行时**绝不调用** setBackgroundColor                    ║
-    // ║    · 窗口构造时 backgroundColor='#00000000' 定型，终身不变         ║
-    // ║    · none 时的不透明视觉由 CSS 变量提供，无需窗口级兜底             ║
-    // ║    · 运行时调 setBackgroundColor 会导致：                         ║
-    // ║      - '#00000000' 被解析成 #000000 纯黑，挡死材质                ║
-    // ║      - 数组参数抛异常                                              ║
+    // ║  核心原则：运行时绝不调 setBackgroundColor（会挡死材质）。              ║
+    // ║  CSS 三层遮罩（--content-tint/--overlay-tint/--title-bar-tint）       ║
+    // ║  由渲染进程 applyBackgroundMaterial() 控制，本 IPC 只管 OS 层材质。     ║
     // ║                                                                    ║
-    // ║  参考实现：JS/test/mica-test.js（全程只调 setBackgroundMaterial）   ║
-    // ║                                                                    ║
-    // ║  渲染进程调用顺序：先 await IPC（等 OS 材质生效），再改 CSS         ║
-    // ║  否则 CSS 先变半透明时材质还没生效，会看到桌面 → 拖影              ║
-    // ║                                                                    ║
-    // ║  参考实现：JS/test/mica-test.js                                    ║
+    // ║  渲染进程调用顺序：先 await IPC（等 OS 材质生效），再改 CSS             ║
+    // ║  否则 CSS 先变半透明时材质还没生效，会看到桌面 → 拖影                  ║
     // ╚══════════════════════════════════════════════════════════════════╝
     ipcMain.handle('set-background-material', (event, material) => {
         const ts = new Date().toISOString();
         console.log(`\n========== [材质切换 ${ts}] 开始 ==========`);
-        console.log(`[1/6] 收到请求 | 入参 material="${material}"`);
+        console.log(`[1/4] 收到请求 | 入参 material="${material}"`);
         if (!mainWin) {
             console.error(`[材质切换] ✗ 终止：mainWin 不存在`);
             return false;
         }
-        const winState = {
-            isDestroyed: mainWin.isDestroyed(),
-            isVisible: mainWin.isVisible(),
-            isMaximized: mainWin.isMaximized(),
-            isMinimized: mainWin.isMinimized(),
-            isFocused: mainWin.isFocused()
-        };
-        console.log(`[2/6] 窗口状态 | ${JSON.stringify(winState)}`);
         try {
             const prevMaterial = appSettings.backgroundMaterial;
-            const prevBgColor = mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '(无API)';
             appSettings.backgroundMaterial = material;
             const validMaterial = (material === 'transparent') ? 'none' : material;
-            console.log(`[3/6] 配置变更 | 前=${prevMaterial} → 新=${material} → 有效值=${validMaterial}`);
-            console.log(`       切换前 backgroundColor=${prevBgColor}`);
+            console.log(`[2/4] 配置变更 | 前=${prevMaterial} → 新=${material} → 有效值=${validMaterial}`);
 
-            if (validMaterial === 'none') {
-                console.log(`[4/6] 分支A (none) → setBackgroundMaterial('none')`);
-                mainWin.setBackgroundMaterial('none');
-                console.log(`         ✓ 完成`);
-            } else {
-                console.log(`[4/6] 分支B (${validMaterial}) → setBackgroundMaterial`);
-                mainWin.setBackgroundMaterial(validMaterial);
-                console.log(`         ✓ 完成`);
-            }
-
-            // —— 验证阶段 ——
-            const actualBgColor = mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '(无API)';
-            console.log(`[5/6] 验证 | 当前 backgroundColor=${actualBgColor}`);
-            console.log(`       注：getBackgroundColor() 不返回 alpha，显示 #000000 属正常`);
+            // 应用 OS 层材质（mica-electron）：按类型调对应 set 方法
+            applyMicaMaterial(mainWin, validMaterial);
+            console.log(`[3/4] OS 层材质已应用 | useDWM=${mainWin.useDWM} effect=${mainWin.effect}`);
 
             // 持久化到 settings.json
             try {
                 fs.writeFileSync(SETTINGS_PATH, JSON.stringify(appSettings, null, 2));
-                console.log(`[6/6] 已持久化到 settings.json`);
+                console.log(`[4/4] 已持久化到 settings.json`);
             } catch (saveErr) {
-                console.error(`[6/6] ⚠ 持久化失败：${saveErr.message}`);
+                console.error(`[4/4] ⚠ 持久化失败：${saveErr.message}`);
             }
 
             console.log(`========== [材质切换] 完成 ==========\n`);

@@ -11,6 +11,15 @@ document.getElementById('btn-minimize')?.addEventListener('click', () => weAPI.m
 document.getElementById('btn-maximize')?.addEventListener('click', () => weAPI.maximize());
 document.getElementById('btn-close')?.addEventListener('click', () => weAPI.close());
 
+// ========== 标题栏拖动：使用 -webkit-app-region:drag（Electron Chromium 层处理） ==========
+// 不使用 koffi/SendMessage：mica-electron 的 removeCaption() 已移除 Windows NC caption，
+// SendMessage(WM_NCLBUTTONDOWN,HTCAPTION) 没有 NC 处理器接收 → 无效。
+// -webkit-app-region:drag 由 Electron 在 Chromium 层实现 hit-test 返回 HTCAPTION，
+// Windows 收到后原生处理：拖动跟随、Aero snap、双击最大化还原过渡动画。
+// 最大化状态下 drag 不还原窗口是 frameless+transparent 的已知问题，由主进程的
+// 'unmaximize' 事件 + 上次 bounds 恢复机制解决（见 main.js createMainWindow）。
+// 此处保留双击标题栏空白 → 最大化/还原（保险，drag region 双击系统也会触发）。
+
 // ========== 置顶按钮 ==========
 const PIN_SVG_SRC = '../resources/pin.svg';
 

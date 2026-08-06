@@ -140,6 +140,10 @@ body.theme-light {
 }
 
 /* ====== 标题栏 ====== */
+/* 使用 -webkit-app-region:drag：Electron 在 Chromium 层处理 hit-test 返回 HTCAPTION，
+   不依赖 Windows NC caption（mica-electron 的 removeCaption() 已移除 NC）。
+   drag region 在最大化状态下 mousedown 会被 Electron 转发到 OS，但 Windows 最大化时
+   不会自动还原窗口 → 需在主进程 'unmaximize' 事件里手动恢复上次 bounds。 */
 #title-bar {
     position: relative; z-index: 10001;
     height: 36px;
