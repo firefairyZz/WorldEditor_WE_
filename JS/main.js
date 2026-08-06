@@ -668,13 +668,16 @@ function createMainWindow() {
     // ║    不要在此处根据材质类型做条件判断（会与运行时切换冲突）。                            ║
     // ║  backgroundMaterial: 从 appSettings 读取，运行时可切换。                         ║
     // ║                                                                              ║
-    // ║  正确流程：窗口创建时始终透明 → 运行时按材质类型切换                                 ║
-    // ║    切到材质：setBackgroundColor('#00000000') + setBackgroundMaterial         ║
-    // ║    切到 none ：setBackgroundColor(实心主题色) + setBackgroundMaterial('none')   ║
+    // ║  正确流程：窗口创建时始终透明 → 运行时只调 setBackgroundMaterial         ║
+    // ║    切到材质：setBackgroundMaterial(材质)                            ║
+    // ║    切到 none ：setBackgroundMaterial('none')                       ║
     // ║                                                                              ║
     // ║  参考实现：JS/test/mica-test.js（测试通过的基准）                                 ║
     // ╚══════════════════════════════════════════════════════════════════════════════╝
-    console.log(`[createMainWindow] 初始化窗口 | material=${material} validMaterial=${validMaterial} backgroundColor=#00000000`);
+    console.log(`\n========== [createMainWindow] 创建窗口 ==========`);
+    console.log(`  appSettings.backgroundMaterial=${material}`);
+    console.log(`  validMaterial=${validMaterial}`);
+    console.log(`  构造参数: backgroundColor='#00000000' backgroundMaterial='${validMaterial}'`);
     mainWin = new BrowserWindow({
         width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
         show: false,
@@ -683,6 +686,10 @@ function createMainWindow() {
         icon: path.join(__dirname, 'resources', 'icon.png'),
         webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
     });
+    console.log(`[createMainWindow] 窗口已创建 | id=${mainWin.id}`);
+    if (mainWin.getBackgroundColor) {
+        console.log(`[createMainWindow] 构造后 backgroundColor=${mainWin.getBackgroundColor()} (不显示alpha属正常)`);
+    }
     mainWin.loadFile('renderer/main.html');
 
     // 外部链接统一用系统浏览器打开，阻止 target="_blank" 创建新 Electron 窗口
@@ -725,17 +732,18 @@ function createMainWindow() {
     // ╔══════════════════════════════════════════════════════════════════╗
     // ║  ⚠️  材质切换 IPC — 禁止简化或合并分支                             ║
     // ║                                                                    ║
-    // ║  两个分支必须独立处理 backgroundColor：                            ║
-    // ║    none  → setBackgroundColor(实心主题色)  材质关闭，实心兜底       ║
-    // ║    材质  → setBackgroundColor('#00000000') 材质激活，透明让光透过   ║
+    // ║  两个分支：                                                        ║
+    // ║    none  → 只调 setBackgroundMaterial('none')                     ║
+    // ║    材质  → 只调 setBackgroundMaterial                              ║
     // ║                                                                    ║
-    // ║  常见错误（会导致 bug）：                                          ║
-    // ║    ✗ 只切 backgroundMaterial 不改 backgroundColor                  ║
-    // ║      → 从 none 切到材质时，实心背景会挡住材质                      ║
-    // ║    ✗ 窗口创建时根据材质类型条件设置 backgroundColor                 ║
-    // ║      → 与运行时切换冲突，重启后材质失效                            ║
-    // ║    ✗ 设 transparent: true 来"解决"材质问题                         ║
-    // ║      → 丢失 OS 圆角/阴影，DWM 拖影                                ║
+    // ║  核心原则：运行时**绝不调用** setBackgroundColor                    ║
+    // ║    · 窗口构造时 backgroundColor='#00000000' 定型，终身不变         ║
+    // ║    · none 时的不透明视觉由 CSS 变量提供，无需窗口级兜底             ║
+    // ║    · 运行时调 setBackgroundColor 会导致：                         ║
+    // ║      - '#00000000' 被解析成 #000000 纯黑，挡死材质                ║
+    // ║      - 数组参数抛异常                                              ║
+    // ║                                                                    ║
+    // ║  参考实现：JS/test/mica-test.js（全程只调 setBackgroundMaterial）   ║
     // ║                                                                    ║
     // ║  渲染进程调用顺序：先 await IPC（等 OS 材质生效），再改 CSS         ║
     // ║  否则 CSS 先变半透明时材质还没生效，会看到桌面 → 拖影              ║
@@ -744,44 +752,69 @@ function createMainWindow() {
     // ╚══════════════════════════════════════════════════════════════════╝
     ipcMain.handle('set-background-material', (event, material) => {
         const ts = new Date().toISOString();
-        console.log(`\n[set-background-material ${ts}] ====== 开始切换 ======`);
-        console.log(`[set-background-material] 收到请求 | material=${material}`);
+        console.log(`\n========== [材质切换 ${ts}] 开始 ==========`);
+        console.log(`[1/6] 收到请求 | 入参 material="${material}"`);
         if (!mainWin) {
-            console.log(`[set-background-material] ✗ mainWin 为空，终止`);
+            console.error(`[材质切换] ✗ 终止：mainWin 不存在`);
             return false;
         }
-        console.log(`[set-background-material] 窗口状态 | isDestroyed=${mainWin.isDestroyed()} isVisible=${mainWin.isVisible()} isMaximized=${mainWin.isMaximized()}`);
+        const winState = {
+            isDestroyed: mainWin.isDestroyed(),
+            isVisible: mainWin.isVisible(),
+            isMaximized: mainWin.isMaximized(),
+            isMinimized: mainWin.isMinimized(),
+            isFocused: mainWin.isFocused()
+        };
+        console.log(`[2/6] 窗口状态 | ${JSON.stringify(winState)}`);
         try {
             const prevMaterial = appSettings.backgroundMaterial;
+            const prevBgColor = mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '(无API)';
             appSettings.backgroundMaterial = material;
             const validMaterial = (material === 'transparent') ? 'none' : material;
-            console.log(`[set-background-material] 前值=${prevMaterial} 新值=${material} validMaterial=${validMaterial}`);
+            console.log(`[3/6] 配置变更 | 前=${prevMaterial} → 新=${material} → 有效值=${validMaterial}`);
+            console.log(`       切换前 backgroundColor=${prevBgColor}`);
 
             if (validMaterial === 'none') {
-                // 切到 none：恢复实心背景（对齐测试文件）
-                console.log(`[set-background-material] → none: setBackgroundMaterial('none') + setBackgroundColor(实心)`);
+                // —— 分支A：切回 none ——
+                // 只动 backgroundMaterial，不动 backgroundColor。
+                // none 时的不透明视觉由 CSS 变量（--overlay-tint / --content-tint 等）提供，
+                // 不需要窗口级实心背景兜底（会导致切回材质时背景不透明挡死 OS 材质）。
+                console.log(`[4/6] 分支A (none) → setBackgroundMaterial('none')`);
                 mainWin.setBackgroundMaterial('none');
-                const preset = appSettings.colorPreset || 'default-dark';
-                const isLight = preset.includes('light') || preset === 'we-light';
-                const solidBg = isLight ? '#e8e8e8' : '#2a2a2a';
-                mainWin.setBackgroundColor(solidBg);
-                console.log(`[set-background-material] ✓ none完成 | backgroundColor=${solidBg}`);
+                console.log(`         ✓ 完成`);
             } else {
-                // 切到材质：先恢复透明背景，再切材质
-                // 必须重置 backgroundColor，因为之前可能是 'none' 状态设了实心背景
-                console.log(`[set-background-material] → 材质: setBackgroundColor('#00000000') + setBackgroundMaterial('${validMaterial}')`);
-                mainWin.setBackgroundColor('#00000000');
+                // —— 分支B：切到材质，只动 backgroundMaterial ——
+                // 对齐测试文件 mica-test.js：窗口构造时 backgroundColor 已是 '#00000000'（透明），
+                // 运行时切材质只需 setBackgroundMaterial，不需要再动 backgroundColor。
+                // 注意：setBackgroundColor 运行时不接受 [0,0,0,0] 数组（Electron 33 会抛
+                // "conversion failure"），传 '#00000000' 字符串又会被存成 #000000 纯黑挡死材质。
+                // 因此运行时不能调 setBackgroundColor，靠构造期定型的透明背景即可。
+                console.log(`[4/6] 分支B (${validMaterial}) → 只调 setBackgroundMaterial`);
+                console.log(`       · 调用 setBackgroundMaterial('${validMaterial}') ...`);
                 mainWin.setBackgroundMaterial(validMaterial);
-                console.log(`[set-background-material] ✓ 材质完成`);
+                console.log(`         ✓ 完成`);
             }
 
+            // —— 验证阶段 ——
             const actualBgColor = mainWin.getBackgroundColor ? mainWin.getBackgroundColor() : '(无API)';
-            console.log(`[set-background-material] 验证 | 当前backgroundColor=${actualBgColor}`);
-            console.log(`[set-background-material] ====== 切换完成 ======\n`);
+            console.log(`[5/6] 验证 | 当前 backgroundColor=${actualBgColor}`);
+            console.log(`       注：getBackgroundColor() 不返回 alpha，显示 #000000 属正常`);
+
+            // 持久化到 settings.json
+            try {
+                fs.writeFileSync(SETTINGS_PATH, JSON.stringify(appSettings, null, 2));
+                console.log(`[6/6] 已持久化到 settings.json`);
+            } catch (saveErr) {
+                console.error(`[6/6] ⚠ 持久化失败：${saveErr.message}`);
+            }
+
+            console.log(`========== [材质切换] 完成 ==========\n`);
             return true;
         } catch (e) {
-            console.error(`[set-background-material] ✗ 异常:`, e.message);
-            console.error(`[set-background-material] 堆栈:`, e.stack);
+            console.error(`========== [材质切换] ✗ 异常 ==========`);
+            console.error(`  错误信息：${e.message}`);
+            console.error(`  堆栈：${e.stack}`);
+            console.error(`=======================================\n`);
             return false;
         }
     });
