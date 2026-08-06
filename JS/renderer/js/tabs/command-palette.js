@@ -12,12 +12,14 @@ const commandPalette = {
     commands: [],
 
     register(cmd) {
+        weLog.debug('command-palette', '→ register', { id: cmd && cmd.id });
         if (!this.commands.find(c => c.id === cmd.id)) {
             this.commands.push(cmd);
         }
     },
 
     registerDefaults() {
+        weLog.info('command-palette', '→ registerDefaults 开始');
         const fileGroup = t('ui.file_operations') || '文件操作';
         const tabGroup = t('ui.tab_operations') || '标签操作';
         const viewGroup = t('ui.view_operations') || '视图操作';
@@ -91,9 +93,11 @@ const commandPalette = {
         // 插入
         this.register({ id: 'insert-formula-block', label: t('ui.insert_formula_block') || '插入块级公式', group: insertGroup, action: () => insertMarkdownSnippet('$$\nE = mc^2\n$$') });
         this.register({ id: 'insert-formula-inline', label: t('ui.insert_formula_inline') || '插入行内公式', group: insertGroup, action: () => insertMarkdownSnippet('$E=mc^2$') });
+        weLog.info('command-palette', '← registerDefaults 完成', { count: this.commands.length });
     },
 
     show(initialQuery) {
+        weLog.info('command-palette', '→ show', { initialQuery });
         if (this.isVisible) return;
         this.isVisible = true;
         if (!this.element) this.create();
@@ -106,16 +110,19 @@ const commandPalette = {
     },
 
     hide() {
+        weLog.info('command-palette', '→ hide');
         this.isVisible = false;
         if (this.element) this.element.style.display = 'none';
     },
 
     toggle(initialQuery) {
+        weLog.info('command-palette', '→ toggle', { isVisible: this.isVisible, initialQuery });
         if (this.isVisible) this.hide();
         else this.show(initialQuery);
     },
 
     create() {
+        weLog.info('command-palette', '→ create');
         this.element = document.createElement('div');
         this.element.className = 'command-palette-overlay';
         this.element.innerHTML = `
@@ -162,12 +169,14 @@ const commandPalette = {
     },
 
     detectMode(query) {
+        weLog.debug('command-palette', '→ detectMode', { query });
         if (query.startsWith('>')) return 'command';
         if (query.startsWith('@')) return 'settings';
         return 'all';
     },
 
     filter(query) {
+        weLog.debug('command-palette', '→ filter', { query });
         const mode = this.detectMode(query);
         this.mode = mode;
 
@@ -195,6 +204,7 @@ const commandPalette = {
 
         // 如果在 all 模式下无匹配，添加"在编辑器中查找"选项
         if (mode === 'all' && q && this.filteredCommands.length === 0) {
+            weLog.info('command-palette', 'filter: 无匹配，添加在编辑器中查找选项', { q });
             this.filteredCommands = [{
                 id: 'find-in-editor',
                 label: `${t('ui.command_palette_find_in_editor') || '在编辑器中查找'}: "${q}"`,
@@ -263,20 +273,24 @@ const commandPalette = {
 
     executeSelected() {
         const cmd = this.filteredCommands[this.selectedIndex];
-        if (!cmd) return;
+        if (!cmd) { weLog.warn('command-palette', 'executeSelected: 未找到选中命令'); return; }
+        weLog.info('command-palette', '→ executeSelected', { id: cmd.id, label: cmd.label });
         this.hide();
         if (cmd.action) {
-            try { cmd.action(); } catch (e) { console.error('Command error:', e); }
+            try { cmd.action(); }
+            catch (e) { weLog.error('command-palette', 'executeSelected 执行失败', e && e.stack ? e.stack : String(e)); }
         }
     }
 };
 
 // 跳转到设置页指定 section
 function navigateToSettingsSection(section) {
+    weLog.info('command-palette', '→ navigateToSettingsSection', { section });
     const nav = document.querySelector('.settings-nav');
-    if (!nav) return;
+    if (!nav) { weLog.warn('command-palette', 'navigateToSettingsSection: settings-nav 不存在'); return; }
     const item = nav.querySelector(`.nav-item[data-section="${section}"]`);
     if (item) item.click();
+    else weLog.warn('command-palette', 'navigateToSettingsSection: nav-item 不存在', { section });
 }
 
 // ====== 查找/替换栏 ======
@@ -293,6 +307,7 @@ const findBar = {
     lastQuery: '',
 
     show(replaceMode) {
+        weLog.info('command-palette', '→ findBar.show', { replaceMode, isVisible: this.isVisible });
         if (this.isVisible) {
             if (replaceMode) this.toggleReplace(true);
             this.findInput.focus();
@@ -308,14 +323,16 @@ const findBar = {
     },
 
     hide() {
+        weLog.info('command-palette', '→ findBar.hide');
         this.isVisible = false;
         if (this.element) this.element.style.display = 'none';
         this.clearHighlights();
     },
 
-    toggle: function() { if (this.isVisible) this.hide(); else this.show(false); },
+    toggle: function() { weLog.info('command-palette', '→ findBar.toggle', { isVisible: this.isVisible }); if (this.isVisible) this.hide(); else this.show(false); },
 
     create() {
+        weLog.info('command-palette', '→ findBar.create');
         this.element = document.createElement('div');
         this.element.className = 'find-bar';
         this.element.innerHTML = `
@@ -400,6 +417,7 @@ const findBar = {
 
     // 输入时只统计匹配数量，不跳转
     countMatches(query) {
+        weLog.debug('command-palette', '→ findBar.countMatches', { query });
         this.lastQuery = query;
         this.matches = [];
         this.currentMatch = -1;
@@ -454,6 +472,7 @@ const findBar = {
     },
 
     findNext(fromInput) {
+        weLog.debug('command-palette', '→ findBar.findNext', { fromInput });
         if (!this.ensureMatchesCollected()) return;
         if (fromInput || this.currentMatch < 0) this.currentMatch = 0;
         else this.currentMatch = (this.currentMatch + 1) % this.matches.length;
@@ -462,6 +481,7 @@ const findBar = {
     },
 
     findPrev(fromInput) {
+        weLog.debug('command-palette', '→ findBar.findPrev', { fromInput });
         if (!this.ensureMatchesCollected()) return;
         if (fromInput || this.currentMatch < 0) this.currentMatch = this.matches.length - 1;
         else this.currentMatch = (this.currentMatch - 1 + this.matches.length) % this.matches.length;
@@ -504,6 +524,7 @@ const findBar = {
     },
 
     doReplace() {
+        weLog.info('command-palette', '→ findBar.doReplace', { currentMatch: this.currentMatch, matchCount: this.matches.length });
         if (this.currentMatch < 0 || this.matches.length === 0) return;
         const m = this.matches[this.currentMatch];
         const replaceText = this.replaceInput.value;
@@ -533,6 +554,7 @@ const findBar = {
     },
 
     doReplaceAll() {
+        weLog.info('command-palette', '→ findBar.doReplaceAll', { matchCount: this.matches.length, lastQuery: this.lastQuery });
         if (this.matches.length === 0 || !this.lastQuery) return;
         const replaceText = this.replaceInput.value;
 
@@ -581,7 +603,9 @@ const findBar = {
 
 // 向 Markdown 编辑器插入文本片段
 function insertMarkdownSnippet(snippet) {
+    weLog.info('command-palette', '→ insertMarkdownSnippet', { snippet });
     if (!markdownEditor) {
+        weLog.warn('command-palette', 'insertMarkdownSnippet: markdownEditor 不存在');
         showNotification(t('ui.command_palette_md_only') || '此命令仅在 Markdown 模式可用');
         return;
     }
@@ -593,6 +617,7 @@ function insertMarkdownSnippet(snippet) {
     markdownEditor.selectionStart = markdownEditor.selectionEnd = start + insertText.length;
     markdownEditor.dispatchEvent(new Event('input'));
     markdownEditor.focus();
+    weLog.info('command-palette', '← insertMarkdownSnippet 完成');
 }
 
 // ====== 标题栏按钮 & 快捷键绑定 ======

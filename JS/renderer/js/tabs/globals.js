@@ -92,3 +92,14 @@ const THEME_PRESETS = {
     }}
 };
 let currentColorPreset = 'default-dark';
+
+// globals.js 加载完成日志（logger.js 已在 globals.js 之前加载）
+if (typeof weLog !== 'undefined') {
+    weLog.info('globals', '全局状态模块已加载', {
+        currentTheme: currentTheme,
+        currentColorPreset: currentColorPreset,
+        toolbarShow: toolbarShow,
+        wordCountShow: wordCountShow,
+        markdownRender: markdownRender
+    });
+}

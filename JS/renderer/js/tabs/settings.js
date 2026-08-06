@@ -3,6 +3,7 @@ let APP_VERSION = '...'; // 由 weAPI.getVersion() 动态填充
 // 简易 Markdown 渲染器（无需外部依赖）
 let __mdAnchors = [];
 function renderMarkdown(md) {
+    weLog.debug('settings', '→ renderMarkdown 开始', { mdLength: md ? md.length : 0 });
     __mdAnchors = [];
     const lines = md.split(/\r?\n/);
     const out = [];
@@ -147,6 +148,7 @@ const CONFIGURABLE_SHORTCUTS = [
 
 // 构建快捷键设置 HTML
 function buildShortcutsSettingsHTML() {
+    weLog.debug('settings', '→ buildShortcutsSettingsHTML 开始');
     const groupTitles = {
         file: t('ui.file_operations') || '文件操作',
         tab: t('ui.tab_operations') || '标签操作',
@@ -185,6 +187,7 @@ function buildShortcutsSettingsHTML() {
 
 // 绑定快捷键输入捕获事件
 function bindShortcutCapture(container) {
+    weLog.info('settings', '→ bindShortcutCapture 开始');
     container.querySelectorAll('.shortcut-input').forEach(input => {
         input.addEventListener('focus', () => {
             input.classList.add('recording');
@@ -271,6 +274,7 @@ function bindShortcutCapture(container) {
 
 // 检查快捷键冲突
 function checkShortcutConflict(action, key, ctrl, shift) {
+    weLog.debug('settings', '→ checkShortcutConflict 开始', { action, key, ctrl, shift });
     for (const otherAction in activeShortcuts) {
         if (otherAction === action) continue;
         // goto-tab 系列互相不冲突
@@ -285,6 +289,7 @@ function checkShortcutConflict(action, key, ctrl, shift) {
 
 // 从设置 UI 收集自定义快捷键
 function collectCustomShortcuts(container) {
+    weLog.debug('settings', '→ collectCustomShortcuts 开始');
     const custom = {};
     container.querySelectorAll('.shortcut-input').forEach(input => {
         const action = input.dataset.action;
@@ -313,7 +318,11 @@ function collectCustomShortcuts(container) {
 let settingsPanelRef = null;
 
 function refreshSettingsI18n() {
-    if (!settingsPanelRef) return;
+    weLog.info('settings', '→ refreshSettingsI18n 开始');
+    if (!settingsPanelRef) {
+        weLog.debug('settings', 'refreshSettingsI18n: settingsPanelRef 不存在，跳过');
+        return;
+    }
     const panel = settingsPanelRef;
 
     // 导航项
@@ -532,8 +541,9 @@ function refreshSettingsI18n() {
 }
 
 function createSettingsTab() {
+    weLog.info('settings', '→ createSettingsTab 开始');
     const id = 'settings';
-    if (tabs[id]) { switchTab(id); return; }
+    if (tabs[id]) { weLog.debug('settings', 'createSettingsTab: 标签已存在，切换过去'); switchTab(id); return; }
     const content = document.createElement('div');
     content.className = 'settings-layout';
 
@@ -982,6 +992,7 @@ function createSettingsTab() {
     });
 
     weAPI.getSettings().then(async (s) => {
+        weLog.info('settings', '→ getSettings 回调开始', { language: s.language, colorPreset: s.colorPreset });
         await tagModule.loadPinnedAndFrequentTags();
         content.querySelector('#lang-select').value = s.language || 'zh_CN';
         const colorPresetSelect = content.querySelector('#color-preset-select');
@@ -1216,19 +1227,11 @@ function createSettingsTab() {
         }
     }
     if (bgMaterialSelect) {
-        // ⚠️ 调用顺序：先 await IPC（等 OS 材质生效）→ 再改 CSS
-        // 如果先改 CSS（变半透明），OS 材质还没切完，会看到桌面 → 拖影
-        bgMaterialSelect.addEventListener('change', async () => {
+        // 下拉框切换只更新 UI 状态（灰化相关行），不实时切换材质。
+        // 材质切换和保存统一由"应用"按钮触发，与其他设置项保持一致。
+        bgMaterialSelect.addEventListener('change', () => {
             const bgm = bgMaterialSelect.value;
-            const tint = parseInt(bgTintSlider?.value || '78');
-            const overlay = parseInt(bgOverlaySlider?.value || '30');
-            const barTint = parseInt(bgBarTintSlider?.value || '100');
-            console.log(`[renderer] 下拉框切换 → 先发IPC给OS weAPI.setBackgroundMaterial('${bgm}')`);
-            // 1. 先通知主进程切换 OS 材质，等待完成
-            await weAPI.setBackgroundMaterial(bgm);
-            console.log(`[renderer] OS材质已切换 → 再应用CSS applyBackgroundMaterial('${bgm}', tint=${tint}, overlay=${overlay}, barTint=${barTint})`);
-            // 2. OS材质生效后再改CSS，防止半透明时材质还没生效导致拖影
-            applyBackgroundMaterial(bgm, tint, overlay, barTint);
+            weLog.info('settings', 'bgMaterialSelect change: 待应用材质', { bgm });
             updateMaterialRowsState(bgm);
         });
         updateMaterialRowsState(bgMaterialSelect.value);
@@ -1445,12 +1448,15 @@ function createSettingsTab() {
                 await navigator.clipboard.writeText(idText);
                 copyIdBtn.textContent = '✓';
                 setTimeout(() => { copyIdBtn.textContent = t('ui.copy') || '复制'; }, 1500);
-            } catch (e) {}
+            } catch (e) {
+                weLog.error('settings', 'copyIdBtn 复制账户ID失败', e && e.stack ? e.stack : String(e));
+            }
         };
     }
 
     // 删除账户（底部按钮）
     deleteAccountBtn.onclick = async () => {
+        weLog.info('settings', '→ deleteAccountBtn 点击');
         if (!currentAccount) return;
         // 二次确认弹窗
         const ok1 = await showConfirmDialog(
@@ -1465,6 +1471,7 @@ function createSettingsTab() {
         if (!ok2) return;
         weAPI.deleteAccount().then(result => {
             if (result.success) {
+                weLog.info('settings', 'deleteAccountBtn: 账户删除成功');
                 currentAccount = null;
                 tempAccountName = '';
                 tempAccountDisplay = '';
@@ -1480,12 +1487,14 @@ function createSettingsTab() {
                 if (dispEl) dispEl.textContent = t('ui.not_set') || '未设置';
                 showNotification(t('ui.account_deleted') || '账户已删除');
             } else {
+                weLog.warn('settings', 'deleteAccountBtn: 账户删除失败', { error: result.error });
                 alert(t('ui.delete_failed') + ': ' + result.error);
             }
         });
     };
 
     applyBtn.onclick = async () => {
+        weLog.info('settings', '→ applyBtn 点击（应用设置）');
         const lang = content.querySelector('#lang-select').value;
         const colorPreset = content.querySelector('#color-preset-select')?.value || 'default-dark';
         let customColors = null;
@@ -1635,6 +1644,7 @@ function createSettingsTab() {
 
     if (checkUpdateBtn) {
         checkUpdateBtn.onclick = async () => {
+            weLog.info('settings', '→ checkUpdateBtn 点击（检查更新）');
             checkUpdateBtn.disabled = true;
             updateStatusEl.dataset.checked = 'true';
             updateStatusEl.textContent = t('ui.update_checking') || '正在检查...';
@@ -1664,6 +1674,7 @@ function createSettingsTab() {
                     hideUpdateIndicator();
                 }
             } catch (e) {
+                weLog.error('settings', 'checkUpdateBtn 检查更新失败', e && e.stack ? e.stack : String(e));
                 updateStatusEl.textContent = t('ui.update_check_failed') || '检查失败';
                 updateDetailEl.textContent = e.message;
                 updateDetailEl.style.display = 'block';
@@ -1698,6 +1709,7 @@ function createSettingsTab() {
 }
 
 function applyTheme(theme) {
+    weLog.info('settings', '→ applyTheme 开始', { theme });
     document.body.classList.toggle('theme-light', theme === 'light');
     const titleIcon = document.getElementById('title-icon');
     if (titleIcon) titleIcon.src = theme === 'light' ? '../resources/Black.png' : '../resources/White.png';
@@ -1720,7 +1732,9 @@ function readThemeColors() {
     let cached = null;
     try {
         cached = JSON.parse(document.body.dataset.themeColors || 'null');
-    } catch {}
+    } catch (e) {
+        weLog.error('settings', 'readThemeColors: 解析 themeColors 缓存失败', e && e.stack ? e.stack : String(e));
+    }
     if (cached) return cached;
     const styles = getComputedStyle(document.body);
     const colors = {
@@ -1741,6 +1755,7 @@ function clearThemeColorsCache() {
 // 仅控制内容区不透明度
 // tint: 0-100，100=完全不透明，0=完全透明
 function applyTint(tint) {
+    weLog.debug('settings', '→ applyTint 开始（只读日志）', { tint });
     const { bgSidebar, bgMain, border } = readThemeColors();
     const alpha = (tint ?? 78) / 100;
     document.body.style.setProperty('--content-tint', hexToRgba(bgSidebar, alpha));
@@ -1752,6 +1767,7 @@ function applyTint(tint) {
 // 控制底层遮罩不透明度（覆盖边框+内容区底层，颜色跟随主题 gap-color）
 // overlay: 0-100，100=完全不透明，0=完全透明
 function applyOverlay(overlay) {
+    weLog.debug('settings', '→ applyOverlay 开始（只读日志）', { overlay });
     const { gapColor } = readThemeColors();
     const alpha = (overlay ?? 30) / 100;
     document.body.style.setProperty('--overlay-tint', hexToRgba(gapColor, alpha));
@@ -1762,6 +1778,7 @@ function applyOverlay(overlay) {
 // 仅控制标题栏不透明度
 // barTint: 0-100，100=实心（主题色），0=完全透明
 function applyBarTint(barTint) {
+    weLog.debug('settings', '→ applyBarTint 开始（只读日志）', { barTint });
     const { bgSidebar } = readThemeColors();
     const alpha = (barTint ?? 100) / 100;
     document.body.style.setProperty('--title-bar-tint', hexToRgba(bgSidebar, alpha));
@@ -1772,6 +1789,7 @@ function applyBarTint(barTint) {
 // 应用背景图片：dataUrl 为 null 时隐藏图片层
 // opacity: 0-100
 function applyBackgroundImage(dataUrl, opacity) {
+    weLog.info('settings', '→ applyBackgroundImage 开始（只读日志）', { hasDataUrl: !!dataUrl, opacity });
     const layer = document.getElementById('background-image-layer');
     if (!layer) return;
     if (dataUrl) {
@@ -1805,6 +1823,7 @@ function resetMaterialStyles() {
 // overlay: 底层遮罩不透明度（0-100）
 // barTint: 标题栏不透明度（0-100）
 function applyBackgroundMaterial(material, tint, overlay, barTint) {
+    weLog.info('settings', '→ applyBackgroundMaterial 开始（只读日志）', { material, tint, overlay, barTint });
     const active = material && material !== 'none';
     console.log(`[renderer] applyBackgroundMaterial | material=${material} tint=${tint} overlay=${overlay} barTint=${barTint} active=${active}`);
     document.documentElement.classList.toggle('material-active', active);
@@ -1845,6 +1864,7 @@ function hexToRgba(color, alpha) {
 
 // 应用主题配色预设
 function applyColorPreset(presetName, customColors) {
+    weLog.info('settings', '→ applyColorPreset 开始（只读日志）', { presetName, hasCustomColors: !!customColors });
     currentColorPreset = presetName;
     const target = document.body;  // 设到 body 以覆盖 body.theme-light 的硬编码
 
@@ -1895,12 +1915,13 @@ function applyColorPreset(presetName, customColors) {
             applyBackgroundMaterial(m, saved.tint ?? 78, saved.overlay ?? 30, saved.barTint ?? 100);
         }
     }
-    // 通知主进程更新窗口背景色（主题变了，none 时的回退色也要变）
-    if (typeof weAPI !== 'undefined' && weAPI.setBackgroundMaterial) {
-        const m = target.dataset.bgMaterial || 'none';
-        console.log(`[renderer] applyColorPreset 主题切换 → weAPI.setBackgroundMaterial('${m}')`);
-        weAPI.setBackgroundMaterial(m);
-    }
+    // 注意：此处不再调用 weAPI.setBackgroundMaterial。
+    // applyColorPreset 的职责是应用配色预设（CSS），不应覆盖材质设置。
+    // body 上无 data-bg-material 属性，旧代码会用 'none' 覆盖已保存的材质值，导致重启后丢失。
+    // 材质的 OS 层面应用由窗口构造时和"应用"按钮的 setBackgroundMaterial 调用负责。
+
+    // 主题切换后刷新节点图样式
+    if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
 }
 
 // 计算颜色相对亮度（用于判断亮/暗主题）
@@ -1913,6 +1934,7 @@ function hexToLuminance(hex) {
 }
 
 function applyFontSettings(family, size) {
+    weLog.info('settings', '→ applyFontSettings 开始', { family, size });
     document.documentElement.style.setProperty('--font-family', family);
     document.documentElement.style.setProperty('--font-size', size + 'px');
     document.documentElement.style.setProperty('--editor-font-size', size + 'px');
@@ -1925,6 +1947,7 @@ function applyFontSettings(family, size) {
 }
 
 function setupAutoSave(minutes) {
+    weLog.info('settings', '→ setupAutoSave 开始', { minutes });
     clearInterval(autoSaveTimer);
     if (minutes > 0) {
         autoSaveTimer = setInterval(() => {
@@ -1936,6 +1959,7 @@ function setupAutoSave(minutes) {
 }
 
 function updateStatusBar() {
+    weLog.debug('settings', '→ updateStatusBar 开始', { activeTabId });
     if (!activeTabId || !tabs[activeTabId]) return;
     const statusBar = document.getElementById('status-bar');
     if (!statusBar) return;
@@ -1965,10 +1989,17 @@ const ARROW_COLLAPSED_SVG = '<svg class="toc-arrow-svg" viewBox="0 0 16 16" widt
 const ARROW_EXPANDED_SVG = '<svg class="toc-arrow-svg" viewBox="0 0 16 16" width="10" height="10"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 async function loadUpdateNotes() {
+    weLog.info('settings', '→ loadUpdateNotes 开始');
     const container = document.getElementById('update-notes-container');
     const tocList = document.getElementById('update-notes-toc-list');
-    if (!container || !tocList) return;
-    if (container.dataset.loaded) return;
+    if (!container || !tocList) {
+        weLog.warn('settings', 'loadUpdateNotes: container 或 tocList 元素不存在');
+        return;
+    }
+    if (container.dataset.loaded) {
+        weLog.debug('settings', 'loadUpdateNotes: 已加载过，跳过');
+        return;
+    }
     container.dataset.loaded = 'true';
 
     try {
@@ -2142,6 +2173,7 @@ async function loadUpdateNotes() {
             tocList.innerHTML = '';
         }
     } catch (e) {
+        weLog.error('settings', 'loadUpdateNotes 加载更新日志失败', e && e.stack ? e.stack : String(e));
         container.innerHTML = '<div class="update-notes-empty">加载失败</div>';
         tocList.innerHTML = '';
     }
@@ -2350,9 +2382,16 @@ SOFTWARE.`
 ];
 
 function loadOssLicenses() {
+    weLog.info('settings', '→ loadOssLicenses 开始');
     const container = document.getElementById('oss-licenses-list');
-    if (!container) return;
-    if (container.dataset.loaded) return;
+    if (!container) {
+        weLog.warn('settings', 'loadOssLicenses: container 元素不存在');
+        return;
+    }
+    if (container.dataset.loaded) {
+        weLog.debug('settings', 'loadOssLicenses: 已加载过，跳过');
+        return;
+    }
     container.dataset.loaded = 'true';
 
     const viewText = t('ui.oss_view_license') || '查看许可证';
@@ -2437,10 +2476,14 @@ function applyWordCountVisibility(show) {
 let lastUpdateResult = null;
 
 function showUpdateIndicator(result) {
+    weLog.info('settings', '→ showUpdateIndicator 开始', { latestVersion: result?.latestVersion });
     lastUpdateResult = result;
     const btn = document.getElementById('btn-update-available');
     const sep = document.getElementById('update-separator');
-    if (!btn) return;
+    if (!btn) {
+        weLog.warn('settings', 'showUpdateIndicator: btn-update-available 元素不存在');
+        return;
+    }
     const title = (t('ui.update_available_title') || '发现新版本') + `: v${result.latestVersion}`;
     btn.title = title;
     btn.style.display = '';
@@ -2448,6 +2491,7 @@ function showUpdateIndicator(result) {
 }
 
 function hideUpdateIndicator() {
+    weLog.info('settings', '→ hideUpdateIndicator 开始');
     lastUpdateResult = null;
     const btn = document.getElementById('btn-update-available');
     const sep = document.getElementById('update-separator');

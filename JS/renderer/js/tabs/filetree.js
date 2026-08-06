@@ -54,7 +54,11 @@ const multiSelectState = {
 };
 
 function clearSelection(safeId) {
-    if (safeId && multiSelectState.safeId !== safeId) return;
+    weLog.debug('filetree', '→ clearSelection 开始', { safeId });
+    if (safeId && multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'clearSelection: safeId 不匹配，跳过', { current: multiSelectState.safeId, requested: safeId });
+        return;
+    }
     multiSelectState.items.forEach(item => {
         item.element.classList.remove('selected');
     });
@@ -64,7 +68,9 @@ function clearSelection(safeId) {
 }
 
 function toggleSelectItem(path, type, element, safeId) {
+    weLog.debug('filetree', '→ toggleSelectItem 开始', { path, type, safeId });
     if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'toggleSelectItem: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
         clearSelection(multiSelectState.safeId);
         multiSelectState.safeId = safeId;
     }
@@ -79,7 +85,9 @@ function toggleSelectItem(path, type, element, safeId) {
 }
 
 function selectItem(path, type, element, safeId) {
+    weLog.debug('filetree', '→ selectItem 开始', { path, type, safeId });
     if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectItem: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
         clearSelection(multiSelectState.safeId);
         multiSelectState.safeId = safeId;
     }
@@ -91,11 +99,14 @@ function selectItem(path, type, element, safeId) {
 }
 
 function selectRange(path, type, element, safeId, container) {
+    weLog.debug('filetree', '→ selectRange 开始', { path, type, safeId });
     if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectRange: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
         clearSelection(multiSelectState.safeId);
         multiSelectState.safeId = safeId;
     }
     if (!multiSelectState.lastClickedPath) {
+        weLog.debug('filetree', 'selectRange: 无上次点击记录，降级为单选');
         selectItem(path, type, element, safeId);
         return;
     }
@@ -126,6 +137,7 @@ function selectRange(path, type, element, safeId, container) {
         if (itemPath === path) endIdx = i;
     }
     if (startIdx === -1 || endIdx === -1) {
+        weLog.debug('filetree', 'selectRange: 起止元素未找到，降级为单选', { startIdx, endIdx });
         selectItem(path, type, element, safeId);
         return;
     }
@@ -150,7 +162,9 @@ function selectRange(path, type, element, safeId, container) {
 }
 
 function selectAllVisible(safeId, container) {
+    weLog.info('filetree', '→ selectAllVisible 开始', { safeId });
     if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectAllVisible: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
         clearSelection(multiSelectState.safeId);
         multiSelectState.safeId = safeId;
     }
@@ -186,6 +200,7 @@ function selectAllVisible(safeId, container) {
 }
 
 function hideMultiSelectToolbar() {
+    weLog.debug('filetree', '→ hideMultiSelectToolbar 开始', { hasToolbar: !!multiSelectState.toolbar });
     if (multiSelectState.toolbar) {
         multiSelectState.toolbar.remove();
         multiSelectState.toolbar = null;
@@ -195,6 +210,7 @@ function hideMultiSelectToolbar() {
 function updateMultiSelectToolbar() {
     const count = multiSelectState.items.size;
     if (count === 0) {
+        weLog.debug('filetree', 'updateMultiSelectToolbar: 选中数为0，隐藏工具栏');
         hideMultiSelectToolbar();
         return;
     }
@@ -230,7 +246,11 @@ function updateMultiSelectToolbar() {
 }
 
 async function batchAddTags(safeId, projectPath) {
-    if (!projectPath || multiSelectState.items.size === 0) return;
+    weLog.info('filetree', '→ batchAddTags 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchAddTags: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
     const paths = Array.from(multiSelectState.items.keys());
     window.tagModule.openTagPicker(paths[0], async (tag) => {
         // 对所有选中项应用相同标签
@@ -244,7 +264,11 @@ async function batchAddTags(safeId, projectPath) {
 }
 
 function batchRemoveTags(safeId, projectPath) {
-    if (!projectPath || multiSelectState.items.size === 0) return;
+    weLog.info('filetree', '→ batchRemoveTags 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchRemoveTags: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
     const paths = Array.from(multiSelectState.items.keys());
 
     // 收集所有选中项的标签（去重）
@@ -262,6 +286,7 @@ function batchRemoveTags(safeId, projectPath) {
     }
 
     if (tagMap.size === 0) {
+        weLog.info('filetree', 'batchRemoveTags: 选中项没有标签可删除');
         showNotification(t('ui.no_tags_to_remove') || '选中项没有标签');
         return;
     }
@@ -334,10 +359,17 @@ function batchRemoveTags(safeId, projectPath) {
 }
 
 async function batchDelete(safeId, projectPath) {
-    if (!projectPath || multiSelectState.items.size === 0) return;
+    weLog.info('filetree', '→ batchDelete 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchDelete: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
     const count = multiSelectState.items.size;
     const ok = confirm((t('ui.batch_delete_confirm') || '确定删除选中的') + ` ${count} ` + (t('ui.items') || '项') + '?');
-    if (!ok) return;
+    if (!ok) {
+        weLog.info('filetree', 'batchDelete: 用户取消删除');
+        return;
+    }
 
     let successCount = 0;
     let lastFileList = tabs[safeId].fileList;
@@ -364,13 +396,16 @@ async function batchDelete(safeId, projectPath) {
                     }
                 }
             }
-        } catch (e) { /* 忽略单个失败 */ }
+        } catch (e) {
+            weLog.error('filetree', 'batchDelete: 单项删除失败', e && e.stack ? e.stack : String(e));
+        }
     }
 
     tabs[safeId].fileList = lastFileList;
     refreshFileTree(safeId, tabs[safeId].fileList);
     clearSelection(safeId);
     showNotification(`${t('ui.deleted') || '已删除'} ${successCount}/${count}`);
+    weLog.info('filetree', '← batchDelete 完成', { successCount, total: count });
 }
 
 function renderTreeNodes(container, tree, basePath = '') {
@@ -586,11 +621,15 @@ function renderTreeNodes(container, tree, basePath = '') {
 
 // 处理文件树内拖拽移动
 async function handleTreeDrop(dragData, targetFolder, safeId, projectPath) {
+    weLog.info('filetree', '→ handleTreeDrop 开始', { sourcePath: dragData.path, type: dragData.type, targetFolder, safeId });
     const sourcePath = dragData.path;
     const name = sourcePath.split('/').pop();
     const newPath = targetFolder ? `${targetFolder}/${name}` : name;
 
-    if (sourcePath === newPath) return;
+    if (sourcePath === newPath) {
+        weLog.debug('filetree', 'handleTreeDrop: 源路径与目标路径相同，跳过', { sourcePath, newPath });
+        return;
+    }
 
     if (dragData.type === 'file') {
         const res = await weAPI.renameFile(projectPath, sourcePath, newPath);
@@ -602,6 +641,7 @@ async function handleTreeDrop(dragData, targetFolder, safeId, projectPath) {
             showNotification((t('ui.move_failed') || '移动失败') + ': ' + (res.error || ''));
         }
     } else if (dragData.type === 'folder') {
+        weLog.info('filetree', 'handleTreeDrop: 走了文件夹移动分支', { sourcePath, newPath });
         const res = await weAPI.renameFolder(projectPath, sourcePath, newPath);
         if (res.success) {
             // 关闭已打开的子文件（路径变化）
@@ -619,6 +659,7 @@ async function handleTreeDrop(dragData, targetFolder, safeId, projectPath) {
 }
 
 function positionContextMenu(menu, e) {
+    weLog.debug('filetree', '→ positionContextMenu 开始', { x: e.clientX, y: e.clientY });
     document.body.appendChild(menu);
     const x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 10);
     const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 10);
@@ -634,6 +675,7 @@ function positionContextMenu(menu, e) {
 }
 
 function showFileContextMenu(e, filePath, container) {
+    weLog.info('filetree', '→ showFileContextMenu 开始', { filePath });
     const existing = document.getElementById('file-context-menu');
     if (existing) existing.remove();
 
@@ -710,6 +752,7 @@ function showFileContextMenu(e, filePath, container) {
 }
 
 function showFolderContextMenu(e, folderPath, container) {
+    weLog.info('filetree', '→ showFolderContextMenu 开始', { folderPath });
     const existing = document.getElementById('file-context-menu');
     if (existing) existing.remove();
 
@@ -848,6 +891,7 @@ function openTagManager(filePath, container) {
 }
 
 function openThumbnailManager(filePath, container) {
+    weLog.info('filetree', '→ openThumbnailManager 开始', { filePath });
     const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
     window.tagModule.openThumbnailPicker(filePath, () => {
         refreshFileTree(safeId, tabs[safeId].fileList);
@@ -855,8 +899,12 @@ function openThumbnailManager(filePath, container) {
 }
 
 function refreshFileTree(safeId, files) {
+    weLog.info('filetree', '→ refreshFileTree 开始', { safeId, fileCount: files ? files.length : 0 });
     const treeContainer = document.getElementById(`file-tree-${safeId}`);
-    if (!treeContainer) return;
+    if (!treeContainer) {
+        weLog.warn('filetree', 'refreshFileTree: treeContainer 元素不存在', { safeId });
+        return;
+    }
     treeContainer.innerHTML = '';
     // 清除多选状态
     if (multiSelectState.safeId === safeId) clearSelection(safeId);
@@ -935,6 +983,7 @@ function setupSortToggle(safeId) {
 }
 
 function updateSortButtonIcon(btn) {
+    weLog.debug('filetree', '→ updateSortButtonIcon 开始', { fileSortOrder });
     if (fileSortOrder === 'asc') {
         btn.title = t('ui.sort_asc') || '升序（点击切换为降序）';
         btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 4l5-2 5 2M5 6v6m3-6v6m3-6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -983,12 +1032,16 @@ function matchQuery(text, query) {
 }
 
 function setupSearch(safeId) {
+    weLog.info('filetree', '→ setupSearch 开始', { safeId });
     const input = document.getElementById(`search-input-${safeId}`);
     const clearBtn = document.getElementById(`search-clear-${safeId}`);
     const filters = document.getElementById(`search-filters-${safeId}`);
     const toggleBtn = document.getElementById(`search-toggle-${safeId}`);
     const searchBody = document.getElementById(`search-body-${safeId}`);
-    if (!input || !filters) return;
+    if (!input || !filters) {
+        weLog.warn('filetree', 'setupSearch: input 或 filters 元素不存在', { safeId, hasInput: !!input, hasFilters: !!filters });
+        return;
+    }
 
     searchState[safeId] = { query: '', types: new Set(['file', 'folder', 'tag', 'content']), contentCache: null };
 
@@ -1063,12 +1116,20 @@ function setupSearch(safeId) {
 }
 
 async function executeSearch(safeId) {
+    weLog.debug('filetree', '→ executeSearch 开始', { safeId, query: searchState[safeId] ? searchState[safeId].query : null });
     const state = searchState[safeId];
-    if (!state) return;
+    if (!state) {
+        weLog.warn('filetree', 'executeSearch: searchState 不存在', { safeId });
+        return;
+    }
     const treeContainer = document.getElementById(`file-tree-${safeId}`);
-    if (!treeContainer) return;
+    if (!treeContainer) {
+        weLog.warn('filetree', 'executeSearch: treeContainer 元素不存在', { safeId });
+        return;
+    }
 
     if (!state.query) {
+        weLog.debug('filetree', 'executeSearch: 查询为空，恢复默认文件树');
         treeContainer.classList.remove('search-mode');
         treeContainer.innerHTML = '';
         const tree = buildFileTree(tabs[safeId].fileList);
@@ -1190,6 +1251,7 @@ async function executeSearch(safeId) {
     treeContainer.innerHTML = '';
 
     if (results.length === 0) {
+        weLog.info('filetree', 'executeSearch: 无搜索结果', { query });
         treeContainer.innerHTML = `<div class="search-empty">${t('ui.search_no_results') || 'No results found'}</div>`;
         return;
     }
@@ -1295,6 +1357,7 @@ async function executeSearch(safeId) {
 }
 
 function expandFolderPath(container, folderPath) {
+    weLog.debug('filetree', '→ expandFolderPath 开始', { folderPath });
     const parts = folderPath.split('/');
     let current = container;
     for (const part of parts) {

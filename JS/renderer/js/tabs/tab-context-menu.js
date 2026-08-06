@@ -2,6 +2,7 @@
 let tabContextMenu = null;
 
 function showTabContextMenu(e, tabId) {
+    weLog.info('tab-context-menu', '→ showTabContextMenu', { tabId });
     e.preventDefault();
     e.stopPropagation();
 
@@ -9,14 +10,14 @@ function showTabContextMenu(e, tabId) {
     hideTabContextMenu();
 
     const tab = tabs[tabId];
-    if (!tab) return;
+    if (!tab) { weLog.warn('tab-context-menu', 'showTabContextMenu: 标签不存在', { tabId }); return; }
 
     const menu = document.createElement('div');
     menu.className = 'tab-context-menu';
-    
+
     const isPinned = tab.pinned === true;
     const closable = tab.closable !== false;
-    
+
     menu.innerHTML = `
         <div class="context-item" data-action="pin">
             <span class="context-icon">${isPinned ? '📌' : '📍'}</span>
@@ -54,13 +55,14 @@ function showTabContextMenu(e, tabId) {
     menu.querySelectorAll('.context-item').forEach(item => {
         item.addEventListener('click', () => {
             const action = item.dataset.action;
+            weLog.info('tab-context-menu', 'showTabContextMenu: 点击菜单项', { action, tabId });
             handleTabContextAction(action, tabId);
             hideTabContextMenu();
         });
     });
 
     tabContextMenu = menu;
-    
+
     // 点击其他地方关闭
     setTimeout(() => {
         document.addEventListener('click', outsideClickHandler);
@@ -69,12 +71,14 @@ function showTabContextMenu(e, tabId) {
 }
 
 function outsideClickHandler(e) {
+    weLog.debug('tab-context-menu', '→ outsideClickHandler');
     if (tabContextMenu && !tabContextMenu.contains(e.target)) {
         hideTabContextMenu();
     }
 }
 
 function hideTabContextMenu() {
+    weLog.info('tab-context-menu', '→ hideTabContextMenu');
     if (tabContextMenu) {
         tabContextMenu.remove();
         tabContextMenu = null;
@@ -84,11 +88,13 @@ function hideTabContextMenu() {
 }
 
 function handleTabContextAction(action, tabId) {
+    weLog.info('tab-context-menu', '→ handleTabContextAction', { action, tabId });
     const tab = tabs[tabId];
-    if (!tab) return;
+    if (!tab) { weLog.warn('tab-context-menu', 'handleTabContextAction: 标签不存在', { tabId }); return; }
 
     switch (action) {
         case 'pin':
+            weLog.info('tab-context-menu', 'handleTabContextAction: pin', { tabId, willPin: !tab.pinned });
             tab.pinned = !tab.pinned;
             const tabElement = tab.tabElement;
             if (tab.pinned) {
@@ -103,12 +109,16 @@ function handleTabContextAction(action, tabId) {
             break;
 
         case 'close':
+            weLog.info('tab-context-menu', 'handleTabContextAction: close', { tabId });
             if (tab.closable && tabId !== 'welcome') {
                 closeTab(tabId);
+            } else {
+                weLog.warn('tab-context-menu', 'handleTabContextAction: 标签不可关闭', { tabId });
             }
             break;
 
         case 'closeOthers':
+            weLog.info('tab-context-menu', 'handleTabContextAction: closeOthers', { tabId });
             Object.keys(tabs).forEach(id => {
                 if (id !== tabId && tabs[id].closable && id !== 'welcome') {
                     closeTab(id);
@@ -117,6 +127,7 @@ function handleTabContextAction(action, tabId) {
             break;
 
         case 'closeRight':
+            weLog.info('tab-context-menu', 'handleTabContextAction: closeRight', { tabId });
             const ids = getOrderedTabIds();
             const currentIndex = ids.indexOf(tabId);
             for (let i = currentIndex + 1; i < ids.length; i++) {
@@ -127,6 +138,7 @@ function handleTabContextAction(action, tabId) {
             break;
 
         case 'rename':
+            weLog.info('tab-context-menu', 'handleTabContextAction: rename', { tabId });
             const newName = prompt(t('ui.rename_tab_prompt') || '重命名标签', tab.title);
             if (newName && newName.trim()) {
                 tab.title = newName.trim();
@@ -137,15 +149,22 @@ function handleTabContextAction(action, tabId) {
                     if (e.target.classList.contains('close-tab')) closeTab(e.target.dataset.id);
                     else switchTab(tabId);
                 };
+                weLog.info('tab-context-menu', 'handleTabContextAction: rename 完成', { tabId, newName: newName.trim() });
+            } else {
+                weLog.info('tab-context-menu', 'handleTabContextAction: rename 取消');
             }
             break;
+
+        default:
+            weLog.warn('tab-context-menu', 'handleTabContextAction: 未知 action', { action });
     }
 }
 
 // 为所有标签添加右键菜单支持
 function setupTabContextMenu() {
+    weLog.info('tab-context-menu', '→ setupTabContextMenu');
     const tabsContainer = document.querySelector('.tabs-container');
-    if (!tabsContainer) return;
+    if (!tabsContainer) { weLog.warn('tab-context-menu', 'setupTabContextMenu: tabs-container 不存在'); return; }
 
     tabsContainer.addEventListener('contextmenu', (e) => {
         const tabEl = e.target.closest('.tab');
@@ -153,10 +172,12 @@ function setupTabContextMenu() {
             showTabContextMenu(e, tabEl.dataset.id);
         }
     });
+    weLog.info('tab-context-menu', '← setupTabContextMenu 完成');
 }
 
 // 标签固定样式支持
 function initTabPinState() {
+    weLog.info('tab-context-menu', '→ initTabPinState');
     Object.values(tabs).forEach(tab => {
         if (tab.pinned && tab.tabElement) {
             tab.tabElement.classList.add('pinned');

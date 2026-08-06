@@ -220,7 +220,14 @@ ui.account_name_hint = 仅支持英文、数字、下划线、连字符
 if (fs.existsSync(SETTINGS_PATH)) {
     try { appSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); } catch {}
 }
-function saveSettings() { fs.writeFileSync(SETTINGS_PATH, JSON.stringify(appSettings, null, 2)); }
+function saveSettings() {
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(appSettings, null, 2));
+    // 追踪 backgroundMaterial 变化
+    try {
+        const logLine = `[${new Date().toISOString().replace('T',' ').replace('Z','')}] [saveSettings] backgroundMaterial=${appSettings.backgroundMaterial}\n`;
+        fs.appendFileSync(RENDERER_LOG_PATH, logLine, 'utf8');
+    } catch (e) {}
+}
 
 // 解析 .lib 文件
 function parseLibFile(lang) {
@@ -242,6 +249,60 @@ function parseLibFile(lang) {
     }
     return result;
 }
+
+// ========== 渲染进程日志（轮转：保留最近 10 个） ==========
+const RENDERER_LOG_DIR = path.join(DATA_DIR, 'log', 'JS');
+if (!fs.existsSync(RENDERER_LOG_DIR)) fs.mkdirSync(RENDERER_LOG_DIR, { recursive: true });
+const MAX_LOG_FILES = 10;
+// 本次启动的日志文件名：renderer-YYYYMMDD-HHmmss.log
+const _now = new Date();
+const _pad = (n) => String(n).padStart(2, '0');
+const _tsStr = `${_now.getFullYear()}${_pad(_now.getMonth() + 1)}${_pad(_now.getDate())}-${_pad(_now.getHours())}${_pad(_now.getMinutes())}${_pad(_now.getSeconds())}`;
+const RENDERER_LOG_PATH = path.join(RENDERER_LOG_DIR, `renderer-${_tsStr}.log`);
+
+// 启动时清理旧日志：只保留最近 MAX_LOG_FILES 个
+(function rotateLogs() {
+    try {
+        const files = fs.readdirSync(RENDERER_LOG_DIR)
+            .filter(f => /^renderer-\d{8}-\d{6}\.log$/.test(f))
+            .sort();  // 按文件名（时间戳）升序
+        const excess = files.length - MAX_LOG_FILES + 1; // +1 因为本次还要新建一个
+        if (excess > 0) {
+            for (let i = 0; i < excess; i++) {
+                try { fs.unlinkSync(path.join(RENDERER_LOG_DIR, files[i])); } catch (e) {}
+            }
+        }
+    } catch (e) {}
+})();
+
+// 写入分隔头
+fs.writeFileSync(RENDERER_LOG_PATH, `===== World Editor 渲染进程日志 - 启动于 ${new Date().toISOString()} =====\n`, 'utf8');
+// 日志缓冲：批量写入以减少磁盘 IO
+let _logBuffer = [];
+let _logFlushTimer = null;
+function _flushLogBuffer() {
+    if (_logBuffer.length === 0) return;
+    const data = _logBuffer.join('\n') + '\n';
+    _logBuffer = [];
+    try { fs.appendFileSync(RENDERER_LOG_PATH, data, 'utf8'); } catch (e) {}
+}
+ipcMain.on('renderer-log', (event, level, module, message, dataStr) => {
+    const ts = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    let line = `[${ts}] [${level}] [${module}] ${message}`;
+    if (dataStr) line += ` | ${dataStr}`;
+    _logBuffer.push(line);
+    // 错误级别立即刷新，其他级别延迟 500ms 批量写入
+    if (level === 'ERROR') {
+        _flushLogBuffer();
+    } else if (!_logFlushTimer) {
+        _logFlushTimer = setTimeout(() => {
+            _logFlushTimer = null;
+            _flushLogBuffer();
+        }, 500);
+    }
+});
+// 应用退出前刷新剩余日志
+app.on('before-quit', () => { _flushLogBuffer(); });
 
 // 全局 IPC 处理器
 ipcMain.handle('get-version', () => APP_VERSION);
@@ -503,6 +564,7 @@ ipcMain.handle('export-zip', async (event, folder, suggestedName) => {
 });
 ipcMain.handle('get-settings', () => appSettings);
 ipcMain.handle('set-settings', (event, settings) => {
+    console.log(`[set-settings] backgroundMaterial: ${appSettings.backgroundMaterial} → ${settings.backgroundMaterial}`);
     appSettings = { ...appSettings, ...settings };
     saveSettings();
     return true;

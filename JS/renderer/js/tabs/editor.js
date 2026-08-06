@@ -9,6 +9,7 @@ let _debouncedStatsTimer = null;
 function debouncedUpdateEditorStats() {
     if (_debouncedStatsTimer) clearTimeout(_debouncedStatsTimer);
     _debouncedStatsTimer = setTimeout(() => {
+        weLog.debug('editor', 'debouncedUpdateEditorStats: 触发延迟统计更新');
         updateEditorStats();
         _debouncedStatsTimer = null;
     }, 250);
@@ -25,12 +26,15 @@ class ProjectLinkBlot extends LinkBlot {
     static tagName = 'a';
 
     static create(value) {
+        weLog.debug('editor', 'ProjectLinkBlot.create 开始', { valueType: typeof value });
         // 字符串：普通 URL，交给父类
         if (typeof value === 'string') {
+            weLog.debug('editor', 'ProjectLinkBlot.create: 走了字符串URL分支');
             return super.create(value);
         }
         // 对象：项目内跳转
         if (value && value.project) {
+            weLog.debug('editor', 'ProjectLinkBlot.create: 走了项目内跳转分支', { project: value.project, file: value.file });
             const node = super.create('#');
             node.setAttribute('data-jump', JSON.stringify({
                 project: value.project,
@@ -44,10 +48,12 @@ class ProjectLinkBlot extends LinkBlot {
         }
         // 对象：外部 URL + 自定义文字
         if (value && value.url) {
+            weLog.debug('editor', 'ProjectLinkBlot.create: 走了外部URL对象分支', { url: value.url });
             const node = super.create(value.url);
             if (value.text) node.textContent = value.text;
             return node;
         }
+        weLog.debug('editor', 'ProjectLinkBlot.create: 走了默认分支');
         return super.create(value || '');
     }
 
@@ -58,7 +64,9 @@ class ProjectLinkBlot extends LinkBlot {
             try {
                 const parsed = JSON.parse(jumpData);
                 return { project: parsed.project, file: parsed.file, heading: parsed.heading };
-            } catch(e) {}
+            } catch(e) {
+                weLog.error('editor', 'ProjectLinkBlot.formats 解析 data-jump 失败', e && e.stack ? e.stack : String(e));
+            }
         }
         return node.getAttribute('href') || '';
     }
@@ -69,7 +77,9 @@ class ProjectLinkBlot extends LinkBlot {
             try {
                 const parsed = JSON.parse(jumpData);
                 return { ...parsed, text: node.textContent };
-            } catch(e) {}
+            } catch(e) {
+                weLog.error('editor', 'ProjectLinkBlot.value 解析 data-jump 失败', e && e.stack ? e.stack : String(e));
+            }
         }
         return node.getAttribute('href') || '';
     }
@@ -80,17 +90,23 @@ Quill.register(ProjectLinkBlot, true);
 Quill.register('formats/link', ProjectLinkBlot, true);
 
 function positionDialog(dialog) {
+    weLog.debug('editor', '→ positionDialog 开始');
     const titleBar = document.getElementById('title-bar');
     let topOffset = 0;
     if (titleBar) topOffset += titleBar.offsetHeight;
     dialog.style.top = topOffset + 'px';
+    weLog.debug('editor', '← positionDialog 完成', { topOffset });
 }
 
 // 从富文本编辑器 DOM 读取标题列表
 function getHeadingsFromEditor() {
-    if (!quill) return [];
+    weLog.debug('editor', '→ getHeadingsFromEditor 开始');
+    if (!quill) {
+        weLog.warn('editor', 'getHeadingsFromEditor: quill 不存在');
+        return [];
+    }
     const els = quill.root.querySelectorAll('h1, h2, h3');
-    return Array.from(els).map(el => {
+    const result = Array.from(els).map(el => {
         const text = el.textContent.trim();
         return {
             level: parseInt(el.tagName.substring(1)),
@@ -98,10 +114,13 @@ function getHeadingsFromEditor() {
             anchor: text.toLowerCase().replace(/\s+/g, '-').replace(/[^\w\u4e00-\u9fa5-]/g, '')
         };
     }).filter(h => h.text);
+    weLog.debug('editor', '← getHeadingsFromEditor 完成', { count: result.length });
+    return result;
 }
 
 // 从 Markdown 文本读取标题列表
 function getHeadingsFromMarkdown(text) {
+    weLog.debug('editor', '→ getHeadingsFromMarkdown 开始');
     const headings = [];
     text.split('\n').forEach(line => {
         const match = line.match(/^(#{1,3})\s+(.+)/);
@@ -113,44 +132,54 @@ function getHeadingsFromMarkdown(text) {
             });
         }
     });
+    weLog.debug('editor', '← getHeadingsFromMarkdown 完成', { count: headings.length });
     return headings;
 }
 
 async function openProjectFile(safeId, filename) {
+    weLog.info('editor', '→ openProjectFile 开始', { safeId, filename });
     const project = tabs[safeId];
-    if (!project) return;
+    if (!project) {
+        weLog.warn('editor', 'openProjectFile: project 不存在', { safeId });
+        return;
+    }
 
     // 清除旧的 TOC 面板（可能在其他标签页中）
     if (tocPanel) {
+        weLog.debug('editor', 'openProjectFile: 清理旧 TOC 面板');
         tocPanel.remove();
         tocPanel = null;
     }
-    
+
     // 清理旧的 Markdown 编辑器前暂存未保存内容
     if (markdownEditor) {
         if (project.currentFile && project.currentFile !== filename && project.dirty) {
+            weLog.info('editor', 'openProjectFile: 暂存 Markdown 未保存内容', { prevFile: project.currentFile });
             project.fileCache = project.fileCache || {};
             project.fileCache[project.currentFile] = markdownEditor.value;
         }
         markdownEditor = null;
     }
-    
+
     // 清理旧的 Quill
     if (quill && project.projectMode !== 'markdown') {
         // 保存当前文件
     }
-    
+
     const projectMode = project.projectMode || 'rich';
-    
+    weLog.info('editor', 'openProjectFile: 项目模式', { projectMode });
+
     if (projectMode === 'markdown') {
+        weLog.info('editor', 'openProjectFile: 走了 Markdown 模式分支');
         await openMarkdownFile(safeId, filename);
         return;
     }
-    
+
     // 富文本模式继续原有逻辑
     if (projectMode !== 'markdown') {
         // 暂存当前文件的未保存内容
         if (project.currentFile && project.currentFile !== filename && project.dirty && quill) {
+            weLog.info('editor', 'openProjectFile: 暂存 Quill 未保存内容', { prevFile: project.currentFile });
             project.fileCache = project.fileCache || {};
             project.fileCache[project.currentFile] = quill.root.innerHTML;
         }
@@ -160,18 +189,28 @@ async function openProjectFile(safeId, filename) {
     let content;
     let fromCache = false;
     if (project.fileCache && project.fileCache[filename] !== undefined) {
+        weLog.info('editor', 'openProjectFile: 从缓存读取内容');
         content = project.fileCache[filename];
         fromCache = true;
     } else {
+        weLog.info('editor', 'openProjectFile: 从磁盘读取文件', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
-        if (!result.success) { showNotification(t('ui.read_failed') + ': ' + result.error); return; }
+        if (!result.success) {
+            weLog.error('editor', 'openProjectFile: 读取文件失败', { filename, error: result.error });
+            showNotification(t('ui.read_failed') + ': ' + result.error);
+            return;
+        }
         content = result.content;
     }
 
     const quillWrapper = document.getElementById(`quill-${safeId}`);
-    if (!quillWrapper) return;
+    if (!quillWrapper) {
+        weLog.warn('editor', 'openProjectFile: quillWrapper 元素不存在', { safeId });
+        return;
+    }
 
     if (!quill) {
+        weLog.info('editor', 'openProjectFile: 首次初始化 Quill 实例');
         quillWrapper.innerHTML = '';
         const toolbarEl = editorToolbar();
         quillWrapper.appendChild(toolbarEl);
@@ -272,7 +311,9 @@ async function openProjectFile(safeId, filename) {
         quill.root.style.fontFamily = savedFontFamily;
         quill.root.style.fontSize = savedFontSize + 'px';
         currentQuillProjectId = safeId;
+        weLog.info('editor', 'openProjectFile: Quill 初始化完成');
     } else {
+        weLog.debug('editor', 'openProjectFile: 复用已有 Quill 实例');
         const toolbar = quill.container.previousElementSibling;
         const editor = quill.container;
         if (editor.parentElement !== quillWrapper) {
@@ -290,6 +331,7 @@ async function openProjectFile(safeId, filename) {
 
     // 全局链接点击处理（document级别，捕获所有链接点击，只注册一次）
     if (!window._globalLinkHandler) {
+        weLog.info('editor', 'openProjectFile: 注册全局链接点击处理器');
         window._globalLinkHandler = true;
         document.addEventListener('click', (e) => {
             const link = e.target.closest('a');
@@ -303,7 +345,9 @@ async function openProjectFile(safeId, filename) {
                 let data = {};
                 const jumpAttr = link.getAttribute('data-jump');
                 if (jumpAttr) {
-                    try { data = JSON.parse(jumpAttr); } catch {}
+                    try { data = JSON.parse(jumpAttr); } catch {
+                        weLog.warn('editor', 'openProjectFile 全局点击: data-jump 解析失败', { jumpAttr });
+                    }
                 } else if (href.startsWith('project:')) {
                     // Markdown 预览链接格式：project:filename#heading
                     const rest = href.substring('project:'.length);
@@ -328,9 +372,11 @@ async function openProjectFile(safeId, filename) {
     // 检测内容类型：HTML 还是纯文本
     const isHtml = /<[a-z][\s\S]*>/i.test(content);
     if (isHtml) {
+        weLog.info('editor', 'openProjectFile: 内容为 HTML，使用 dangerouslyPasteHTML', { contentLen: content.length });
         // HTML 内容：通过 Quill clipboard 解析为正确的 Delta blocks
         quill.clipboard.dangerouslyPasteHTML(0, content, Quill.sources.SILENT);
     } else {
+        weLog.info('editor', 'openProjectFile: 内容为纯文本，使用 setText', { contentLen: content.length });
         // 纯文本：setText 会将 \n 正确转为独立的 block
         quill.setText(content, Quill.sources.SILENT);
     }
@@ -356,9 +402,11 @@ async function openProjectFile(safeId, filename) {
     const tree = document.getElementById(`file-tree-${safeId}`);
     tree?.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
     tree?.querySelector(`[data-file="${filename}"]`)?.classList.add('active');
+    weLog.info('editor', '← openProjectFile 完成', { filename, fromCache });
 }
 
 function editorToolbar() {
+    weLog.debug('editor', '→ editorToolbar 开始');
     const toolbar = document.createElement('div');
     toolbar.className = 'ql-toolbar ql-snow editor-toolbar';
     toolbar.id = 'quill-toolbar';
@@ -409,34 +457,46 @@ function editorToolbar() {
             </button>
         </span>
     `;
+    weLog.debug('editor', '← editorToolbar 完成');
     return toolbar;
 }
 
 function handleExportMarkdown() {
+    weLog.info('editor', '→ handleExportMarkdown 开始');
     const project = tabs[activeTabId];
     let markdown;
     if (project && project.projectMode === 'markdown') {
+        weLog.info('editor', 'handleExportMarkdown: 走了 Markdown 模式分支');
         const textarea = document.querySelector('#md-textarea');
         markdown = textarea ? textarea.value : '';
     } else {
-        if (!quill) return;
+        weLog.info('editor', 'handleExportMarkdown: 走了富文本模式分支');
+        if (!quill) {
+            weLog.warn('editor', 'handleExportMarkdown: quill 不存在');
+            return;
+        }
         const delta = quill.getContents();
         markdown = deltaToMarkdown(delta);
     }
     downloadText(markdown, getCurrentFileName() + '.md', 'text/markdown');
+    weLog.info('editor', '← handleExportMarkdown 完成', { length: markdown.length });
 }
 
 // 构建导出用的完整 HTML 文档（PDF / HTML 共用）
 function buildExportDocument() {
+    weLog.debug('editor', '→ buildExportDocument 开始');
     const project = tabs[activeTabId];
     let bodyHtml = '';
     if (project && project.projectMode === 'markdown') {
+        weLog.debug('editor', 'buildExportDocument: 走了 Markdown 模式分支');
         const textarea = document.querySelector('#md-textarea');
         bodyHtml = textarea ? markdownToHtmlString(textarea.value) : '';
     } else if (quill) {
+        weLog.debug('editor', 'buildExportDocument: 走了富文本模式分支');
         bodyHtml = quill.root.innerHTML;
     }
     const title = escapeHtml(getCurrentFileName());
+    weLog.debug('editor', '← buildExportDocument 完成', { bodyLen: bodyHtml.length });
     return `<!DOCTYPE html>
 <html lang="auto">
 <head>
@@ -466,7 +526,11 @@ th, td { border: 1px solid #ddd; padding: 6px 10px; }
 
 // 显示导出下拉菜单
 function showExportMenu(anchorEl) {
-    if (!anchorEl) return;
+    weLog.info('editor', '→ showExportMenu 开始');
+    if (!anchorEl) {
+        weLog.warn('editor', 'showExportMenu: anchorEl 不存在');
+        return;
+    }
     document.querySelectorAll('.export-menu').forEach(m => m.remove());
 
     const menu = document.createElement('div');
@@ -502,9 +566,11 @@ function showExportMenu(anchorEl) {
         }
     };
     setTimeout(() => document.addEventListener('mousedown', outsideHandler), 0);
+    weLog.info('editor', '← showExportMenu 完成');
 }
 
 function handleExport(fmt) {
+    weLog.info('editor', '→ handleExport 开始', { fmt });
     if (fmt === 'md') return handleExportMarkdown();
     if (fmt === 'html') return handleExportHtml();
     if (fmt === 'pdf') return handleExportPdf();
@@ -512,43 +578,69 @@ function handleExport(fmt) {
 }
 
 function handleExportHtml() {
+    weLog.info('editor', '→ handleExportHtml 开始');
     const html = buildExportDocument();
     downloadText(html, getCurrentFileName() + '.html', 'text/html');
+    weLog.info('editor', '← handleExportHtml 完成', { length: html.length });
 }
 
 async function handleExportPdf() {
+    weLog.info('editor', '→ handleExportPdf 开始');
     const project = tabs[activeTabId];
     if (!project) {
+        weLog.warn('editor', 'handleExportPdf: project 不存在');
         showNotification(t('ui.need_open_project') || '请先打开一个项目');
         return;
     }
     const html = buildExportDocument();
     showNotification(t('ui.exporting_pdf') || '正在导出 PDF...');
-    const result = await weAPI.exportPdf(html, getCurrentFileName());
-    if (result.success) {
-        showNotification(t('ui.export_success') || '导出成功');
-    } else if (!result.canceled) {
-        showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+    try {
+        const result = await weAPI.exportPdf(html, getCurrentFileName());
+        if (result.success) {
+            weLog.info('editor', '← handleExportPdf 完成: 导出成功');
+            showNotification(t('ui.export_success') || '导出成功');
+        } else if (!result.canceled) {
+            weLog.error('editor', 'handleExportPdf: 导出失败', { error: result.error });
+            showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+        } else {
+            weLog.info('editor', 'handleExportPdf: 用户取消导出');
+        }
+    } catch (e) {
+        weLog.error('editor', 'handleExportPdf 失败', e && e.stack ? e.stack : String(e));
+        showNotification((t('ui.export_failed') || '导出失败') + ': ' + e.message);
     }
 }
 
 async function handleExportZip() {
+    weLog.info('editor', '→ handleExportZip 开始');
     const project = tabs[activeTabId];
     if (!project || !project.projectPath) {
+        weLog.warn('editor', 'handleExportZip: project 或 projectPath 不存在');
         showNotification(t('ui.need_open_project') || '请先打开一个项目');
         return;
     }
     const name = project.title || getCurrentFileName() || 'project';
-    const result = await weAPI.exportZip(project.projectPath, name);
-    if (result.success) {
-        showNotification(t('ui.export_success') || '导出成功');
-    } else if (!result.canceled) {
-        showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+    try {
+        const result = await weAPI.exportZip(project.projectPath, name);
+        if (result.success) {
+            weLog.info('editor', '← handleExportZip 完成: 导出成功');
+            showNotification(t('ui.export_success') || '导出成功');
+        } else if (!result.canceled) {
+            weLog.error('editor', 'handleExportZip: 导出失败', { error: result.error });
+            showNotification((t('ui.export_failed') || '导出失败') + ': ' + (result.error || ''));
+        } else {
+            weLog.info('editor', 'handleExportZip: 用户取消导出');
+        }
+    } catch (e) {
+        weLog.error('editor', 'handleExportZip 失败', e && e.stack ? e.stack : String(e));
+        showNotification((t('ui.export_failed') || '导出失败') + ': ' + e.message);
     }
 }
 
 function toggleTableOfContents() {
+    weLog.info('editor', '→ toggleTableOfContents 开始');
     if (tocPanel && tocPanel.isConnected) {
+        weLog.info('editor', 'toggleTableOfContents: 关闭已有 TOC 面板');
         tocPanel.remove();
         tocPanel = null;
         return;
@@ -557,17 +649,23 @@ function toggleTableOfContents() {
 }
 
 async function showJumpLinkDialog(safeId) {
+    weLog.info('editor', '→ showJumpLinkDialog 开始', { safeId });
     const project = tabs[safeId];
-    if (!project) return;
+    if (!project) {
+        weLog.warn('editor', 'showJumpLinkDialog: project 不存在', { safeId });
+        return;
+    }
 
     const selection = quill.getSelection();
     if (!selection || selection.length === 0) {
+        weLog.warn('editor', 'showJumpLinkDialog: 没有选中文本');
         showNotification(t('ui.select_text_for_link') || '请先选择要设置跳转链接的文字');
         return;
     }
 
     const filesResult = await weAPI.listFiles(project.projectPath);
     const files = filesResult.files || [];
+    weLog.info('editor', 'showJumpLinkDialog: 获取文件列表', { count: files.length });
 
     const dialog = document.createElement('div');
     dialog.className = 'jump-link-dialog';
@@ -642,6 +740,7 @@ async function showJumpLinkDialog(safeId) {
     dialog.querySelector('.btn-confirm').onclick = () => {
         const sel = quill.getSelection(true);
         if (!sel || sel.length === 0) {
+            weLog.warn('editor', 'showJumpLinkDialog confirm: 没有选中文本');
             showNotification(t('ui.select_text_for_link') || '请先选择文字');
             return;
         }
@@ -649,12 +748,14 @@ async function showJumpLinkDialog(safeId) {
         if (currentType === 'url') {
             const url = dialog.querySelector('#external-url').value.trim();
             if (!url) { showNotification(t('ui.enter_url') || '请输入链接地址'); return; }
+            weLog.info('editor', 'showJumpLinkDialog confirm: 应用外部链接', { url });
             // formatText：直接在选中文字上应用 link 格式，不删除任何文字
             quill.formatText(sel.index, sel.length, 'link', url, Quill.sources.USER);
         } else {
             const filename = fileSelect.value;
             if (!filename) { showNotification(t('ui.select_file') || '请选择目标文件'); return; }
             const heading = headingSelect.value;
+            weLog.info('editor', 'showJumpLinkDialog confirm: 应用项目内跳转', { filename, heading });
             // formatText：直接在选中文字上应用 projectLink 格式
             quill.formatText(sel.index, sel.length, 'projectLink', {
                 project: project.title || safeId,
@@ -663,20 +764,24 @@ async function showJumpLinkDialog(safeId) {
             }, Quill.sources.USER);
         }
         dialog.remove();
+        weLog.info('editor', '← showJumpLinkDialog 完成');
     };
 }
 
 // 为文件选择加载标题列表
 async function loadHeadingsForFile(dialog, project, filename, safeId) {
+    weLog.info('editor', '→ loadHeadingsForFile 开始', { filename });
     const headingSelect = dialog.querySelector('#target-heading');
     headingSelect.innerHTML = '<option value="">-- ' + (t('ui.loading') || '加载中...') + ' --</option>';
     if (!filename) {
+        weLog.debug('editor', 'loadHeadingsForFile: filename 为空，重置标题列表');
         headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>';
         return;
     }
 
     // 如果选的是当前已打开的文件，直接从编辑器 DOM 读取（实时、准确）
     if (filename === project.currentFile && quill) {
+        weLog.info('editor', 'loadHeadingsForFile: 从当前编辑器 DOM 读取标题');
         const headings = getHeadingsFromEditor();
         headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>' +
             headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
@@ -684,11 +789,13 @@ async function loadHeadingsForFile(dialog, project, filename, safeId) {
     }
 
     // 否则从磁盘读取文件内容
+    weLog.info('editor', 'loadHeadingsForFile: 从磁盘读取文件标题', { filename });
     const result = await weAPI.readFile(project.projectPath, filename);
     if (result.success) {
         const isHtml = project.projectMode !== 'markdown';
         let headings;
         if (isHtml) {
+            weLog.debug('editor', 'loadHeadingsForFile: HTML 文件用 DOMParser 解析');
             // HTML 文件：用 DOMParser 解析
             const parser = new DOMParser();
             const doc = parser.parseFromString(result.content, 'text/html');
@@ -701,27 +808,36 @@ async function loadHeadingsForFile(dialog, project, filename, safeId) {
                 };
             }).filter(h => h.text);
         } else {
+            weLog.debug('editor', 'loadHeadingsForFile: Markdown 文件用正则解析');
             headings = getHeadingsFromMarkdown(result.content);
         }
         headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '（无标题）') + ' --</option>' +
             headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+        weLog.info('editor', '← loadHeadingsForFile 完成', { count: headings.length });
+    } else {
+        weLog.error('editor', 'loadHeadingsForFile: 读取文件失败', { filename, error: result.error });
     }
 }
 
 function handleJumpLinkClick(data) {
+    weLog.info('editor', '→ handleJumpLinkClick 开始', { url: data.url, file: data.file, heading: data.heading, project: data.project });
     if (data.url) {
+        weLog.info('editor', 'handleJumpLinkClick: 打开外部链接', { url: data.url });
         weAPI.openExternalLink(data.url);
     } else if (data.file) {
         // 兼容：先按 safeId 精确匹配（旧链接），再按项目名匹配（可移植链接），最后回退到当前活跃项目
         let targetSafeId = data.project;
         if (!targetSafeId || !tabs[targetSafeId]) {
+            weLog.debug('editor', 'handleJumpLinkClick: 按 title 匹配项目', { project: data.project });
             targetSafeId = Object.keys(tabs).find(id => tabs[id]?.title === data.project);
         }
         if (!targetSafeId) {
+            weLog.debug('editor', 'handleJumpLinkClick: 回退到当前活跃项目');
             targetSafeId = (typeof activeTabId !== 'undefined' && activeTabId) || currentQuillProjectId;
         }
         const safeId = targetSafeId;
         if (safeId && tabs[safeId]) {
+            weLog.info('editor', 'handleJumpLinkClick: 找到目标项目', { safeId });
             // 切换到目标项目（使用 switchTab 直接切换）
             if (typeof switchTab === 'function') {
                 switchTab(safeId);
@@ -734,9 +850,13 @@ function handleJumpLinkClick(data) {
                 if (!data.heading) return;
                 setTimeout(() => {
                     const project = tabs[safeId];
-                    if (!project) return;
+                    if (!project) {
+                        weLog.warn('editor', 'handleJumpLinkClick: 滚动定位时 project 不存在', { safeId });
+                        return;
+                    }
                     const projectMode = project.projectMode || 'rich';
                     if (projectMode === 'markdown') {
+                        weLog.debug('editor', 'handleJumpLinkClick: Markdown 模式滚动定位');
                         // Markdown 模式：在预览区滚动定位
                         const previewEl = document.querySelector('.md-preview-content');
                         if (previewEl) {
@@ -750,6 +870,7 @@ function handleJumpLinkClick(data) {
                             }
                         }
                     } else {
+                        weLog.debug('editor', 'handleJumpLinkClick: 富文本模式滚动定位');
                         // 富文本模式：在 Quill 编辑器中滚动定位
                         const headingEls = quill?.root?.querySelectorAll(`h1, h2, h3`);
                         if (headingEls) {
@@ -765,17 +886,24 @@ function handleJumpLinkClick(data) {
                 }, 300);
             }, 100);
         } else {
+            weLog.warn('editor', 'handleJumpLinkClick: 未找到目标项目', { safeId });
             showNotification(t('ui.project_not_found') || '未找到目标项目');
         }
     }
+    weLog.info('editor', '← handleJumpLinkClick 完成');
 }
 
 async function openMarkdownFile(safeId, filename) {
+    weLog.info('editor', '→ openMarkdownFile 开始', { safeId, filename });
     const project = tabs[safeId];
-    if (!project) return;
+    if (!project) {
+        weLog.warn('editor', 'openMarkdownFile: project 不存在', { safeId });
+        return;
+    }
 
     // 暂存当前文件
     if (project.currentFile && project.currentFile !== filename && project.dirty && markdownEditor) {
+        weLog.info('editor', 'openMarkdownFile: 暂存当前 Markdown 文件', { prevFile: project.currentFile });
         project.fileCache = project.fileCache || {};
         project.fileCache[project.currentFile] = markdownEditor.value;
     }
@@ -784,20 +912,30 @@ async function openMarkdownFile(safeId, filename) {
     let content;
     let fromCache = false;
     if (project.fileCache && project.fileCache[filename] !== undefined) {
+        weLog.info('editor', 'openMarkdownFile: 从缓存读取内容');
         content = project.fileCache[filename];
         fromCache = true;
     } else {
+        weLog.info('editor', 'openMarkdownFile: 从磁盘读取文件', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
-        if (!result.success) { showNotification(t('ui.read_failed') + ': ' + result.error); return; }
+        if (!result.success) {
+            weLog.error('editor', 'openMarkdownFile: 读取文件失败', { filename, error: result.error });
+            showNotification(t('ui.read_failed') + ': ' + result.error);
+            return;
+        }
         content = result.content;
     }
 
     const quillWrapper = document.getElementById(`quill-${safeId}`);
-    if (!quillWrapper) return;
+    if (!quillWrapper) {
+        weLog.warn('editor', 'openMarkdownFile: quillWrapper 不存在', { safeId });
+        return;
+    }
 
     // 清理旧内容
     quillWrapper.innerHTML = '';
     quill = null;
+    weLog.debug('editor', 'openMarkdownFile: 已清理旧 Quill 内容');
 
     // 创建 Markdown 编辑器
     const mdToolbar = document.createElement('div');
@@ -865,9 +1003,10 @@ async function openMarkdownFile(safeId, filename) {
     // 初始化编辑器
     const textarea = mdContainer.querySelector('#md-textarea');
     const preview = mdContainer.querySelector('.md-preview-content');
-    
+
     textarea.value = content;
     markdownEditor = textarea;
+    weLog.info('editor', 'openMarkdownFile: Markdown 编辑器已初始化', { contentLen: content.length });
 
     // 初始预览
     renderMarkdownPreview(content, preview);
@@ -883,6 +1022,7 @@ async function openMarkdownFile(safeId, filename) {
 
     // 实时预览和统计
     textarea.addEventListener('input', () => {
+        weLog.debug('editor', 'openMarkdownFile textarea input: 触发实时预览/统计');
         project.fileCache = project.fileCache || {};
         project.fileCache[filename] = textarea.value;
         project.dirty = true;
@@ -917,27 +1057,32 @@ async function openMarkdownFile(safeId, filename) {
     });
 
     mdToolbar.querySelector('.btn-md-link').onclick = () => {
+        weLog.info('editor', 'openMarkdownFile: 点击 MD 链接按钮');
         showPrompt(t('ui.enter_url') || 'Enter URL:', 'https://...').then(url => {
             if (url) wrapMarkdownTextarea(textarea, '[', `](${url})`);
         });
     };
 
     mdToolbar.querySelector('.btn-md-jump').onclick = () => {
+        weLog.info('editor', 'openMarkdownFile: 点击 MD 跳转链接按钮');
         showMarkdownJumpDialog(safeId, textarea, preview);
     };
 
     mdToolbar.querySelector('.btn-md-image').onclick = () => {
+        weLog.info('editor', 'openMarkdownFile: 点击 MD 图片按钮');
         showPrompt(t('ui.enter_image_url') || 'Enter image URL:', 'https://...').then(url => {
             if (url) wrapMarkdownTextarea(textarea, '![', `](${url})`);
         });
     };
 
     mdToolbar.querySelector('.btn-md-export').onclick = (e) => {
+        weLog.info('editor', 'openMarkdownFile: 点击 MD 导出按钮');
         showExportMenu(mdToolbar.querySelector('.btn-md-export'));
     };
 
     mdToolbar.querySelector('.btn-md-preview-toggle').onclick = () => {
         markdownPreviewVisible = !markdownPreviewVisible;
+        weLog.info('editor', 'openMarkdownFile: 切换预览可见性', { visible: markdownPreviewVisible });
         const previewPane = mdContainer.querySelector('.md-preview-pane');
         if (markdownPreviewVisible) {
             previewPane.classList.remove('md-hidden');
@@ -955,6 +1100,7 @@ async function openMarkdownFile(safeId, filename) {
             const href = link.getAttribute('href') || '';
             if (href.startsWith('project:')) {
                 e.preventDefault();
+                weLog.debug('editor', 'openMarkdownFile 预览点击: 项目内跳转', { href });
                 const rest = href.slice('project:'.length);
                 const [file, heading] = rest.split('#');
                 handleJumpLinkClick({
@@ -967,18 +1113,26 @@ async function openMarkdownFile(safeId, filename) {
                 try {
                     const data = JSON.parse(link.dataset.jump);
                     handleJumpLinkClick(data);
-                } catch (err) {}
+                } catch (err) {
+                    weLog.error('editor', 'openMarkdownFile 预览点击: 解析 data-jump 失败', err && err.stack ? err.stack : String(err));
+                }
             } else if (href && (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('mailto:'))) {
                 e.preventDefault();
+                weLog.debug('editor', 'openMarkdownFile 预览点击: 外部链接', { href });
                 weAPI.openExternalLink(href);
             }
         });
     }
+    weLog.info('editor', '← openMarkdownFile 完成', { filename, fromCache });
 }
 
 async function showMarkdownJumpDialog(safeId, textarea, preview) {
+    weLog.info('editor', '→ showMarkdownJumpDialog 开始', { safeId });
     const project = tabs[safeId];
-    if (!project) return;
+    if (!project) {
+        weLog.warn('editor', 'showMarkdownJumpDialog: project 不存在', { safeId });
+        return;
+    }
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
@@ -986,6 +1140,7 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
 
     const filesResult = await weAPI.listFiles(project.projectPath);
     const files = filesResult.files || [];
+    weLog.info('editor', 'showMarkdownJumpDialog: 获取文件列表', { count: files.length });
 
     const dialog = document.createElement('div');
     dialog.className = 'jump-link-dialog';
@@ -1062,17 +1217,21 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
         }
         // 当前文件：直接从 textarea 读取
         if (filename === project.currentFile && textarea) {
+            weLog.debug('editor', 'showMarkdownJumpDialog fileSelect.onchange: 当前文件，从 textarea 读取');
             const headings = getHeadingsFromMarkdown(textarea.value);
             headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '(no heading)') + ' --</option>' +
                 headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
             return;
         }
         // 其他文件：从磁盘读取
+        weLog.info('editor', 'showMarkdownJumpDialog fileSelect.onchange: 从磁盘读取', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
         if (result.success) {
             const headings = getHeadingsFromMarkdown(result.content);
             headingSelect.innerHTML = '<option value="">-- ' + (t('ui.no_heading') || '(no heading)') + ' --</option>' +
                 headings.map(h => `<option value="${h.anchor}">${'　'.repeat(h.level - 1)}${h.text}</option>`).join('');
+        } else {
+            weLog.error('editor', 'showMarkdownJumpDialog fileSelect.onchange: 读取失败', { filename, error: result.error });
         }
     };
 
@@ -1086,36 +1245,49 @@ async function showMarkdownJumpDialog(safeId, textarea, preview) {
         if (isUrl) {
             const url = dialog.querySelector('#external-url').value.trim();
             if (!url) { showNotification(t('ui.enter_url') || 'Please enter URL'); return; }
+            weLog.info('editor', 'showMarkdownJumpDialog confirm: 应用外部链接', { url });
             wrapMarkdownTextarea(textarea, '[', `](${url})`, linkText);
         } else {
             const filename = fileSelect.value;
             const heading = headingSelect.value;
             if (!filename) { showNotification(t('ui.select_file') || 'Please select target file'); return; }
             const anchorPart = heading ? '#' + heading : '';
+            weLog.info('editor', 'showMarkdownJumpDialog confirm: 应用项目内跳转', { filename, heading });
             wrapMarkdownTextarea(textarea, '[', `](project:${encodeURIComponent(filename)}${anchorPart})`, linkText);
         }
         dialog.remove();
         if (preview) renderMarkdownPreview(textarea.value, preview);
+        weLog.info('editor', '← showMarkdownJumpDialog 完成');
     };
 }
 
 async function renderMarkdownPreview(text, previewEl) {
-    if (!previewEl) return;
+    weLog.debug('editor', '→ renderMarkdownPreview 开始', { textLen: text ? text.length : 0 });
+    if (!previewEl) {
+        weLog.warn('editor', 'renderMarkdownPreview: previewEl 不存在');
+        return;
+    }
     previewEl.innerHTML = markdownToHtmlString(text);
     // 渲染 KaTeX 公式
     if (window.katex) {
+        weLog.debug('editor', 'renderMarkdownPreview: 渲染 KaTeX 公式');
         previewEl.querySelectorAll('.katex-render').forEach(el => {
             try {
                 window.katex.render(el.dataset.formula || '', el, {
                     displayMode: el.dataset.display === 'true',
                     throwOnError: false
                 });
-            } catch (e) { el.textContent = el.dataset.formula || ''; }
+            } catch (e) {
+                weLog.error('editor', 'renderMarkdownPreview: KaTeX 渲染失败', { formula: el.dataset.formula, error: e && e.stack ? e.stack : String(e) });
+                el.textContent = el.dataset.formula || '';
+            }
         });
     }
+    weLog.debug('editor', '← renderMarkdownPreview 完成');
 }
 
 function markdownToHtmlString(text) {
+    weLog.debug('editor', '→ markdownToHtmlString 开始', { textLen: text ? text.length : 0 });
     // 先处理表格：需要识别表头分隔行，链式 replace 难以处理，单独提取
     const renderTable = (tableText) => {
         const lines = tableText.trim().split('\n');
@@ -1201,10 +1373,12 @@ function markdownToHtmlString(text) {
         // 还原表格占位符
         .replace(/\u0000TABLE_(\d+)\u0000/g, (_, idx) => tableBlocks[parseInt(idx)]);
 
+    weLog.debug('editor', '← markdownToHtmlString 完成', { htmlLen: html.length });
     return `<p>${html}</p>`;
 }
 
 function wrapMarkdownTextarea(textarea, before, after, customText) {
+    weLog.debug('editor', '→ wrapMarkdownTextarea 开始', { before, after });
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const selected = textarea.value.substring(start, end);
@@ -1215,30 +1389,33 @@ function wrapMarkdownTextarea(textarea, before, after, customText) {
     textarea.selectionEnd = start + before.length + replacement.length;
     textarea.focus();
     textarea.dispatchEvent(new Event('input'));
+    weLog.debug('editor', '← wrapMarkdownTextArea 完成', { replacementLen: replacement.length });
 }
 
 function insertMarkdownList(textarea, listType) {
+    weLog.debug('editor', '→ insertMarkdownList 开始', { listType });
     const start = textarea.selectionStart;
     const lineStart = textarea.value.lastIndexOf('\n', start - 1) + 1;
     let lineEnd = textarea.value.indexOf('\n', start);
     if (lineEnd === -1) lineEnd = textarea.value.length;
-    
+
     const line = textarea.value.substring(lineStart, lineEnd);
     let prefix;
     if (listType === 'ordered') prefix = '1. ';
     else if (listType === 'bullet') prefix = '- ';
     else prefix = '- [ ] ';
-    
+
     textarea.value = textarea.value.substring(0, lineStart) + prefix + line + textarea.value.substring(lineEnd);
     textarea.selectionStart = textarea.selectionEnd = lineStart + prefix.length;
     textarea.focus();
     textarea.dispatchEvent(new Event('input'));
+    weLog.debug('editor', '← insertMarkdownList 完成', { prefix });
 }
 
 function updateMarkdownStats(text) {
     const cleanText = text.replace(/\n$/, '');
     const chars = cleanText.length;
-    
+
     let words = 0;
     if (cleanText.trim()) {
         const chineseChars = (cleanText.match(/[\u4e00-\u9fa5]/g) || []).length;
@@ -1246,17 +1423,23 @@ function updateMarkdownStats(text) {
         const nonChineseWords = nonChineseText ? nonChineseText.split(/\s+/).filter(Boolean).length : 0;
         words = chineseChars + nonChineseWords;
     }
-    
+
     const wordsEl = document.getElementById('stat-words');
     const charsEl = document.getElementById('stat-chars');
     if (wordsEl) wordsEl.textContent = words;
     if (charsEl) charsEl.textContent = chars;
+    weLog.debug('editor', '← updateMarkdownStats 完成', { words, chars });
 }
 
 function generateTableOfContents() {
-    if (!quill) return;
+    weLog.info('editor', '→ generateTableOfContents 开始');
+    if (!quill) {
+        weLog.warn('editor', 'generateTableOfContents: quill 不存在');
+        return;
+    }
 
     if (!tocPanel) {
+        weLog.debug('editor', 'generateTableOfContents: 创建新的 TOC 面板');
         tocPanel = document.createElement('div');
         tocPanel.className = 'toc-panel';
         const wrapper = quill.container.closest('.quill-wrapper') || quill.container.parentElement;
@@ -1268,6 +1451,7 @@ function generateTableOfContents() {
     tocHeader.className = 'toc-header';
     tocHeader.innerHTML = `<span>${t('ui.table_of_contents') || 'Table of Contents'}</span><button class="toc-close">✕</button>`;
     tocHeader.querySelector('.toc-close').onclick = () => {
+        weLog.debug('editor', 'generateTableOfContents: 用户关闭 TOC 面板');
         tocPanel.remove();
         tocPanel = null;
     };
@@ -1321,6 +1505,7 @@ function generateTableOfContents() {
     });
 
     if (headings.length === 0) {
+        weLog.info('editor', 'generateTableOfContents: 没有标题，显示空提示');
         const emptyMsg = document.createElement('div');
         emptyMsg.className = 'toc-empty';
         emptyMsg.textContent = t('ui.no_headings') || 'No headings yet. Select Heading 1/2/3 from the toolbar dropdown to create sections.';
@@ -1335,6 +1520,7 @@ function generateTableOfContents() {
         li.className = `toc-level-${h.level}`;
         li.textContent = h.text;
         li.onclick = () => {
+            weLog.debug('editor', 'generateTableOfContents: 点击 TOC 项跳转', { level: h.level, index: h.index });
             quill.setSelection(h.index, 0);
             const range = quill.getBounds(h.index);
             quill.root.scrollTo({ top: range.top - 50, behavior: 'smooth' });
@@ -1342,10 +1528,14 @@ function generateTableOfContents() {
         tocList.appendChild(li);
     });
     tocPanel.appendChild(tocList);
+    weLog.info('editor', '← generateTableOfContents 完成', { count: headings.length });
 }
 
 function updateEditorStats() {
-    if (!quill) return;
+    if (!quill) {
+        weLog.warn('editor', 'updateEditorStats: quill 不存在');
+        return;
+    }
     const text = quill.getText();
     // 去除 Quill 末尾自动添加的换行符
     const cleanText = text.replace(/\n$/, '');
@@ -1373,18 +1563,23 @@ function updateEditorStats() {
     if (typeof updateStatusBarStats === 'function') {
         updateStatusBarStats();
     }
+    weLog.debug('editor', '← updateEditorStats 完成', { words: editorStats.words, chars: editorStats.chars });
 }
 
 // 暴露到 window 以供其他模块包装
 window.updateEditorStats = updateEditorStats;
 
 function getCurrentFileName() {
+    weLog.debug('editor', '→ getCurrentFileName 开始');
     const project = tabs[activeTabId];
     const f = project?.currentFile || 'document';
-    return stripExt(f.split('/').pop());
+    const name = stripExt(f.split('/').pop());
+    weLog.debug('editor', '← getCurrentFileName 完成', { name });
+    return name;
 }
 
 function downloadText(text, filename, mimeType) {
+    weLog.info('editor', '→ downloadText 开始', { filename, mimeType, length: text.length });
     const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1394,9 +1589,11 @@ function downloadText(text, filename, mimeType) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    weLog.info('editor', '← downloadText 完成', { filename });
 }
 
 function deltaToMarkdown(delta) {
+    weLog.debug('editor', '→ deltaToMarkdown 开始', { opsCount: delta && delta.ops ? delta.ops.length : 0 });
     let md = '';
     let textBuffer = '';
     let inCodeBlock = false;
@@ -1528,17 +1725,23 @@ function deltaToMarkdown(delta) {
 
     closeCodeBlock();
     flushText();
+    weLog.debug('editor', '← deltaToMarkdown 完成', { mdLen: md.length });
     return md.trim();
 }
 
 async function saveCurrentFile(silent) {
+    weLog.info('editor', '→ saveCurrentFile 开始', { silent, isSaving });
     if (isSaving) {
+        weLog.info('editor', 'saveCurrentFile: 已在保存中，标记 pendingSave');
         pendingSave = true;
         return;
     }
 
     const project = tabs[activeTabId];
-    if (!project || !project.currentFile) return;
+    if (!project || !project.currentFile) {
+        weLog.warn('editor', 'saveCurrentFile: project 或 currentFile 不存在');
+        return;
+    }
 
     isSaving = true;
     pendingSave = false;
@@ -1546,12 +1749,21 @@ async function saveCurrentFile(silent) {
     const projectMode = project.projectMode || 'rich';
     let content;
     if (projectMode === 'markdown') {
-        if (!markdownEditor) { isSaving = false; return; }
+        if (!markdownEditor) {
+            weLog.warn('editor', 'saveCurrentFile: markdownEditor 不存在');
+            isSaving = false;
+            return;
+        }
         content = markdownEditor.value;
     } else {
-        if (!quill) { isSaving = false; return; }
+        if (!quill) {
+            weLog.warn('editor', 'saveCurrentFile: quill 不存在');
+            isSaving = false;
+            return;
+        }
         content = quill.root.innerHTML;
     }
+    weLog.info('editor', 'saveCurrentFile: 准备保存', { projectMode, file: project.currentFile, contentLen: content.length });
 
     // 通知用户正在保存（持久显示，直到保存完成）
     showNotification(t('ui.saving') || '正在保存...', 0);
@@ -1559,6 +1771,7 @@ async function saveCurrentFile(silent) {
     try {
         const res = await weAPI.saveFile(project.projectPath, project.currentFile, content);
         if (res.success) {
+            weLog.info('editor', '← saveCurrentFile 完成: 保存成功');
             project.dirty = false;
             project.savedContent = content;
             if (project.fileCache) {
@@ -1567,14 +1780,17 @@ async function saveCurrentFile(silent) {
             updateStatusBar();
             showNotification(t('ui.saved') || '已保存');
         } else {
+            weLog.error('editor', 'saveCurrentFile: 保存失败', { error: res.error });
             showNotification((t('ui.save_failed') || '保存失败') + ': ' + res.error);
         }
     } catch (e) {
+        weLog.error('editor', 'saveCurrentFile 失败', e && e.stack ? e.stack : String(e));
         showNotification((t('ui.save_failed') || '保存失败') + ': ' + e.message);
     } finally {
         isSaving = false;
         // 如果保存期间有新的保存请求，立即再执行一次
         if (pendingSave) {
+            weLog.info('editor', 'saveCurrentFile: 检测到 pendingSave，递归再保存一次');
             pendingSave = false;
             saveCurrentFile(silent);
         }
@@ -1582,14 +1798,26 @@ async function saveCurrentFile(silent) {
 }
 
 async function addFileToProject(safeId) {
+    weLog.info('editor', '→ addFileToProject 开始', { safeId });
     const project = tabs[safeId];
-    if (!project) return;
+    if (!project) {
+        weLog.warn('editor', 'addFileToProject: project 不存在', { safeId });
+        return;
+    }
     const result = await showPrompt(t('ui.new_item') || '新建', t('ui.file_name') || '文件名', { typeSwitch: true, defaultType: 'file' });
-    if (!result) return;
+    if (!result) {
+        weLog.debug('editor', 'addFileToProject: 用户取消输入');
+        return;
+    }
     const name = result.value;
-    if (!name) return;
+    if (!name) {
+        weLog.debug('editor', 'addFileToProject: 文件名为空');
+        return;
+    }
+    weLog.info('editor', 'addFileToProject: 用户输入', { name, type: result.type });
 
     if (result.type === 'folder') {
+        weLog.info('editor', 'addFileToProject: 走了创建文件夹分支', { name });
         const res = await weAPI.addFolder(project.projectPath, name);
         if (res.success) {
             const updated = await weAPI.openProject(project.projectPath);
@@ -1599,9 +1827,11 @@ async function addFileToProject(safeId) {
             }
             showNotification(t('ui.folder_created') || '文件夹已创建');
         } else {
+            weLog.error('editor', 'addFileToProject: 创建文件夹失败', { error: res.error });
             showNotification((t('ui.create_failed') || '创建失败') + ': ' + res.error);
         }
     } else {
+        weLog.info('editor', 'addFileToProject: 走了创建文件分支', { name });
         const res = await weAPI.addFile(project.projectPath, name);
         if (res.success) {
             const updated = await weAPI.openProject(project.projectPath);
@@ -1611,23 +1841,28 @@ async function addFileToProject(safeId) {
             }
             openProjectFile(safeId, name);
         } else {
+            weLog.error('editor', 'addFileToProject: 添加文件失败', { error: res.error });
             showNotification((t('ui.add_failed') || '添加失败') + ': ' + res.error);
         }
     }
+    weLog.info('editor', '← addFileToProject 完成');
 }
 
 // ========== 切换编辑器模式（单向转化） ==========
 
 async function switchEditorMode() {
+    weLog.info('editor', '→ switchEditorMode 开始');
     // 找到当前打开的项目标签
     const project = tabs[activeTabId];
     if (!project || !project.projectPath) {
+        weLog.warn('editor', 'switchEditorMode: project 或 projectPath 不存在');
         showNotification(t('ui.need_open_project') || '请先打开一个项目');
         return;
     }
 
     const currentMode = project.projectMode || 'rich';
     const targetMode = currentMode === 'rich' ? 'markdown' : 'rich';
+    weLog.info('editor', 'switchEditorMode: 模式切换计划', { currentMode, targetMode });
     const currentModeName = currentMode === 'rich'
         ? (t('ui.rich_text_mode') || '富文本模式')
         : (t('ui.markdown_mode') || 'Markdown 模式');
@@ -1672,45 +1907,58 @@ async function switchEditorMode() {
     dialog.querySelector('.dialog-overlay').onclick = closeDialog;
 
     dialog.querySelector('.btn-confirm').onclick = async () => {
+        weLog.info('editor', 'switchEditorMode: 用户确认切换', { fromMode: currentMode, toMode: targetMode });
         closeDialog();
         await performModeSwitch(project.projectPath, currentMode, targetMode);
     };
 }
 
 async function performModeSwitch(projectPath, fromMode, toMode) {
+    weLog.info('editor', '→ performModeSwitch 开始', { projectPath, fromMode, toMode });
     showNotification(t('ui.mode_switch_converting') || '正在转换...');
 
     // 获取所有文件列表
     const listResult = await weAPI.listFiles(projectPath);
     if (!listResult.success) {
+        weLog.error('editor', 'performModeSwitch: 读取文件列表失败', { error: listResult.error });
         showNotification(t('ui.mode_switch_failed') || '转换失败：无法读取文件列表');
         return;
     }
     const files = listResult.files || [];
+    weLog.info('editor', 'performModeSwitch: 待转换文件数', { count: files.length });
 
     // 转换每个文件
+    let convertedCount = 0;
     for (const filename of files) {
         if (filename.startsWith('_')) continue; // 跳过元数据和图片文件
         const readResult = await weAPI.readFile(projectPath, filename);
-        if (!readResult.success) continue;
+        if (!readResult.success) {
+            weLog.warn('editor', 'performModeSwitch: 跳过读取失败的文件', { filename, error: readResult.error });
+            continue;
+        }
 
         const originalContent = readResult.content;
         let newContent;
 
         if (fromMode === 'rich' && toMode === 'markdown') {
+            weLog.debug('editor', 'performModeSwitch: HTML→Markdown', { filename });
             newContent = convertHtmlToMarkdown(originalContent);
         } else if (fromMode === 'markdown' && toMode === 'rich') {
+            weLog.debug('editor', 'performModeSwitch: Markdown→HTML', { filename });
             newContent = convertMarkdownToHtml(originalContent);
         } else {
             continue;
         }
 
         await weAPI.saveFile(projectPath, filename, newContent);
+        convertedCount++;
     }
+    weLog.info('editor', 'performModeSwitch: 文件转换完成', { convertedCount });
 
     // 更新项目元数据
     const modeResult = await weAPI.setProjectMode(projectPath, toMode);
     if (!modeResult.success) {
+        weLog.error('editor', 'performModeSwitch: 元数据更新失败', { error: modeResult.error });
         showNotification(t('ui.mode_switch_meta_failed') || '元数据更新失败');
         return;
     }
@@ -1718,25 +1966,33 @@ async function performModeSwitch(projectPath, fromMode, toMode) {
     // 关闭当前项目标签并重新打开
     const projectName = tabs[activeTabId]?.title || projectPath.split(/[\\/]/).pop();
     if (activeTabId && tabs[activeTabId]) {
+        weLog.info('editor', 'performModeSwitch: 关闭旧项目标签', { activeTabId, projectName });
         closeTab(activeTabId, true);
     }
 
     // 重新打开项目
     setTimeout(async () => {
+        weLog.info('editor', 'performModeSwitch: 重新打开项目', { projectPath });
         const result = await weAPI.openProject(projectPath);
         if (result.success) {
             openProjectDirectly(result);
             showNotification(t('ui.mode_switch_done') || '编辑器模式已切换');
+            weLog.info('editor', '← performModeSwitch 完成: 模式切换成功');
+        } else {
+            weLog.error('editor', 'performModeSwitch: 重新打开项目失败', { error: result.error });
         }
     }, 200);
 }
 
 // 富文本 HTML → Markdown 纯文本
 function convertHtmlToMarkdown(html) {
+    weLog.debug('editor', '→ convertHtmlToMarkdown 开始', { htmlLen: html ? html.length : 0 });
     if (!html || !html.trim()) return '';
     const temp = document.createElement('div');
     temp.innerHTML = html;
-    return domToMarkdown(temp).replace(/\n{3,}/g, '\n\n').trim();
+    const result = domToMarkdown(temp).replace(/\n{3,}/g, '\n\n').trim();
+    weLog.debug('editor', '← convertHtmlToMarkdown 完成', { mdLen: result.length });
+    return result;
 }
 
 function domToMarkdown(node) {
@@ -1801,6 +2057,7 @@ function domToMarkdown(node) {
 
 // Markdown 纯文本 → 富文本 HTML（Quill 兼容）
 function convertMarkdownToHtml(md) {
+    weLog.debug('editor', '→ convertMarkdownToHtml 开始', { mdLen: md ? md.length : 0 });
     if (!md || !md.trim()) return '';
 
     let html = md;
@@ -1877,6 +2134,7 @@ function convertMarkdownToHtml(md) {
     flushParagraph();
     flushList();
 
+    weLog.debug('editor', '← convertMarkdownToHtml 完成', { blockCount: blocks.length });
     return blocks.join('');
 }
 
@@ -1909,9 +2167,13 @@ function handleSmartBrackets(e) {
 
     // 括号补全
     if (PAIRS[key]) {
+        weLog.debug('editor', 'handleSmartBrackets: 括号补全', { key });
         e.preventDefault();
         const range = quill.getSelection();
-        if (!range) return;
+        if (!range) {
+            weLog.warn('editor', 'handleSmartBrackets: quill.getSelection 返回空');
+            return;
+        }
         const close = PAIRS[key];
         if (range.length > 0) {
             // 选中文本：用括号包裹
@@ -1930,11 +2192,15 @@ function handleSmartBrackets(e) {
     // 引号补全
     if (QUOTES.has(key)) {
         const range = quill.getSelection();
-        if (!range) return;
+        if (!range) {
+            weLog.warn('editor', 'handleSmartBrackets: 引号补全时 quill.getSelection 返回空');
+            return;
+        }
         // 光标前是字母/数字时不补全（可能是缩写如 don't）
         const beforeText = range.index > 0 ? quill.getText(range.index - 1, 1) : '';
         if (isWordChar(beforeText)) return;
 
+        weLog.debug('editor', 'handleSmartBrackets: 引号补全', { key });
         e.preventDefault();
         if (range.length > 0) {
             // 选中文本：用引号包裹
@@ -1956,6 +2222,7 @@ function handleSmartBrackets(e) {
         if (!range || range.length > 0) return;
         const nextChar = quill.getText(range.index, 1);
         if (nextChar === key) {
+            weLog.debug('editor', 'handleSmartBrackets: 跳过已有右括号/右引号', { key });
             e.preventDefault();
             quill.setSelection(range.index + 1, 0, Quill.sources.USER);
             return;
@@ -1973,6 +2240,7 @@ function handleSmartBrackets(e) {
         const isPair = (PAIRS[before] && PAIRS[before] === after) ||
                        (QUOTES.has(before) && before === after);
         if (isPair) {
+            weLog.debug('editor', 'handleSmartBrackets: Backspace 删除成对空括号/引号', { before, after });
             e.preventDefault();
             quill.deleteText(range.index - 1, 2, Quill.sources.USER);
             quill.setSelection(range.index - 1, 0, Quill.sources.USER);
@@ -1993,6 +2261,7 @@ function handleSmartBracketsTextarea(e) {
 
     // 括号补全
     if (PAIRS[key]) {
+        weLog.debug('editor', 'handleSmartBracketsTextarea: 括号补全', { key });
         e.preventDefault();
         const close = PAIRS[key];
         if (start !== end) {
@@ -2014,6 +2283,7 @@ function handleSmartBracketsTextarea(e) {
         const beforeChar = start > 0 ? val[start - 1] : '';
         if (isWordChar(beforeChar)) return;
 
+        weLog.debug('editor', 'handleSmartBracketsTextarea: 引号补全', { key });
         e.preventDefault();
         if (start !== end) {
             const selected = val.substring(start, end);
@@ -2031,6 +2301,7 @@ function handleSmartBracketsTextarea(e) {
     // 跳过已有的右括号/右引号
     if (CLOSE_BRACKETS.has(key) || QUOTES.has(key)) {
         if (start === end && val[start] === key) {
+            weLog.debug('editor', 'handleSmartBracketsTextarea: 跳过已有右括号/右引号', { key });
             e.preventDefault();
             ta.selectionStart = ta.selectionEnd = start + 1;
         }
@@ -2044,6 +2315,7 @@ function handleSmartBracketsTextarea(e) {
         const isPair = (PAIRS[before] && PAIRS[before] === after) ||
                        (QUOTES.has(before) && before === after);
         if (isPair) {
+            weLog.debug('editor', 'handleSmartBracketsTextarea: Backspace 删除成对空括号/引号', { before, after });
             e.preventDefault();
             ta.value = val.substring(0, start - 1) + val.substring(start + 1);
             ta.selectionStart = ta.selectionEnd = start - 1;

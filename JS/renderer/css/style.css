@@ -4184,3 +4184,64 @@ html.material-active *,
 body.material-active * {
     transition: background 0s, box-shadow 0s !important;
 }
+
+/* ========== 节点关系图（Node Graph） ========== */
+.node-graph-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-content, transparent);
+}
+.node-graph-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 4px 8px;
+    background: var(--bg-toolbar, #f0f0f0);
+    border-bottom: 1px solid var(--border, #ccc);
+    flex-shrink: 0;
+}
+.ng-btn {
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text, #333);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 6px;
+    transition: background var(--transition-fast, 0.15s);
+}
+.ng-btn:hover {
+    background: var(--hover-bg, rgba(0,0,0,0.06));
+}
+.ng-btn:active {
+    background: var(--active-bg, rgba(0,0,0,0.12));
+}
+.ng-toolbar-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border, #ccc);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+.ng-toolbar-spacer {
+    flex: 1;
+}
+.ng-status {
+    font-size: 14px;
+    color: var(--accent, #4a90d9);
+    margin-left: 8px;
+}
+.node-graph-canvas-wrapper {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+.node-graph-canvas {
+    width: 100%;
+    height: 100%;
+}

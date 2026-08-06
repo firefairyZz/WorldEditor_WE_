@@ -1,6 +1,7 @@
 function createWelcomeTab() {
+    weLog.info('welcome', '→ createWelcomeTab 开始');
     const id = 'welcome';
-    if (tabs[id]) { switchTab(id); return; }
+    if (tabs[id]) { weLog.info('welcome', 'createWelcomeTab: 已存在 welcome 标签，切换过去'); switchTab(id); return; }
     const content = document.createElement('div');
     content.className = 'welcome-new';
     const folderOpenSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>';
@@ -35,9 +36,11 @@ function createWelcomeTab() {
     loadPinnedProjects(content.querySelector('#pinned-list'));
     loadRecentProjectsNew(content.querySelector('#recent-list'));
     addTab(id, t('ui.welcome_tab'), content, false);
+    weLog.info('welcome', '← createWelcomeTab 完成');
 }
 
 function formatModifiedTime(ms) {
+    weLog.debug('welcome', '→ formatModifiedTime', { ms });
     if (!ms) return '';
     const date = new Date(ms);
     const now = new Date();
@@ -53,10 +56,12 @@ function formatModifiedTime(ms) {
 }
 
 async function loadPinnedProjects(container) {
+    weLog.info('welcome', '→ loadPinnedProjects 开始');
     try {
         const result = await weAPI.getRecentProjects();
         const projects = result.pinned || [];
         if (!projects.length) {
+            weLog.info('welcome', 'loadPinnedProjects: 没有固定项目');
             container.innerHTML = `<div class="recent-empty">${t('ui.no_pinned') || '暂无固定项目'}</div>`;
             return;
         }
@@ -72,16 +77,20 @@ async function loadPinnedProjects(container) {
         container.querySelectorAll('.pinned-item').forEach(item => {
             item.addEventListener('click', () => openProjectByPath(item.dataset.path));
         });
+        weLog.info('welcome', '← loadPinnedProjects 完成', { count: projects.length });
     } catch (e) {
+        weLog.error('welcome', 'loadPinnedProjects 失败', e && e.stack ? e.stack : String(e));
         container.innerHTML = `<div class="recent-empty">${t('ui.load_failed')}</div>`;
     }
 }
 
 async function loadRecentProjectsNew(container) {
+    weLog.info('welcome', '→ loadRecentProjectsNew 开始');
     try {
         const result = await weAPI.getRecentProjects();
         const projects = result.recent || [];
         if (!projects.length) {
+            weLog.info('welcome', 'loadRecentProjectsNew: 没有最近项目');
             container.innerHTML = `<div class="recent-empty">${t('ui.no_recent')}</div>`;
             return;
         }
@@ -94,15 +103,21 @@ async function loadRecentProjectsNew(container) {
         container.querySelectorAll('.recent-item-new').forEach(item => {
             item.addEventListener('click', () => openProjectByPath(item.dataset.path));
         });
+        weLog.info('welcome', '← loadRecentProjectsNew 完成', { count: projects.length });
     } catch (e) {
+        weLog.error('welcome', 'loadRecentProjectsNew 失败', e && e.stack ? e.stack : String(e));
         container.innerHTML = `<div class="recent-empty">${t('ui.load_failed')}</div>`;
     }
 }
 
 // 暴露给其他模块调用的刷新函数
 window.refreshRecentProjects = async function() {
+    weLog.info('welcome', '→ refreshRecentProjects 开始');
     const pinnedContainer = document.getElementById('pinned-list');
     const recentContainer = document.getElementById('recent-list');
     if (pinnedContainer) await loadPinnedProjects(pinnedContainer);
+    else weLog.warn('welcome', 'refreshRecentProjects: pinned-list 元素不存在');
     if (recentContainer) await loadRecentProjectsNew(recentContainer);
+    else weLog.warn('welcome', 'refreshRecentProjects: recent-list 元素不存在');
+    weLog.info('welcome', '← refreshRecentProjects 完成');
 };

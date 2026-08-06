@@ -6,6 +6,7 @@ function escapeHtml(text) {
 
 // 防抖：高频事件合并为最后一次触发后执行，常用于 text-change/resize 等场景以减少布局抖动
 function debounce(fn, wait = 250) {
+    weLog.info('utils', '→ debounce 创建', { wait });
     let timer = null;
     const debounced = function (...args) {
         clearTimeout(timer);
@@ -16,6 +17,7 @@ function debounce(fn, wait = 250) {
 }
 
 function showPrompt(title, placeholder = '', options = {}) {
+    weLog.info('utils', '→ showPrompt 开始', { title, hasTypeSwitch: !!options.typeSwitch });
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'prompt-overlay';
@@ -46,6 +48,7 @@ function showPrompt(title, placeholder = '', options = {}) {
                     buttons.forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     selectedType = btn.dataset.type;
+                    weLog.debug('utils', 'showPrompt: 切换类型', { selectedType });
                     const label = selectedType === 'file' ? (t('ui.file_name') || '文件名') : (t('ui.folder_name') || '文件夹名');
                     input.placeholder = label;
                 };
@@ -53,21 +56,25 @@ function showPrompt(title, placeholder = '', options = {}) {
             input.placeholder = options.defaultType === 'folder' ? (t('ui.folder_name') || '文件夹名') : (t('ui.file_name') || '文件名');
         }
 
-        overlay.querySelector('#prompt-cancel').onclick = () => { overlay.remove(); resolve(null); };
+        overlay.querySelector('#prompt-cancel').onclick = () => { weLog.info('utils', 'showPrompt: 用户取消'); overlay.remove(); resolve(null); };
         overlay.querySelector('#prompt-ok').onclick = () => {
             const val = input.value.trim();
+            weLog.info('utils', 'showPrompt: 用户确认', { value: val, type: options.typeSwitch ? selectedType : undefined });
             overlay.remove();
             resolve(options.typeSwitch ? { value: val, type: selectedType } : (val || null));
         };
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const val = input.value.trim();
+                weLog.info('utils', 'showPrompt: Enter 确认', { value: val });
                 overlay.remove();
                 resolve(options.typeSwitch ? { value: val, type: selectedType } : (val || null));
             }
-            if (e.key === 'Escape') { overlay.remove(); resolve(null); }
+            if (e.key === 'Escape') { weLog.info('utils', 'showPrompt: Escape 取消'); overlay.remove(); resolve(null); }
         });
     });
 }
 
-function sanitizeId(path) { return path.replace(/[^a-zA-Z0-9_-]/g, '_'); }
+function sanitizeId(path) {
+    return path.replace(/[^a-zA-Z0-9_-]/g, '_');
+}

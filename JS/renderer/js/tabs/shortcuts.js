@@ -31,23 +31,29 @@ let activeShortcuts = JSON.parse(JSON.stringify(DEFAULT_SHORTCUTS));
 
 // 加载用户自定义快捷键
 async function loadCustomShortcuts() {
+    weLog.info('shortcuts', '→ loadCustomShortcuts 开始');
     try {
         const settings = await weAPI.getSettings();
         if (settings.customShortcuts) {
+            weLog.info('shortcuts', 'loadCustomShortcuts: 发现自定义快捷键，开始合并');
             // 合并：用户自定义覆盖默认值
             for (const action in settings.customShortcuts) {
                 if (activeShortcuts[action]) {
                     Object.assign(activeShortcuts[action], settings.customShortcuts[action]);
                 }
             }
+        } else {
+            weLog.info('shortcuts', 'loadCustomShortcuts: 无自定义快捷键');
         }
+        weLog.info('shortcuts', '← loadCustomShortcuts 完成');
     } catch (e) {
-        console.error('Failed to load custom shortcuts:', e);
+        weLog.error('shortcuts', 'loadCustomShortcuts 失败', e && e.stack ? e.stack : String(e));
     }
 }
 
 // 格式化快捷键显示文本
 function formatShortcutKey(sc) {
+    weLog.debug('shortcuts', '→ formatShortcutKey');
     if (!sc) return '';
     let parts = [];
     if (sc.ctrl) parts.push('Ctrl');
@@ -72,6 +78,7 @@ const shortcutHelpPanel = {
     isVisible: false,
 
     show() {
+        weLog.info('shortcuts', '→ shortcutHelpPanel.show');
         if (this.isVisible) return;
         this.isVisible = true;
         if (!this.element) this.createPanel();
@@ -79,16 +86,19 @@ const shortcutHelpPanel = {
     },
 
     hide() {
+        weLog.info('shortcuts', '→ shortcutHelpPanel.hide');
         this.isVisible = false;
         if (this.element) this.element.style.display = 'none';
     },
 
     toggle() {
+        weLog.info('shortcuts', '→ shortcutHelpPanel.toggle', { isVisible: this.isVisible });
         if (this.isVisible) this.hide();
         else this.show();
     },
 
     createPanel() {
+        weLog.info('shortcuts', '→ shortcutHelpPanel.createPanel');
         this.element = document.createElement('div');
         this.element.className = 'shortcut-help-panel';
         this.element.innerHTML = this._buildContent();
@@ -100,8 +110,11 @@ const shortcutHelpPanel = {
     },
 
     refresh() {
+        weLog.info('shortcuts', '→ shortcutHelpPanel.refresh');
         if (this.element) {
             this.element.querySelector('.shortcut-help-content').innerHTML = this._buildInner();
+        } else {
+            weLog.warn('shortcuts', 'shortcutHelpPanel.refresh: element 不存在');
         }
     },
 
@@ -154,15 +167,18 @@ const shortcutHelpPanel = {
 document.addEventListener('keydown', (e) => {
     const tag = e.target.tagName;
     const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    weLog.debug('shortcuts', 'keydown', { key: e.key, ctrl: e.ctrlKey, shift: e.shiftKey, isInput });
 
     // Esc - 关闭快捷键面板
     if (e.key === 'Escape' && shortcutHelpPanel.isVisible) {
+        weLog.info('shortcuts', 'keydown: Esc 关闭快捷键面板');
         shortcutHelpPanel.hide();
         return;
     }
 
     // F1 - 显示快捷键帮助（不受 isInput 限制）
     if (matchesShortcut(e, activeShortcuts['toggle-help'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 F1 toggle-help');
         e.preventDefault();
         shortcutHelpPanel.toggle();
         return;
@@ -170,6 +186,7 @@ document.addEventListener('keydown', (e) => {
 
     // Ctrl+/ - 显示快捷键帮助
     if (matchesShortcut(e, activeShortcuts['toggle-help-alt'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+/ toggle-help-alt');
         e.preventDefault();
         shortcutHelpPanel.toggle();
         return;
@@ -178,6 +195,7 @@ document.addEventListener('keydown', (e) => {
     // Ctrl+P / Ctrl+Shift+P - 全局命令面板（不受 isInput 限制，但在命令面板自身输入框中不触发）
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
         if (commandPalette && commandPalette.isVisible) return;
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+P command-palette', { commandMode: e.shiftKey });
         e.preventDefault();
         // Ctrl+Shift+P → 命令模式（带 > 前缀）
         if (e.shiftKey) commandPalette.toggle('>');
@@ -188,22 +206,27 @@ document.addEventListener('keydown', (e) => {
     // Ctrl+F - 查找（不受 isInput 限制，但在命令面板/查找栏自身中不触发）
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         if (commandPalette && commandPalette.isVisible) return;
-        if (findBar && findBar.isVisible) { e.preventDefault(); findBar.findInput.focus(); return; }
+        if (findBar && findBar.isVisible) { weLog.info('shortcuts', 'keydown: Ctrl+F 聚焦已有查找栏'); e.preventDefault(); findBar.findInput.focus(); return; }
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+F find');
         e.preventDefault();
         if (findBar) findBar.show(false);
+        else weLog.warn('shortcuts', 'keydown: findBar 不存在');
         return;
     }
 
     // Ctrl+H - 查找和替换
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
         if (commandPalette && commandPalette.isVisible) return;
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+H replace');
         e.preventDefault();
         if (findBar) findBar.show(true);
+        else weLog.warn('shortcuts', 'keydown: findBar 不存在');
         return;
     }
 
     // Ctrl+S - 保存当前文件（在输入框中也生效）
     if (matchesShortcut(e, activeShortcuts['save'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+S save');
         e.preventDefault();
         saveCurrentFile();
         return;
@@ -214,6 +237,7 @@ document.addEventListener('keydown', (e) => {
         if (activeTabId && tabs[activeTabId]?.projectPath) {
             const treeContainer = document.getElementById(`file-tree-${activeTabId}`);
             if (treeContainer && treeContainer.contains(document.activeElement)) {
+                weLog.info('shortcuts', 'keydown: 匹配 Ctrl+A select-all');
                 e.preventDefault();
                 selectAllVisible(activeTabId, treeContainer);
                 return;
@@ -224,6 +248,7 @@ document.addEventListener('keydown', (e) => {
     // Ctrl+T - 批量加标签（仅当选中多个文件时）
     if (matchesShortcut(e, activeShortcuts['batch-tag'])) {
         if (multiSelectState.items.size > 0 && multiSelectState.safeId) {
+            weLog.info('shortcuts', 'keydown: 匹配 Ctrl+T batch-tag', { count: multiSelectState.items.size });
             e.preventDefault();
             const sid = multiSelectState.safeId;
             const projectPath = tabs[sid]?.projectPath;
@@ -237,6 +262,7 @@ document.addEventListener('keydown', (e) => {
 
     // Ctrl+N - 新建文件
     if (matchesShortcut(e, activeShortcuts['new-file'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+N new-file');
         e.preventDefault();
         if (activeTabId && tabs[activeTabId]?.projectPath) {
             addFileToProject(activeTabId);
@@ -248,6 +274,7 @@ document.addEventListener('keydown', (e) => {
 
     // Ctrl+O - 打开项目
     if (matchesShortcut(e, activeShortcuts['open-project'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+O open-project');
         e.preventDefault();
         openProject();
         return;
@@ -255,15 +282,19 @@ document.addEventListener('keydown', (e) => {
 
     // Ctrl+W - 关闭当前标签
     if (matchesShortcut(e, activeShortcuts['close-tab'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+W close-tab', { activeTabId });
         e.preventDefault();
         if (activeTabId && tabs[activeTabId]?.closable) {
             closeTab(activeTabId);
+        } else {
+            weLog.warn('shortcuts', 'keydown: 当前标签不可关闭', { activeTabId });
         }
         return;
     }
 
     // Ctrl+Tab - 下一个标签
     if (matchesShortcut(e, activeShortcuts['next-tab'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+Tab next-tab');
         e.preventDefault();
         switchToNextTab();
         return;
@@ -271,6 +302,7 @@ document.addEventListener('keydown', (e) => {
 
     // Ctrl+Shift+Tab - 上一个标签
     if (matchesShortcut(e, activeShortcuts['prev-tab'])) {
+        weLog.info('shortcuts', 'keydown: 匹配 Ctrl+Shift+Tab prev-tab');
         e.preventDefault();
         switchToPrevTab();
         return;
@@ -279,11 +311,14 @@ document.addEventListener('keydown', (e) => {
     // Ctrl+1~9 - 跳转到指定标签
     for (let i = 1; i <= 9; i++) {
         if (matchesShortcut(e, activeShortcuts[`goto-tab-${i}`])) {
+            weLog.info('shortcuts', 'keydown: 匹配 Ctrl+数字 goto-tab', { index: i });
             e.preventDefault();
             const index = i - 1;
             const tabIds = getOrderedTabIds();
             if (index < tabIds.length) {
                 switchTab(tabIds[index]);
+            } else {
+                weLog.warn('shortcuts', 'keydown: 标签索引超出范围', { index, total: tabIds.length });
             }
             return;
         }
@@ -292,6 +327,7 @@ document.addEventListener('keydown', (e) => {
 
 // 获取按顺序排列的标签ID列表
 function getOrderedTabIds() {
+    weLog.debug('shortcuts', '→ getOrderedTabIds');
     const tabsContainer = document.querySelector('.tabs-container');
     if (!tabsContainer) return Object.keys(tabs);
     const tabElements = tabsContainer.querySelectorAll('.tab');
@@ -305,6 +341,7 @@ function getOrderedTabIds() {
 
 // 切换到下一个标签
 function switchToNextTab() {
+    weLog.info('shortcuts', '→ switchToNextTab');
     const ids = getOrderedTabIds();
     if (ids.length <= 1) return;
     const currentIndex = ids.indexOf(activeTabId);
@@ -314,6 +351,7 @@ function switchToNextTab() {
 
 // 切换到上一个标签
 function switchToPrevTab() {
+    weLog.info('shortcuts', '→ switchToPrevTab');
     const ids = getOrderedTabIds();
     if (ids.length <= 1) return;
     const currentIndex = ids.indexOf(activeTabId);

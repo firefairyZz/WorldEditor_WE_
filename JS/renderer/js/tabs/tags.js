@@ -20,6 +20,7 @@ const tagModule = {
     frequentTags: {},     // 常用标签 { 'label|color|emoji': count }
 
     normalizeTag(tag) {
+        weLog.debug('tags', '→ normalizeTag', { tag });
         if (!tag || typeof tag !== 'object') return null;
         return {
             label: tag.label || '',
@@ -29,27 +30,41 @@ const tagModule = {
     },
 
     async loadPinnedAndFrequentTags() {
+        weLog.info('tags', '→ loadPinnedAndFrequentTags 开始');
         try {
             const s = await weAPI.getSettings();
             this.pinnedTags = Array.isArray(s.pinnedTags)
                 ? s.pinnedTags.map(tag => this.normalizeTag(tag)).filter(Boolean)
                 : [];
             this.frequentTags = s.frequentTags && typeof s.frequentTags === 'object' ? s.frequentTags : {};
+            weLog.info('tags', '← loadPinnedAndFrequentTags 完成', { pinnedCount: this.pinnedTags.length, frequentCount: Object.keys(this.frequentTags).length });
         } catch(e) {
-            console.error('Failed to load pinned/frequent tags:', e);
+            weLog.error('tags', 'loadPinnedAndFrequentTags 失败', e && e.stack ? e.stack : String(e));
         }
     },
 
     async savePinnedTags() {
-        const s = await weAPI.getSettings();
-        s.pinnedTags = this.pinnedTags;
-        await weAPI.setSettings(s);
+        weLog.info('tags', '→ savePinnedTags', { count: this.pinnedTags.length });
+        try {
+            const s = await weAPI.getSettings();
+            s.pinnedTags = this.pinnedTags;
+            await weAPI.setSettings(s);
+        } catch (e) {
+            weLog.error('tags', 'savePinnedTags 失败', e && e.stack ? e.stack : String(e));
+            throw e;
+        }
     },
 
     async saveFrequentTags() {
-        const s = await weAPI.getSettings();
-        s.frequentTags = this.frequentTags;
-        await weAPI.setSettings(s);
+        weLog.info('tags', '→ saveFrequentTags', { count: Object.keys(this.frequentTags).length });
+        try {
+            const s = await weAPI.getSettings();
+            s.frequentTags = this.frequentTags;
+            await weAPI.setSettings(s);
+        } catch (e) {
+            weLog.error('tags', 'saveFrequentTags 失败', e && e.stack ? e.stack : String(e));
+            throw e;
+        }
     },
 
     _tagKey(tag) {
@@ -57,6 +72,7 @@ const tagModule = {
     },
 
     async trackTagUsage(tag) {
+        weLog.debug('tags', '→ trackTagUsage', { label: tag && tag.label });
         if (!tag || !tag.label) return;
         const key = this._tagKey(tag);
         this.frequentTags[key] = (this.frequentTags[key] || 0) + 1;
@@ -64,6 +80,7 @@ const tagModule = {
     },
 
     getFrequentTagsList(limit = 8) {
+        weLog.debug('tags', '→ getFrequentTagsList', { limit });
         return Object.entries(this.frequentTags)
             .sort((a, b) => b[1] - a[1])
             .slice(0, limit)
@@ -74,17 +91,21 @@ const tagModule = {
     },
 
     async loadProjectMetadata(safeId, projectPath) {
+        weLog.info('tags', '→ loadProjectMetadata 开始', { safeId, projectPath });
         this.currentProjectId = safeId;
         this.currentProjectPath = projectPath;
         try {
             const result = await weAPI.readMetadata(projectPath);
             if (result.success) {
+                weLog.info('tags', 'loadProjectMetadata: 读取成功');
                 this.metadata = result.metadata;
                 this.loadAvailableImages();
                 if (tabs[safeId]) tabs[safeId].metadata = this.metadata;
+            } else {
+                weLog.warn('tags', 'loadProjectMetadata: 读取返回失败');
             }
         } catch (e) {
-            console.error('Failed to load metadata:', e);
+            weLog.error('tags', 'loadProjectMetadata 失败', e && e.stack ? e.stack : String(e));
             this.metadata = { tags: {}, thumbnails: {}, images: {} };
             if (tabs[safeId]) tabs[safeId].metadata = this.metadata;
         }
@@ -93,23 +114,27 @@ const tagModule = {
     async saveMetadata() {
         const projectPath = this.currentProjectPath;
         const metadata = this.metadata;
-        if (!projectPath) return;
+        if (!projectPath) { weLog.warn('tags', 'saveMetadata: currentProjectPath 不存在'); return; }
+        weLog.info('tags', '→ saveMetadata', { projectPath });
         try {
             await weAPI.saveMetadata(projectPath, metadata);
         } catch (e) {
-            console.error('Failed to save metadata:', e);
+            weLog.error('tags', 'saveMetadata 失败', e && e.stack ? e.stack : String(e));
         }
     },
 
     loadAvailableImages() {
+        weLog.debug('tags', '→ loadAvailableImages');
         this.availableImages = Object.keys(this.metadata.images || {});
     },
 
     getTagsForFile(filePath) {
+        weLog.debug('tags', '→ getTagsForFile', { filePath });
         return this.metadata.tags?.[filePath] || [];
     },
 
     async addTag(filePath, label, color, emoji) {
+        weLog.info('tags', '→ addTag', { filePath, label, color, emoji });
         if (!this.metadata.tags) this.metadata.tags = {};
         if (!this.metadata.tags[filePath]) this.metadata.tags[filePath] = [];
         const tag = {
@@ -121,50 +146,67 @@ const tagModule = {
         this.metadata.tags[filePath].push(tag);
         await this.saveMetadata();
         await this.trackTagUsage(tag);
+        weLog.info('tags', '← addTag 完成', { tagId: tag.id });
         return tag;
     },
 
     async removeTag(filePath, tagId) {
-        if (!this.metadata.tags?.[filePath]) return;
+        weLog.info('tags', '→ removeTag', { filePath, tagId });
+        if (!this.metadata.tags?.[filePath]) { weLog.warn('tags', 'removeTag: 文件标签不存在'); return; }
         this.metadata.tags[filePath] = this.metadata.tags[filePath].filter(t => t.id !== tagId);
         await this.saveMetadata();
+        weLog.info('tags', '← removeTag 完成');
     },
 
     async updateTag(filePath, tagId, updates) {
-        if (!this.metadata.tags?.[filePath]) return;
+        weLog.info('tags', '→ updateTag', { filePath, tagId, updates });
+        if (!this.metadata.tags?.[filePath]) { weLog.warn('tags', 'updateTag: 文件标签不存在'); return; }
         const tag = this.metadata.tags[filePath].find(t => t.id === tagId);
         if (tag) {
             Object.assign(tag, updates);
             await this.saveMetadata();
             await this.trackTagUsage(tag);
+            weLog.info('tags', '← updateTag 完成');
+        } else {
+            weLog.warn('tags', 'updateTag: 未找到对应标签');
         }
     },
 
     getThumbnail(filePath) {
+        weLog.debug('tags', '→ getThumbnail', { filePath });
         return this.metadata.thumbnails?.[filePath] || null;
     },
 
     async setThumbnail(filePath, imageData) {
+        weLog.info('tags', '→ setThumbnail', { filePath });
         if (!this.metadata.thumbnails) this.metadata.thumbnails = {};
         this.metadata.thumbnails[filePath] = imageData;
         await this.saveMetadata();
+        weLog.info('tags', '← setThumbnail 完成');
     },
 
     async clearThumbnail(filePath) {
+        weLog.info('tags', '→ clearThumbnail', { filePath });
         if (this.metadata.thumbnails?.[filePath]) {
             delete this.metadata.thumbnails[filePath];
             await this.saveMetadata();
+            weLog.info('tags', '← clearThumbnail 完成');
+        } else {
+            weLog.warn('tags', 'clearThumbnail: 缩略图不存在');
         }
     },
 
     async storeImage(imageName, imageData) {
+        weLog.info('tags', '→ storeImage', { imageName });
         if (!this.metadata.images) this.metadata.images = {};
         this.metadata.images[imageName] = true;
         await weAPI.storeImage(this.currentProjectPath, imageName, imageData);
         this.loadAvailableImages();
+        weLog.info('tags', '← storeImage 完成');
     },
 
     async deleteImage(imageName) {
+        weLog.info('tags', '→ deleteImage', { imageName });
         if (this.metadata.images?.[imageName]) {
             delete this.metadata.images[imageName];
             await weAPI.deleteImage(this.currentProjectPath, imageName);
@@ -177,10 +219,14 @@ const tagModule = {
                 }
             }
             await this.saveMetadata();
+            weLog.info('tags', '← deleteImage 完成');
+        } else {
+            weLog.warn('tags', 'deleteImage: 图片不存在');
         }
     },
 
     createTagSelector(filePath, onTagChange) {
+        weLog.info('tags', '→ createTagSelector', { filePath });
         const container = document.createElement('div');
         container.className = 'tag-selector';
 
@@ -195,6 +241,7 @@ const tagModule = {
         addBtn.textContent = '+';
         addBtn.title = t('ui.add_tag') || 'Add Tag';
         addBtn.onclick = () => {
+            weLog.info('tags', 'createTagSelector: 点击添加标签按钮', { filePath });
             this.openTagPicker(filePath, (tag) => {
                 container.insertBefore(this.createTagElement(tag, filePath, onTagChange), addBtn);
                 onTagChange?.();
@@ -206,6 +253,7 @@ const tagModule = {
     },
 
     createTagElement(tag, filePath, onTagChange) {
+        weLog.debug('tags', '→ createTagElement', { filePath, tagId: tag.id });
         const el = document.createElement('span');
         el.className = 'tag-item';
         el.style.backgroundColor = tag.color;
@@ -215,12 +263,14 @@ const tagModule = {
         const removeBtn = el.querySelector('.tag-remove');
         removeBtn.onclick = async (e) => {
             e.stopPropagation();
+            weLog.info('tags', 'createTagElement: 点击移除标签', { filePath, tagId: tag.id });
             await this.removeTag(filePath, tag.id);
             el.remove();
             onTagChange?.();
         };
 
         el.ondblclick = () => {
+            weLog.info('tags', 'createTagElement: 双击编辑标签', { filePath, tagId: tag.id });
             this.openTagPicker(filePath, (updatedTag) => {
                 el.style.backgroundColor = updatedTag.color;
                 el.querySelector('.tag-emoji').textContent = updatedTag.emoji || '';
@@ -233,6 +283,7 @@ const tagModule = {
     },
 
     _createOverlayHost() {
+        weLog.debug('tags', '→ _createOverlayHost');
         const overlay = document.createElement('div');
         overlay.className = 'tag-picker-overlay';
         overlay.dataset.overlay = 'true';
@@ -244,6 +295,7 @@ const tagModule = {
     },
 
     openTagPicker(filePath, onSave, existingTag = null) {
+        weLog.info('tags', '→ openTagPicker 开始', { filePath, isExisting: !!existingTag });
         const overlay = this._createOverlayHost();
         overlay.innerHTML = `<div class="tag-picker">
             <div class="tag-picker-header">
@@ -420,24 +472,31 @@ const tagModule = {
         overlay.querySelector('.tag-picker-close').onclick = closeOverlay;
         overlay.querySelector('.btn-cancel').onclick = closeOverlay;
         overlay.querySelector('.btn-save').onclick = async () => {
-            if (existingTag) {
-                const updatedTag = { ...existingTag, label: selectedLabel, color: selectedColor, emoji: selectedEmoji };
-                await this.updateTag(filePath, existingTag.id, {
-                    label: selectedLabel,
-                    color: selectedColor,
-                    emoji: selectedEmoji
-                });
-                await this.trackTagUsage(updatedTag);
-                onSave(updatedTag);
-            } else {
-                const tag = await this.addTag(filePath, selectedLabel, selectedColor, selectedEmoji);
-                onSave(tag);
+            weLog.info('tags', 'openTagPicker: 点击保存', { filePath, isExisting: !!existingTag, label: selectedLabel });
+            try {
+                if (existingTag) {
+                    const updatedTag = { ...existingTag, label: selectedLabel, color: selectedColor, emoji: selectedEmoji };
+                    await this.updateTag(filePath, existingTag.id, {
+                        label: selectedLabel,
+                        color: selectedColor,
+                        emoji: selectedEmoji
+                    });
+                    await this.trackTagUsage(updatedTag);
+                    onSave(updatedTag);
+                } else {
+                    const tag = await this.addTag(filePath, selectedLabel, selectedColor, selectedEmoji);
+                    onSave(tag);
+                }
+                closeOverlay();
+                weLog.info('tags', '← openTagPicker 保存完成');
+            } catch (e) {
+                weLog.error('tags', 'openTagPicker 保存失败', e && e.stack ? e.stack : String(e));
             }
-            closeOverlay();
         };
     },
 
     openThumbnailPicker(filePath, onSave) {
+        weLog.info('tags', '→ openThumbnailPicker 开始', { filePath });
         const overlay = this._createOverlayHost();
         overlay.innerHTML = `<div class="tag-picker">
             <div class="tag-picker-header">
@@ -486,12 +545,19 @@ const tagModule = {
             item.className = 'thumb-item';
             item.textContent = imgName;
             item.onclick = async () => {
-                const imageData = await weAPI.readFile(this.currentProjectPath, '_images/' + imgName);
-                if (imageData.success) {
-                    const dataUri = imageData.content;
-                    await this.setThumbnail(filePath, dataUri);
-                    currentThumbContainer.innerHTML = `<img src="${dataUri}" />`;
-                    onSave?.(dataUri);
+                weLog.info('tags', 'openThumbnailPicker: 选择已有图片', { filePath, imgName });
+                try {
+                    const imageData = await weAPI.readFile(this.currentProjectPath, '_images/' + imgName);
+                    if (imageData.success) {
+                        const dataUri = imageData.content;
+                        await this.setThumbnail(filePath, dataUri);
+                        currentThumbContainer.innerHTML = `<img src="${dataUri}" />`;
+                        onSave?.(dataUri);
+                    } else {
+                        weLog.warn('tags', 'openThumbnailPicker: 读取图片失败', { imgName });
+                    }
+                } catch (e) {
+                    weLog.error('tags', 'openThumbnailPicker 选择图片失败', e && e.stack ? e.stack : String(e));
                 }
             };
             thumbList.appendChild(item);
@@ -501,30 +567,42 @@ const tagModule = {
         uploadInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            weLog.info('tags', 'openThumbnailPicker: 上传图片', { filePath, fileName: file.name, fileSize: file.size });
             const reader = new FileReader();
             reader.onload = async () => {
-                const dataUri = reader.result;
-                const imageName = 'thumb_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-                await this.storeImage(imageName, dataUri);
-                await this.setThumbnail(filePath, dataUri);
-                currentThumbContainer.innerHTML = `<img src="${dataUri}" />`;
-                onSave?.(dataUri);
-                thumbList.innerHTML = '';
-                this.availableImages.forEach(imgName => {
-                    const item = document.createElement('div');
-                    item.className = 'thumb-item';
-                    item.textContent = imgName;
-                    item.onclick = async () => {
-                        const imageData = await weAPI.readFile(this.currentProjectPath, '_images/' + imgName);
-                        if (imageData.success) {
-                            const imgUri = imageData.content;
-                            await this.setThumbnail(filePath, imgUri);
-                            currentThumbContainer.innerHTML = `<img src="${imgUri}" />`;
-                            onSave?.(imgUri);
-                        }
-                    };
-                    thumbList.appendChild(item);
-                });
+                try {
+                    const dataUri = reader.result;
+                    const imageName = 'thumb_' + Date.now() + '_' + file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+                    await this.storeImage(imageName, dataUri);
+                    await this.setThumbnail(filePath, dataUri);
+                    currentThumbContainer.innerHTML = `<img src="${dataUri}" />`;
+                    onSave?.(dataUri);
+                    thumbList.innerHTML = '';
+                    this.availableImages.forEach(imgName => {
+                        const item = document.createElement('div');
+                        item.className = 'thumb-item';
+                        item.textContent = imgName;
+                        item.onclick = async () => {
+                            try {
+                                const imageData = await weAPI.readFile(this.currentProjectPath, '_images/' + imgName);
+                                if (imageData.success) {
+                                    const imgUri = imageData.content;
+                                    await this.setThumbnail(filePath, imgUri);
+                                    currentThumbContainer.innerHTML = `<img src="${imgUri}" />`;
+                                    onSave?.(imgUri);
+                                } else {
+                                    weLog.warn('tags', 'openThumbnailPicker: 重新读取图片失败', { imgName });
+                                }
+                            } catch (err) {
+                                weLog.error('tags', 'openThumbnailPicker 重新选择图片失败', err && err.stack ? err.stack : String(err));
+                            }
+                        };
+                        thumbList.appendChild(item);
+                    });
+                    weLog.info('tags', 'openThumbnailPicker: 上传图片完成');
+                } catch (err) {
+                    weLog.error('tags', 'openThumbnailPicker 上传图片失败', err && err.stack ? err.stack : String(err));
+                }
             };
             reader.readAsDataURL(file);
         };

@@ -2,30 +2,41 @@
 let currentAccount = null;
 
 async function loadAccount() {
+    weLog.info('account', '→ loadAccount 开始');
     try {
         const result = await weAPI.getAccount();
         if (result.success && result.account) {
+            weLog.info('account', 'loadAccount: 获取账户成功', { name: result.account.name });
             currentAccount = result.account;
             await loadAccountAvatar();
+        } else {
+            weLog.info('account', 'loadAccount: 无账户或获取失败');
         }
         return currentAccount;
     } catch (e) {
-        console.error('Failed to load account:', e);
+        weLog.error('account', 'loadAccount 失败', e && e.stack ? e.stack : String(e));
         return null;
     }
 }
 
 async function loadAccountAvatar() {
-    if (!currentAccount) return;
+    weLog.info('account', '→ loadAccountAvatar');
+    if (!currentAccount) { weLog.warn('account', 'loadAccountAvatar: currentAccount 不存在'); return; }
     try {
         const result = await weAPI.getAccountAvatar(currentAccount);
         if (result.success) {
             currentAccount.avatarDataUrl = result.dataUrl;
+            weLog.info('account', '← loadAccountAvatar 完成');
+        } else {
+            weLog.warn('account', 'loadAccountAvatar: 获取头像失败');
         }
-    } catch (e) {}
+    } catch (e) {
+        weLog.error('account', 'loadAccountAvatar 失败', e && e.stack ? e.stack : String(e));
+    }
 }
 
 function updateAccountUI() {
+    weLog.info('account', '→ updateAccountUI', { hasAccount: !!currentAccount });
     if (!currentAccount) {
         updateAvatarButton(null);
         updateOwnerDisplay(null);
@@ -36,8 +47,9 @@ function updateAccountUI() {
 }
 
 function updateAvatarButton(account) {
+    weLog.debug('account', '→ updateAvatarButton', { hasAccount: !!account });
     const avatarEl = document.getElementById('account-avatar');
-    if (!avatarEl) return;
+    if (!avatarEl) { weLog.warn('account', 'updateAvatarButton: account-avatar 元素不存在'); return; }
 
     if (account && account.avatarDataUrl) {
         avatarEl.innerHTML = `<img src="${account.avatarDataUrl}" alt="avatar" />`;
@@ -49,9 +61,10 @@ function updateAvatarButton(account) {
 }
 
 function updateOwnerDisplay(account) {
+    weLog.debug('account', '→ updateOwnerDisplay', { hasAccount: !!account });
     const nameEl = document.getElementById('owner-name');
     const avatarEl = document.getElementById('owner-avatar');
-    if (!nameEl) return;
+    if (!nameEl) { weLog.warn('account', 'updateOwnerDisplay: owner-name 元素不存在'); return; }
 
     if (account) {
         nameEl.textContent = account.name;
@@ -67,40 +80,43 @@ function updateOwnerDisplay(account) {
 }
 
 function getAccount() {
+    weLog.debug('account', '→ getAccount');
     return currentAccount;
 }
 
 // 生成首字母头像 (data URL)
 function generateInitialAvatar(name, color) {
+    weLog.info('account', '→ generateInitialAvatar', { name });
     const initial = (name || '?').charAt(0).toUpperCase();
     const canvas = document.createElement('canvas');
     canvas.width = 64;
     canvas.height = 64;
     const ctx = canvas.getContext('2d');
-    
+
     if (!color) {
         const colors = ['#00897B', '#36F4E4', '#4DEE57', '#0078d4', '#88c0d0', '#5e81ac', '#bd93f9', '#ff79c6'];
         color = colors[initial.charCodeAt(0) % colors.length];
     }
-    
+
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(32, 32, 32, 0, Math.PI * 2);
     ctx.fill();
-    
+
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 32px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(initial, 32, 34);
-    
+
     return canvas.toDataURL('image/png');
 }
 
 // ========== 账户标签页 ==========
 function createAccountTab() {
+    weLog.info('account', '→ createAccountTab 开始');
     const id = 'account';
-    if (tabs[id]) { switchTab(id); return; }
+    if (tabs[id]) { weLog.info('account', 'createAccountTab: 已存在 account 标签，切换过去'); switchTab(id); return; }
     const content = document.createElement('div');
     content.className = 'account-page';
 
@@ -108,6 +124,7 @@ function createAccountTab() {
     const accountName = currentAccount?.name || '';
     const accountDisplayName = currentAccount?.displayName || '';
     const avatarDataUrl = currentAccount?.avatarDataUrl || '';
+    weLog.info('account', 'createAccountTab', { isNew, accountName });
 
     content.innerHTML = `
         <div class="account-page-wrapper">
@@ -149,11 +166,13 @@ function createAccountTab() {
 
     // 上传头像
     const fileInput = content.querySelector('#account-avatar-file');
-    content.querySelector('#account-btn-upload').onclick = () => fileInput.click();
+    content.querySelector('#account-btn-upload').onclick = () => { weLog.info('account', 'createAccountTab: 点击上传头像'); fileInput.click(); };
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        weLog.info('account', 'createAccountTab: 选择头像文件', { name: file.name, size: file.size });
         if (file.size > 2 * 1024 * 1024) {
+            weLog.warn('account', 'createAccountTab: 头像超过2MB', { size: file.size });
             alert(t('ui.avatar_too_large') || '头像不能超过2MB');
             return;
         }
@@ -163,12 +182,14 @@ function createAccountTab() {
             const preview = content.querySelector('#account-avatar-preview');
             preview.innerHTML = `<img src="${tempAvatarDataUrl}" alt="avatar" />`;
             content.querySelector('#account-btn-remove').disabled = false;
+            weLog.info('account', 'createAccountTab: 头像读取完成');
         };
         reader.readAsDataURL(file);
     };
 
     // 移除头像
     content.querySelector('#account-btn-remove').onclick = () => {
+        weLog.info('account', 'createAccountTab: 点击移除头像');
         tempAvatarDataUrl = '';
         const nameInput = content.querySelector('#account-name-input');
         const preview = content.querySelector('#account-avatar-preview');
@@ -192,12 +213,15 @@ function createAccountTab() {
     content.querySelector('#account-btn-submit').onclick = async () => {
         const name = content.querySelector('#account-name-input').value.trim();
         const displayName = content.querySelector('#account-display-input').value.trim();
+        weLog.info('account', 'createAccountTab: 点击保存', { name, displayName, isNew });
 
         if (!name) {
+            weLog.warn('account', 'createAccountTab: 账户名称为空');
             alert(t('ui.account_name_required') || '请输入账户名称');
             return;
         }
         if (name.length < 2) {
+            weLog.warn('account', 'createAccountTab: 账户名称过短', { length: name.length });
             alert(t('ui.account_name_too_short') || '账户名称至少2个字符');
             return;
         }
@@ -211,6 +235,7 @@ function createAccountTab() {
 
         const result = await weAPI.saveAccount(accountData);
         if (result.success) {
+            weLog.info('account', 'createAccountTab: 保存账户成功', { name });
             currentAccount = result.account || accountData;
             if (tempAvatarDataUrl) {
                 currentAccount.avatarDataUrl = tempAvatarDataUrl;
@@ -221,6 +246,7 @@ function createAccountTab() {
             closeTab(id);
             showNotification(isNew ? (t('ui.account_created') || '账户创建成功') : (t('ui.account_updated') || '账户已更新'));
         } else {
+            weLog.error('account', 'createAccountTab: 保存账户失败', result.error);
             alert(t('ui.save_failed') + ': ' + result.error);
         }
     };
@@ -230,15 +256,18 @@ function createAccountTab() {
     if (deleteBtn) {
         deleteBtn.onclick = () => {
             if (!currentAccount) return;
+            weLog.info('account', 'createAccountTab: 点击删除账户');
             if (!confirm(t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。')) return;
             if (!confirm(t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。')) return;
             weAPI.deleteAccount().then(result => {
                 if (result.success) {
+                    weLog.info('account', 'createAccountTab: 删除账户成功');
                     currentAccount = null;
                     updateAccountUI();
                     closeTab(id);
                     showNotification(t('ui.account_deleted') || '账户已删除');
                 } else {
+                    weLog.error('account', 'createAccountTab: 删除账户失败', result.error);
                     alert(t('ui.delete_failed') + ': ' + result.error);
                 }
             });
@@ -246,4 +275,5 @@ function createAccountTab() {
     }
 
     addTab(id, t('ui.account') || '账户', content, true);
+    weLog.info('account', '← createAccountTab 完成');
 }

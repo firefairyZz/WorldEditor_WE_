@@ -68,4 +68,7 @@ contextBridge.exposeInMainWorld('weAPI', {
 
     // 检查更新
     checkUpdate: () => ipcRenderer.invoke('check-update'),
+
+    // 渲染进程日志（写入 ./log/JS/renderer.log）
+    writeLog: (level, module, message, dataStr) => ipcRenderer.send('renderer-log', level, module, message, dataStr),
 });

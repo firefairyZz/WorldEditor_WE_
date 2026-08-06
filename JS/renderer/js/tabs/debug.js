@@ -3,6 +3,7 @@ let debugPanel = null;
 let debugLog = [];
 
 function logDebug(category, message) {
+    weLog.debug('debug', '→ logDebug', { category, message });
     const time = new Date().toLocaleTimeString();
     debugLog.unshift({ time, category, message });
     if (debugLog.length > 50) debugLog.pop();
@@ -10,6 +11,7 @@ function logDebug(category, message) {
 }
 
 function toggleDebugPanel() {
+    weLog.info('debug', '→ toggleDebugPanel', { isOpen: !!debugPanel });
     if (debugPanel) {
         closeDebugPanel();
     } else {
@@ -18,6 +20,7 @@ function toggleDebugPanel() {
 }
 
 function openDebugPanel() {
+    weLog.info('debug', '→ openDebugPanel');
     debugPanel = document.createElement('div');
     debugPanel.className = 'debug-panel';
     debugPanel.innerHTML = `
@@ -52,10 +55,12 @@ function openDebugPanel() {
 
     debugPanel.querySelector('.debug-btn-close').onclick = closeDebugPanel;
     debugPanel.querySelector('.debug-btn-reload').onclick = () => {
+        weLog.info('debug', 'openDebugPanel: 点击 Reload');
         logDebug('Action', 'Reloading app...');
         setTimeout(() => location.reload(), 300);
     };
     debugPanel.querySelector('.debug-btn-devtools').onclick = () => {
+        weLog.info('debug', 'openDebugPanel: 点击 DevTools');
         weAPI.toggleDevTools();
     };
 
@@ -67,13 +72,17 @@ function openDebugPanel() {
 }
 
 function closeDebugPanel() {
+    weLog.info('debug', '→ closeDebugPanel');
     if (debugPanel) {
         debugPanel.remove();
         debugPanel = null;
+    } else {
+        weLog.warn('debug', 'closeDebugPanel: debugPanel 不存在');
     }
 }
 
 function updateDebugPanel() {
+    weLog.debug('debug', '→ updateDebugPanel');
     if (!debugPanel) return;
 
     // 更新状态
@@ -103,9 +112,11 @@ function updateDebugPanel() {
 }
 
 async function handleDebugAction(action) {
+    weLog.info('debug', '→ handleDebugAction', { action });
     switch (action) {
         case 'create-test': {
             const name = 'TestProject_' + Date.now().toString(36);
+            weLog.info('debug', 'handleDebugAction: create-test', { name });
             logDebug('Action', `Creating test project: ${name}`);
             try {
                 const folder = await weAPI.getDefaultProjectPath(name);
@@ -117,11 +128,13 @@ async function handleDebugAction(action) {
                     logDebug('Error', `Create failed: ${result.error}`);
                 }
             } catch (e) {
+                weLog.error('debug', 'handleDebugAction create-test 失败', e && e.stack ? e.stack : String(e));
                 logDebug('Error', e.message);
             }
             break;
         }
         case 'delete-all-test': {
+            weLog.info('debug', 'handleDebugAction: delete-all-test');
             logDebug('Action', 'Deleting all test projects...');
             try {
                 const projects = await weAPI.getRecentProjects();
@@ -135,20 +148,24 @@ async function handleDebugAction(action) {
                 logDebug('Success', `Deleted ${count} test projects`);
                 showNotification(`已删除 ${count} 个测试项目`);
             } catch (e) {
+                weLog.error('debug', 'handleDebugAction delete-all-test 失败', e && e.stack ? e.stack : String(e));
                 logDebug('Error', e.message);
             }
             break;
         }
         case 'list-projects': {
+            weLog.info('debug', 'handleDebugAction: list-projects');
             try {
                 const projects = await weAPI.getRecentProjects();
                 logDebug('Info', `Recent projects (${projects.length}): ${projects.join(', ') || 'none'}`);
             } catch (e) {
+                weLog.error('debug', 'handleDebugAction list-projects 失败', e && e.stack ? e.stack : String(e));
                 logDebug('Error', e.message);
             }
             break;
         }
         case 'dump-state': {
+            weLog.info('debug', 'handleDebugAction: dump-state');
             const state = {
                 activeTabId,
                 tabs: Object.keys(tabs).map(id => ({
@@ -165,6 +182,7 @@ async function handleDebugAction(action) {
             break;
         }
         case 'clear-cache': {
+            weLog.info('debug', 'handleDebugAction: clear-cache');
             Object.keys(tabs).forEach(id => {
                 if (tabs[id] && tabs[id].fileCache) {
                     tabs[id].fileCache = {};
@@ -174,6 +192,8 @@ async function handleDebugAction(action) {
             showNotification('缓存已清空');
             break;
         }
+        default:
+            weLog.warn('debug', 'handleDebugAction: 未知 action', { action });
     }
     updateDebugPanel();
 }
@@ -181,6 +201,7 @@ async function handleDebugAction(action) {
 // Ctrl+Shift+D 切换 Debug 面板
 document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd' || e.code === 'KeyD')) {
+        weLog.info('debug', 'keydown: 匹配 Ctrl+Shift+D 切换 Debug 面板');
         e.preventDefault();
         e.stopPropagation();
         toggleDebugPanel();

@@ -1,7 +1,8 @@
 // ========== 新建项目 ==========
 function createNewProjectTab() {
+    weLog.info('project', '→ createNewProjectTab 开始');
     const id = 'new-project';
-    if (tabs[id]) { switchTab(id); return; }
+    if (tabs[id]) { weLog.debug('project', 'createNewProjectTab: 标签已存在，切换过去'); switchTab(id); return; }
     const content = document.createElement('div');
     content.className = 'new-project-page';
     content.innerHTML = `
@@ -133,6 +134,7 @@ function createNewProjectTab() {
     content.querySelector('#create-project-submit').onclick = async () => {
         const name = nameInput.value.trim();
         if (!name) {
+            weLog.warn('project', 'createNewProjectTab: 项目名称为空');
             nameError.textContent = t('ui.name_required') || 'Project name is required';
             nameError.classList.add('prominent');
             nameInput.classList.add('input-error');
@@ -149,9 +151,11 @@ function createNewProjectTab() {
         const projectMode = content.querySelector('input[name="project-mode"]:checked')?.value || 'rich';
         const shouldPin = content.querySelector('#new-project-pin')?.checked || false;
         try {
+            weLog.info('project', 'createNewProjectTab: 开始创建项目', { name, template, projectMode, shouldPin });
             const folder = await weAPI.getDefaultProjectPath(name);
             const result = await weAPI.createProject(folder, name, desc, template, projectMode);
             if (result.success) {
+                weLog.info('project', 'createNewProjectTab: 项目创建成功', { folder });
                 if (shouldPin) {
                     await weAPI.togglePinProject(folder);
                 }
@@ -159,10 +163,12 @@ function createNewProjectTab() {
                 openProjectDirectly({ folder, name, fileList: result.fileList, projectMode: result.projectMode, owner: result.owner });
                 showNotification(t('ui.project_created') || '项目已创建');
             } else {
+                weLog.warn('project', 'createNewProjectTab: 项目创建失败', { error: result.error });
                 nameError.textContent = (t('ui.create_failed') || 'Create failed') + ': ' + result.error;
                 nameError.classList.add('prominent');
             }
         } catch (e) {
+            weLog.error('project', 'createNewProjectTab 创建项目失败', e && e.stack ? e.stack : String(e));
             nameError.textContent = (t('ui.create_error') || 'Error') + ': ' + e.message;
             nameError.classList.add('prominent');
         }
@@ -174,27 +180,33 @@ function createNewProjectTab() {
 
 // ========== 打开项目 ==========
 async function openProject() {
+    weLog.info('project', '→ openProject 开始');
     const folder = await weAPI.selectFolder();
     if (folder) openProjectByPath(folder);
+    else weLog.debug('project', 'openProject: 用户未选择文件夹');
 }
 
 async function openProjectByPath(folder) {
+    weLog.info('project', '→ openProjectByPath 开始', { folder });
     const result = await weAPI.openProject(folder);
-    if (!result.success) { showNotification(t('ui.open_failed') + ': ' + result.error); return; }
+    if (!result.success) { weLog.warn('project', 'openProjectByPath: 打开项目失败', { error: result.error }); showNotification(t('ui.open_failed') + ': ' + result.error); return; }
     openProjectDirectly(result);
     showNotification(t('ui.project_opened') || '项目已打开');
 }
 
 async function openProjectDirectly({ folder, name, fileList, projectMode, owner }) {
+    weLog.info('project', '→ openProjectDirectly 开始', { folder, name, projectMode, fileCount: fileList ? fileList.length : 0 });
     const safeId = sanitizeId(folder);
-    if (tabs[safeId]) { switchTab(safeId); return; }
+    if (tabs[safeId]) { weLog.debug('project', 'openProjectDirectly: 标签已存在，切换过去', { safeId }); switchTab(safeId); return; }
 
     // 获取当前账户信息
     let currentAccountData = null;
     try {
         const accRes = await weAPI.getAccount();
         if (accRes.success) currentAccountData = accRes.account;
-    } catch(e) {}
+    } catch(e) {
+        weLog.error('project', 'openProjectDirectly: 获取账户信息失败', e && e.stack ? e.stack : String(e));
+    }
 
     const layout = document.createElement('div');
     layout.className = 'project-layout';
@@ -228,15 +240,18 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     };
     const endEdit = async (cancel = false) => {
         if (!editState.editing) return;
+        weLog.info('project', '→ endEdit 开始', { cancel });
         const newName = cancel ? editState.original : nameSpan.textContent.trim();
         nameSpan.contentEditable = 'false';
         projectNameEl.classList.remove('editing');
         editState.editing = false;
         if (cancel) {
+            weLog.debug('project', 'endEdit: 取消编辑，恢复原名');
             nameSpan.textContent = editState.original;
             return;
         }
         if (!newName) {
+            weLog.warn('project', 'endEdit: 新名称为空');
             nameSpan.textContent = editState.original;
             showNotification(t('ui.name_required') || '名称不能为空');
             return;
@@ -343,6 +358,7 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     pinProjectBtn.title = t('ui.pin_project') || '固定项目';
     pinProjectBtn.innerHTML = `<img class="pin-icon" src="../resources/pin.svg" alt="">`;
     pinProjectBtn.onclick = async () => {
+        weLog.info('project', '→ pinProjectBtn 点击', { folder });
         const result = await weAPI.togglePinProject(folder);
         if (result.success) {
             pinProjectBtn.classList.toggle('active', result.pinned);
@@ -395,9 +411,11 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     setupSearch(safeId);
     setupSortToggle(safeId);
     if (fileList.includes('README.txt')) openProjectFile(safeId, 'README.txt');
+    weLog.info('project', '← openProjectDirectly 完成', { safeId });
 }
 
 function setupSidebarResizer(resizer, sidebar) {
+    weLog.info('project', '→ setupSidebarResizer 开始');
     let dragging = false;
     let startX = 0;
     let startWidth = 0;
@@ -430,8 +448,12 @@ function setupSidebarResizer(resizer, sidebar) {
 
 // ========== 删除项目 ==========
 async function deleteProject(safeId) {
+    weLog.info('project', '→ deleteProject 开始', { safeId });
     const project = tabs[safeId];
-    if (!project || !project.projectPath) return;
+    if (!project || !project.projectPath) {
+        weLog.warn('project', 'deleteProject: project 或 projectPath 不存在', { safeId });
+        return;
+    }
 
     const projectName = project.title || safeId;
     const projectPath = project.projectPath;
@@ -466,16 +488,19 @@ async function deleteProject(safeId) {
 
     dialog.querySelector('.btn-confirm').onclick = async () => {
         closeDialog();
+        weLog.info('project', 'deleteProject: 用户确认删除', { projectName, projectPath });
         // 先同步关闭标签页释放文件占用，再删除
         doCloseTab(safeId);
         const result = await weAPI.deleteProject(projectPath);
         if (result.success) {
+            weLog.info('project', 'deleteProject: 项目删除成功', { projectName });
             showNotification((t('ui.project_deleted') || '项目已删除') + ': ' + projectName);
             // 刷新最近项目列表
             if (window.refreshRecentProjects) {
                 await window.refreshRecentProjects();
             }
         } else {
+            weLog.warn('project', 'deleteProject: 项目删除失败', { error: result.error });
             alert((t('ui.delete_failed') || '删除失败') + ': ' + result.error);
         }
     };

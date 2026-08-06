@@ -7,8 +7,10 @@
     <!-- 本地 Quill（defer：不阻塞首屏，执行顺序仍优先于依赖它的业务脚本） -->
     <link rel="stylesheet" href="lib/quill.snow.css">
     <link rel="stylesheet" href="lib/katex.min.css">
+    <link rel="stylesheet" href="lib/logicflow-core.css">
     <script src="lib/quill.js" defer></script>
     <script src="lib/katex.min.js" defer></script>
+    <script src="lib/logicflow-core.js" defer></script>
     <title>WE - World Editor</title>
 </head>
 <body>
@@ -64,6 +66,7 @@
     <div id="edit-menu-popup" class="menu-popup"></div>
 
     <!-- 脚本加载顺序很重要（defer：不阻塞 HTML 解析，按顺序执行，DOMContentLoaded 前完成） -->
+    <script src="js/tabs/logger.js" defer></script>
     <script src="js/tabs/globals.js" defer></script>
     <script src="js/tabs/i18n.js" defer></script>
     <script src="js/tabs/utils.js" defer></script>
@@ -81,6 +84,7 @@
     <script src="js/tabs/file-drop.js" defer></script>
     <script src="js/tabs/debug.js" defer></script>
     <script src="js/tabs/account.js" defer></script>
+    <script src="js/tabs/node-graph.js" defer></script>
     <script src="js/tabs/init.js" defer></script>
 </body>
 </html>

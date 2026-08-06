@@ -1,48 +1,60 @@
 function refreshAllUITexts() {
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-        el.textContent = t(el.dataset.i18n);
-    });
-    document.querySelectorAll('[data-i18n-title]').forEach(el => {
-        if (el.dataset.i18nTitleActive && el.classList.contains('active')) {
-            el.title = t(el.dataset.i18nTitleActive);
-        } else {
-            el.title = t(el.dataset.i18nTitle);
-        }
-    });
-    updateFileMenuTexts();
-    if (typeof updateEditMenuTexts === 'function') updateEditMenuTexts();
-    if (tabs['welcome']) {
-        const welcomePage = tabs['welcome'].element.querySelector('.welcome-new');
-        if (welcomePage) {
-            welcomePage.querySelectorAll('.action-label[data-label-key]').forEach(label => {
-                label.textContent = t(label.dataset.labelKey);
-            });
-            const recentTitle = welcomePage.querySelector('.recent-title');
-            if (recentTitle) recentTitle.textContent = t('ui.recent_projects');
-        }
-    }
-    if (tabs['settings']) refreshSettingsTexts(tabs['settings'].element);
-    for (const id in tabs) {
-        const tab = tabs[id].tabElement;
-        if (!tab) continue;
-        let newTitle = '';
-        if (id === 'welcome') newTitle = t('ui.welcome_tab');
-        else if (id === 'settings') newTitle = t('ui.settings');
-        else if (id === 'new-project') newTitle = t('ui.new_project_tab');
-        if (newTitle) {
-            const closeBtn = tab.querySelector('.close-tab');
-            if (closeBtn) {
-                closeBtn.remove();
-                tab.textContent = newTitle;
-                tab.appendChild(closeBtn);
+    weLog.info('ui-refresh', '→ refreshAllUITexts 开始');
+    try {
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            el.textContent = t(el.dataset.i18n);
+        });
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            if (el.dataset.i18nTitleActive && el.classList.contains('active')) {
+                el.title = t(el.dataset.i18nTitleActive);
             } else {
-                tab.textContent = newTitle;
+                el.title = t(el.dataset.i18nTitle);
+            }
+        });
+        updateFileMenuTexts();
+        if (typeof updateEditMenuTexts === 'function') updateEditMenuTexts();
+        if (tabs['welcome']) {
+            weLog.info('ui-refresh', 'refreshAllUITexts: 刷新 welcome 标签');
+            const welcomePage = tabs['welcome'].element.querySelector('.welcome-new');
+            if (welcomePage) {
+                welcomePage.querySelectorAll('.action-label[data-label-key]').forEach(label => {
+                    label.textContent = t(label.dataset.labelKey);
+                });
+                const recentTitle = welcomePage.querySelector('.recent-title');
+                if (recentTitle) recentTitle.textContent = t('ui.recent_projects');
+            } else {
+                weLog.warn('ui-refresh', 'refreshAllUITexts: welcome 页面元素不存在');
             }
         }
+        if (tabs['settings']) refreshSettingsTexts(tabs['settings'].element);
+        for (const id in tabs) {
+            const tab = tabs[id].tabElement;
+            if (!tab) continue;
+            let newTitle = '';
+            if (id === 'welcome') newTitle = t('ui.welcome_tab');
+            else if (id === 'settings') newTitle = t('ui.settings');
+            else if (id === 'new-project') newTitle = t('ui.new_project_tab');
+            if (newTitle) {
+                const closeBtn = tab.querySelector('.close-tab');
+                if (closeBtn) {
+                    closeBtn.remove();
+                    tab.textContent = newTitle;
+                    tab.appendChild(closeBtn);
+                } else {
+                    tab.textContent = newTitle;
+                }
+            }
+        }
+        weLog.info('ui-refresh', '← refreshAllUITexts 完成');
+    } catch (e) {
+        weLog.error('ui-refresh', 'refreshAllUITexts 失败', e && e.stack ? e.stack : String(e));
+        throw e;
     }
 }
 
 function refreshSettingsTexts(container) {
+    weLog.info('ui-refresh', '→ refreshSettingsTexts 开始');
+    try {
     // 导航项
     container.querySelector('.nav-item[data-section="general"]').textContent = t('ui.general');
     const tagsNav = container.querySelector('.nav-item[data-section="tags"]');
@@ -206,5 +218,10 @@ function refreshSettingsTexts(container) {
         autoSaveSelect.options[1].textContent = '5 ' + t('ui.minutes');
         autoSaveSelect.options[2].textContent = '10 ' + t('ui.minutes');
         autoSaveSelect.options[3].textContent = '15 ' + t('ui.minutes');
+    }
+    weLog.info('ui-refresh', '← refreshSettingsTexts 完成');
+    } catch (e) {
+        weLog.error('ui-refresh', 'refreshSettingsTexts 失败', e && e.stack ? e.stack : String(e));
+        throw e;
     }
 }

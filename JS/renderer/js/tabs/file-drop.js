@@ -15,6 +15,7 @@ const TEXT_EXTENSIONS = ['.txt', '.md', '.doc', '.docx', '.rtf', '.log', '.csv',
 // 检测是否有真实的外部文件拖入（区别于内部拖拽）
 // 关键区分：外部文件拖放时 dataTransfer.types 包含 'Files'
 function hasExternalFiles(dataTransfer) {
+    weLog.debug('file-drop', '→ hasExternalFiles');
     if (!dataTransfer) return false;
     if (dataTransfer.types && Array.from(dataTransfer.types).includes('Files')) {
         return true;
@@ -29,12 +30,14 @@ function hasExternalFiles(dataTransfer) {
 
 // 初始化文件拖放
 function initFileDragDrop() {
+    weLog.info('file-drop', '→ initFileDragDrop 开始');
     const contentContainer = document.getElementById('content-container');
-    if (!contentContainer) return;
+    if (!contentContainer) { weLog.warn('file-drop', 'initFileDragDrop: content-container 元素不存在'); return; }
 
     // 检测内部拖拽开始（用于区分外部/内部拖放）
     // 关键原理：外部文件拖放不会触发 dragstart，只有内部元素拖拽才会触发
     document.addEventListener('dragstart', (e) => {
+        weLog.debug('file-drop', 'dragstart: 内部拖拽开始');
         internalDragActive = true;
         dragStartElement = e.target;
     });
@@ -48,6 +51,7 @@ function initFileDragDrop() {
         resetDragWatchdog();
 
         const targetArea = getDropTargetArea(e.target);
+        weLog.debug('file-drop', 'dragenter', { targetArea });
         if (targetArea === 'editor') {
             // 编辑器区域：显示插入指示线，不显示大覆盖层
             hideDragOverlay();
@@ -107,7 +111,7 @@ function initFileDragDrop() {
         clearDragState();
 
         // 内部拖拽：不处理
-        if (wasInternalDrag) return;
+        if (wasInternalDrag) { weLog.debug('file-drop', 'drop: 内部拖拽，忽略'); return; }
 
         e.preventDefault();
 
@@ -117,6 +121,7 @@ function initFileDragDrop() {
         if (files.length > 0) {
             const targetArea = getDropTargetArea(e.target);
             const onEditor = targetArea === 'editor';
+            weLog.info('file-drop', 'drop: 外部文件拖放', { fileCount: files.length, targetArea, onEditor });
 
             // 编辑器区域：在 drop 位置插入
             let insertIndex = null;
@@ -127,10 +132,12 @@ function initFileDragDrop() {
             await handleDroppedFiles(files, onEditor, insertIndex);
         }
     });
+    weLog.info('file-drop', '← initFileDragDrop 完成');
 }
 
 // 清理所有拖拽状态
 function clearDragState() {
+    weLog.debug('file-drop', '→ clearDragState');
     clearDragWatchdog();
     isDragging = false;
     internalDragActive = false;
@@ -142,6 +149,7 @@ function clearDragState() {
 // 获取拖放目标区域
 // 返回: 'editor' | 'content' | 'filetree' | null
 function getDropTargetArea(target) {
+    weLog.debug('file-drop', '→ getDropTargetArea');
     if (!target || !target.closest) return null;
     if (target.closest('.ql-editor, .quill-wrapper')) return 'editor';
     if (target.closest('.project-sidebar, .file-tree-wrapper')) return 'filetree';
@@ -153,7 +161,8 @@ function getDropTargetArea(target) {
 
 // 在指定坐标处显示插入指示线
 function showDropIndicatorAt(clientX, clientY) {
-    if (!quill) return;
+    weLog.debug('file-drop', '→ showDropIndicatorAt', { clientX, clientY });
+    if (!quill) { weLog.warn('file-drop', 'showDropIndicatorAt: quill 不存在'); return; }
 
     if (!dropIndicator) {
         dropIndicator = document.createElement('div');
@@ -226,13 +235,15 @@ function hideDropIndicator() {
 
 // 根据坐标获取 Quill 的插入 index
 function getQuillIndexFromPoint(x, y) {
-    if (!quill) return null;
+    weLog.debug('file-drop', '→ getQuillIndexFromPoint', { x, y });
+    if (!quill) { weLog.warn('file-drop', 'getQuillIndexFromPoint: quill 不存在'); return null; }
 
     const editor = quill.root;
     const range = document.caretRangeFromPoint(x, y);
 
     if (!range || !editor.contains(range.startContainer)) {
         // 鼠标在空白区域：插入到文档末尾
+        weLog.debug('file-drop', 'getQuillIndexFromPoint: 空白区域，插入到末尾');
         return quill.getLength();
     }
 
@@ -276,6 +287,7 @@ function getQuillIndexFromPoint(x, y) {
 // ===== 大覆盖层（文件树/主内容区使用）=====
 
 function showDragOverlay(targetArea) {
+    weLog.info('file-drop', '→ showDragOverlay', { targetArea });
     currentDragTarget = targetArea;
 
     if (!dragOverlay) {
@@ -348,6 +360,7 @@ function showDragOverlay(targetArea) {
 }
 
 function hideDragOverlay() {
+    weLog.debug('file-drop', '→ hideDragOverlay');
     if (dragOverlay) {
         dragOverlay.style.display = 'none';
     }
@@ -357,6 +370,7 @@ function hideDragOverlay() {
 // ===== 文件处理 =====
 
 function isImageFile(file) {
+    weLog.debug('file-drop', '→ isImageFile', { name: file && file.name });
     const ext = getFileExt(file.name);
     if (IMAGE_EXTENSIONS.includes(ext)) return true;
     if (file.type && file.type.startsWith('image/')) return true;
@@ -364,11 +378,13 @@ function isImageFile(file) {
 }
 
 function getFileExt(filename) {
+    weLog.debug('file-drop', '→ getFileExt', { filename });
     const lastDot = filename.lastIndexOf('.');
     return lastDot >= 0 ? filename.substring(lastDot).toLowerCase() : '';
 }
 
 async function handleDroppedFiles(fileList, onEditor, insertIndex) {
+    weLog.info('file-drop', '→ handleDroppedFiles 开始', { fileCount: fileList.length, onEditor, insertIndex });
     const imageFiles = [];
     const textFiles = [];
     const skippedFiles = [];
@@ -386,11 +402,13 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
             }
         }
     }
+    weLog.info('file-drop', 'handleDroppedFiles: 文件分类', { imageCount: imageFiles.length, textCount: textFiles.length, skippedCount: skippedFiles.length });
 
     const canInsertDirectly = onEditor && quill;
     const project = tabs[activeTabId];
 
     if (!canInsertDirectly && (!project || !project.projectPath)) {
+        weLog.warn('file-drop', 'handleDroppedFiles: 未打开项目且无法直接插入');
         showNotification(t('ui.open_project_first') || '请先打开一个项目');
         return;
     }
@@ -402,6 +420,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
 
     // 处理图片文件
     if (imageFiles.length > 0) {
+        weLog.info('file-drop', 'handleDroppedFiles: 处理图片文件', { count: imageFiles.length, onEditor });
         if (onEditor && quill) {
             let currentIndex = insertIndex;
             for (const file of imageFiles) {
@@ -411,7 +430,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                     insertedCount++;
                     if (currentIndex !== null && currentIndex !== undefined) currentIndex++;
                 } catch (err) {
-                    console.error('Insert image error:', err);
+                    weLog.error('file-drop', 'handleDroppedFiles: 插入图片失败', err && err.stack ? err.stack : String(err));
                     failedCount++;
                 }
             }
@@ -428,10 +447,11 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                     if (res.success) {
                         importedCount++;
                     } else {
+                        weLog.warn('file-drop', 'handleDroppedFiles: storeImage 返回失败', { imageName });
                         failedCount++;
                     }
                 } catch (err) {
-                    console.error('Save image error:', err);
+                    weLog.error('file-drop', 'handleDroppedFiles: 保存图片失败', err && err.stack ? err.stack : String(err));
                     failedCount++;
                 }
             }
@@ -450,6 +470,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
 
     // 处理文本文件
     if (textFiles.length > 0) {
+        weLog.info('file-drop', 'handleDroppedFiles: 处理文本文件', { count: textFiles.length, onEditor });
         if (onEditor && quill) {
             let currentIndex = insertIndex;
             for (const file of textFiles) {
@@ -461,7 +482,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                         currentIndex += content.length + 1;
                     }
                 } catch (err) {
-                    console.error('Insert text error:', err);
+                    weLog.error('file-drop', 'handleDroppedFiles: 插入文本失败', err && err.stack ? err.stack : String(err));
                     failedCount++;
                 }
             }
@@ -477,6 +498,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                     const filename = file.name;
 
                     if (project.fileList && project.fileList.includes(filename)) {
+                        weLog.info('file-drop', 'handleDroppedFiles: 文件已存在，询问覆盖', { filename });
                         if (!confirm(`${t('ui.file_exists') || '文件'} "${filename}" ${t('ui.already_exists') || '已存在，是否覆盖？'}`)) {
                             continue;
                         }
@@ -486,10 +508,11 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                     if (res.success) {
                         importedCount++;
                     } else {
+                        weLog.warn('file-drop', 'handleDroppedFiles: saveFile 返回失败', { filename });
                         failedCount++;
                     }
                 } catch (err) {
-                    console.error('Import file error:', err);
+                    weLog.error('file-drop', 'handleDroppedFiles: 导入文件失败', err && err.stack ? err.stack : String(err));
                     failedCount++;
                 }
             }
@@ -514,11 +537,13 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
     if (failedCount > 0) parts.push(`${t('ui.failed') || '失败'} ${failedCount} ${t('ui.files') || '个'}`);
     if (skippedFiles.length > 0) parts.push(`${t('ui.skipped') || '跳过'} ${skippedFiles.length} ${t('ui.files') || '个'}`);
     if (parts.length > 0) showNotification(parts.join(', '));
+    weLog.info('file-drop', '← handleDroppedFiles 完成', { inserted: totalInserted, imported: importedCount, failed: failedCount, skipped: skippedFiles.length });
 }
 
 // 插入图片到 Quill 编辑器（支持指定 index）
 function insertImageIntoEditor(dataUrl, index) {
-    if (!quill) return;
+    weLog.info('file-drop', '→ insertImageIntoEditor', { index });
+    if (!quill) { weLog.warn('file-drop', 'insertImageIntoEditor: quill 不存在'); return; }
 
     if (index === undefined || index === null) {
         let range = quill.getSelection(true);
@@ -531,11 +556,13 @@ function insertImageIntoEditor(dataUrl, index) {
 
     quill.insertEmbed(index, 'image', dataUrl, Quill.sources.USER);
     quill.setSelection(index + 1, 0, Quill.sources.SILENT);
+    weLog.info('file-drop', '← insertImageIntoEditor 完成');
 }
 
 // 插入文本到 Quill 编辑器（支持指定 index）
 function insertTextIntoEditor(text, index) {
-    if (!quill) return;
+    weLog.info('file-drop', '→ insertTextIntoEditor', { index, textLength: text ? text.length : 0 });
+    if (!quill) { weLog.warn('file-drop', 'insertTextIntoEditor: quill 不存在'); return; }
 
     if (index === undefined || index === null) {
         let range = quill.getSelection(true);
@@ -548,10 +575,12 @@ function insertTextIntoEditor(text, index) {
 
     quill.insertText(index, text, Quill.sources.USER);
     quill.setSelection(index + text.length, 0, Quill.sources.SILENT);
+    weLog.info('file-drop', '← insertTextIntoEditor 完成');
 }
 
 // 读取文件为文本
 function readFileAsText(file) {
+    weLog.debug('file-drop', '→ readFileAsText', { name: file && file.name });
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result);
@@ -562,6 +591,7 @@ function readFileAsText(file) {
 
 // 读取文件为 Data URL（base64）
 function readFileAsDataURL(file) {
+    weLog.debug('file-drop', '→ readFileAsDataURL', { name: file && file.name });
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve(e.target.result);
@@ -572,6 +602,7 @@ function readFileAsDataURL(file) {
 
 // 拖拽看门狗：如果拖放事件中断，自动清理
 function resetDragWatchdog() {
+    weLog.debug('file-drop', '→ resetDragWatchdog');
     clearDragWatchdog();
     dragWatchdog = setTimeout(() => {
         clearDragState();
@@ -579,6 +610,7 @@ function resetDragWatchdog() {
 }
 
 function clearDragWatchdog() {
+    weLog.debug('file-drop', '→ clearDragWatchdog');
     if (dragWatchdog) {
         clearTimeout(dragWatchdog);
         dragWatchdog = null;
