@@ -11,14 +11,125 @@ document.getElementById('btn-minimize')?.addEventListener('click', () => weAPI.m
 document.getElementById('btn-maximize')?.addEventListener('click', () => weAPI.maximize());
 document.getElementById('btn-close')?.addEventListener('click', () => weAPI.close());
 
-// ========== 标题栏拖动：使用 -webkit-app-region:drag（Electron Chromium 层处理） ==========
-// 不使用 koffi/SendMessage：mica-electron 的 removeCaption() 已移除 Windows NC caption，
-// SendMessage(WM_NCLBUTTONDOWN,HTCAPTION) 没有 NC 处理器接收 → 无效。
-// -webkit-app-region:drag 由 Electron 在 Chromium 层实现 hit-test 返回 HTCAPTION，
-// Windows 收到后原生处理：拖动跟随、Aero snap、双击最大化还原过渡动画。
-// 最大化状态下 drag 不还原窗口是 frameless+transparent 的已知问题，由主进程的
-// 'unmaximize' 事件 + 上次 bounds 恢复机制解决（见 main.js createMainWindow）。
-// 此处保留双击标题栏空白 → 最大化/还原（保险，drag region 双击系统也会触发）。
+// ========== 标题栏拖动 ==========
+// 双轨制：
+//   · 非最大化 → -webkit-app-region:drag 原生处理（Aero snap + 双击还原 + 系统动画）
+//   · 最大化 → CSS 把 #title-bar 切到 no-drag → JS mousedown 接管：
+//       记录起点 → mousemove 位移超过阈值（5px）才触发 unmaximize + 重定位 + 跟随
+//       → 单击不缩小，只有真正拖动才还原
+//   · 最大化时主进程 setResizable(false) 禁用边缘缩放
+(function setupTitlebarDragRestore() {
+    const titleBar = document.getElementById('title-bar');
+    if (!titleBar) { weLog.warn('tab-manager', 'setupTitlebarDragRestore: #title-bar 不存在'); return; }
+
+    // 跟踪当前是否最大化（由主进程 maximize/unmaximize 事件同步）
+    let isMaximized = false;
+    function setMaximized(m) {
+        isMaximized = m;
+        // 保险：非最大化时强制移除 class，避免残留导致 #title-bar 卡在 no-drag
+        if (m) document.body.classList.add('win-maximized');
+        else document.body.classList.remove('win-maximized');
+        const titleBarEl = document.getElementById('title-bar');
+        weLog.info('tab-manager', `[titlebar] setMaximized(${m}) → win-maximized class=${document.body.classList.contains('win-maximized')} | #title-bar app-region=${titleBarEl ? getComputedStyle(titleBarEl).webkitAppRegion : 'N/A'}`);
+    }
+    window.weAPI.onMaximizedChanged(setMaximized);
+    // 初始化：主动查询当前最大化状态（防止启动即最大化时事件已过）
+    window.weAPI.isMaximized().then(m => {
+        setMaximized(m);
+        weLog.info('tab-manager', `[titlebar] init query isMaximized = ${m}`);
+    }).catch(() => {});
+
+    function isInteractive(el) {
+        return !!el?.closest('button, input, textarea, select, [contenteditable="true"], .file-menu-btn, a, .tab-item');
+    }
+
+    const DRAG_THRESHOLD = 5; // 拖动阈值（px），超过才触发还原，避免单击误触发
+
+    // mousedown：最大化时 #title-bar 已是 no-drag（CSS），事件正常到达渲染进程
+    // 不立即还原，等 mousemove 超过阈值才触发（单击不缩小）
+    titleBar.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (isInteractive(e.target)) return;
+        if (!isMaximized) return; // 非最大化：交给原生 drag region
+
+        const startX = e.screenX;
+        const startY = e.screenY;
+        const clientX = e.clientX;
+        const clientY = e.clientY;
+        const maximizedWidth = window.innerWidth;
+
+        let dragging = false;
+        let grabX = clientX, grabY = clientY;
+
+        const onMove = async (ev) => {
+            if (!dragging) {
+                const dx = ev.screenX - startX;
+                const dy = ev.screenY - startY;
+                if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+                // 超过阈值：触发还原 + 按比例缩放重定位
+                dragging = true;
+                try {
+                    const res = await window.weAPI.restoreForDrag(ev.screenX, ev.screenY, clientX, clientY, maximizedWidth);
+                    if (res && typeof res.grabX === 'number') { grabX = res.grabX; grabY = res.grabY; }
+                } catch (err) {
+                    weLog.error('tab-manager', 'restoreForDrag 失败', err);
+                    cleanup();
+                    return;
+                }
+            }
+            // 跟随鼠标
+            const nx = ev.screenX - grabX;
+            const ny = ev.screenY - grabY;
+            window.weAPI.moveWindowTo(nx, ny);
+        };
+
+        const onUp = (ev) => {
+            cleanup();
+            // 拖动结束：检测是否靠近屏幕边缘 → 触发 Aero snap
+            // JS setPosition 拖动不触发系统 snap，需手动检测+触发
+            if (dragging && ev) {
+                const SNAP_THRESHOLD = 8; // 屏幕边缘吸附阈值（px）
+                // 获取鼠标所在屏幕（通过 screenX/screenY）
+                const sx = ev.screenX, sy = ev.screenY;
+                // 检测：靠近顶部 → 最大化；靠近左/右 → 半屏
+                let snap = null;
+                if (sy <= SNAP_THRESHOLD) snap = 'top';
+                else if (sx <= SNAP_THRESHOLD) snap = 'left';
+                else if (sx >= (window.screen.availWidth || screen.width) - SNAP_THRESHOLD) snap = 'right';
+                if (snap) {
+                    window.weAPI.aeroSnap(snap).catch(() => {});
+                }
+            }
+            // 拖动结束：检查还原后状态是否正确
+            setTimeout(() => {
+                const titleBarEl = document.getElementById('title-bar');
+                weLog.info('tab-manager', `[titlebar] drag end | isMaximized=${isMaximized} | win-maximized class=${document.body.classList.contains('win-maximized')} | #title-bar app-region=${titleBarEl ? getComputedStyle(titleBarEl).webkitAppRegion : 'N/A'}`);
+            }, 100);
+        };
+
+        function cleanup() {
+            window.removeEventListener('mousemove', onMove, true);
+            window.removeEventListener('mouseup', onUp, true);
+        }
+
+        window.addEventListener('mousemove', onMove, true);
+        window.addEventListener('mouseup', onUp, true);
+    });
+
+    // 双击标题栏空白 → 最大化/还原（drag region 双击系统也会触发，此处保险）
+    let lastClick = 0;
+    titleBar.addEventListener('mouseup', (e) => {
+        if (e.button !== 0) return;
+        if (isInteractive(e.target)) return;
+        const now = Date.now();
+        if (now - lastClick < 450) {
+            window.weAPI.maximize();
+            lastClick = 0;
+        } else {
+            lastClick = now;
+        }
+    });
+})();
 
 // ========== 置顶按钮 ==========
 const PIN_SVG_SRC = '../resources/pin.svg';

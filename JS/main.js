@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
@@ -860,15 +860,47 @@ function createMainWindow() {
     mainWin.once('ready-to-show', () => { saveNormalBounds(); });
 
     // 最大化/还原事件：通知渲染进程 + 延迟重应用材质（280ms 等 DWM 动画完成）
+    // 不使用 setResizable()：会影响 Aero snap，导致还原后 snap 失效。
+    // 改用 will-resize 事件阻止最大化时的边缘缩放。
+    // __isMaximized 标记：true = 最大化（含 Aero snap 最大化，isMaximized() 可能返回 false）
     mainWin.on('maximize', () => {
         console.log('[maximize] event fired');
+        mainWin.__isMaximized = true;
         mainWin.webContents.send('maximized-change', true);
         scheduleApplyMaterial();
     });
     mainWin.on('unmaximize', () => {
         console.log('[unmaximize] event fired');
+        mainWin.__isMaximized = false;
         mainWin.webContents.send('maximized-change', false);
         scheduleApplyMaterial();
+    });
+    // 最大化时阻止边缘缩放（frameless 窗口原生 resize 边缘仍可触发）
+    mainWin.on('will-resize', (event) => {
+        if (mainWin.__isMaximized) {
+            event.preventDefault();
+        }
+    });
+    // Aero snap 最大化检测：拖到顶部触发系统最大化，不经过 Electron maximize() API，
+    // isMaximized() 返回 false → __isMaximized 没同步 → 渲染进程状态错误
+    // 监听 resize 后检测窗口是否占据整个工作区（4px 容差）
+    let aeroSnapTimer = null;
+    mainWin.on('resize', () => {
+        if (aeroSnapTimer) clearTimeout(aeroSnapTimer);
+        aeroSnapTimer = setTimeout(() => {
+            if (!mainWin || mainWin.isDestroyed()) return;
+            const b = mainWin.getBounds();
+            const wa = screen.getDisplayMatching(b).workArea;
+            // 检测是否占据整个工作区（Aero snap 最大化）
+            const isSnapMaximized = !mainWin.isMaximized() &&
+                Math.abs(b.x - wa.x) <= 4 && Math.abs(b.y - wa.y) <= 4 &&
+                Math.abs(b.width - wa.width) <= 4 && Math.abs(b.height - wa.height) <= 4;
+            if (isSnapMaximized && !mainWin.__isMaximized) {
+                console.log('[aero-snap] detected snap maximize');
+                mainWin.__isMaximized = true;
+                mainWin.webContents.send('maximized-change', true);
+            }
+        }, 100);
     });
 
     // 首次显示：show() 触发库的 show 事件（初始化 frameless caption 等），
@@ -877,12 +909,103 @@ function createMainWindow() {
     mainWin.once('ready-to-show', () => {
         mainWin.show();
         applyMicaMaterial(mainWin, appSettings.backgroundMaterial);
+        // 主动发送当前最大化状态，确保渲染进程初始化 win-maximized class
+        // （防止 maximize 事件在渲染进程 IPC 监听器注册前触发）
+        mainWin.webContents.send('maximized-change', mainWin.isMaximized());
     });
 
     ipcMain.on('minimize-window', () => mainWin.minimize());
-    ipcMain.on('maximize-window', () => mainWin.isMaximized() ? mainWin.unmaximize() : mainWin.maximize());
+    // 最大化/还原切换：处理三种状态
+    //   1. isMaximized()=true → 标准 unmaximize
+    //   2. __isMaximized=true 但 isMaximized()=false → Aero snap 假最大化，手动 setBounds 还原
+    //   3. 都不是 → maximize()
+    ipcMain.on('maximize-window', () => {
+        if (!mainWin || mainWin.isDestroyed()) return;
+        if (mainWin.isMaximized()) {
+            mainWin.unmaximize();
+        } else if (mainWin.__isMaximized) {
+            // Aero snap 最大化（isMaximized 返回 false），手动还原到上次正常 bounds
+            console.log('[maximize-btn] restoring from aero-snap maximize');
+            mainWin.__isMaximized = false;
+            mainWin.webContents.send('maximized-change', false);
+            if (lastNormalBounds) {
+                mainWin.setBounds(lastNormalBounds);
+            } else {
+                // 无记录 bounds，用默认尺寸
+                mainWin.setSize(1000, 700, true);
+                mainWin.center();
+            }
+        } else {
+            mainWin.maximize();
+        }
+    });
     ipcMain.on('unmaximize-window', () => { if (mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()) mainWin.unmaximize(); });
     ipcMain.on('close-window', () => mainWin.close());
+    ipcMain.handle('is-maximized', () => !!(mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()));
+
+    // 最大化→拖动还原：渲染进程在最大化窗口上 mousedown 时发起
+    // 主进程 unmaximize + 等 resize 生效 + 按比例缩放后的抓取偏移重定位
+    // （光标在标题栏的相对位置保持不变：最大化中心 → 还原中心）
+    ipcMain.handle('restore-for-drag', async (event, cursorX, cursorY, clientX, clientY, maximizedWidth) => {
+        if (!mainWin || mainWin.isDestroyed()) return null;
+        if (mainWin.isMaximized()) {
+            // 等 unmaximize 的 resize 生效，确保 getSize() 返回还原后尺寸再重定位
+            await new Promise(resolve => {
+                let done = false;
+                const onResize = () => {
+                    if (done) return;
+                    done = true;
+                    mainWin.removeListener('resize', onResize);
+                    resolve();
+                };
+                mainWin.once('resize', onResize);
+                mainWin.unmaximize(); // 触发 unmaximize 事件 → __isMaximized=false + setMaximized(false)
+                setTimeout(onResize, 150); // 兜底：resize 未触发也继续
+            });
+        }
+        const [restoredWidth] = mainWin.getSize();
+        // 按 X 比例缩放：最大化时光标在标题栏的相对位置 → 还原后同一相对位置
+        const ratio = maximizedWidth > 0 ? (clientX / maximizedWidth) : 0.5;
+        const grabX = ratio * restoredWidth;
+        const grabY = clientY; // 标题栏顶部对齐，Y 无需缩放
+        mainWin.setPosition(Math.round(cursorX - grabX), Math.round(cursorY - grabY));
+        return { grabX, grabY };
+    });
+    // 逐帧跟随：渲染进程 mousemove 调用，移动窗口到指定屏幕坐标
+    ipcMain.on('move-window-to', (event, x, y) => {
+        if (!mainWin || mainWin.isDestroyed()) return;
+        if (mainWin.isMaximized()) return; // 还原未完成，跳过
+        mainWin.setPosition(Math.round(x), Math.round(y));
+    });
+    // Aero snap 手动触发：JS setPosition 拖动不触发系统 snap，靠 mouseup 边缘检测手动触发
+    // top → 最大化；left → 左半屏；right → 右半屏
+    ipcMain.handle('aero-snap', async (event, snap) => {
+        if (!mainWin || mainWin.isDestroyed()) return false;
+        if (mainWin.__isMaximized) {
+            // 已最大化状态拖动还原后 snap：先确保 __isMaximized=false
+            mainWin.__isMaximized = false;
+            mainWin.webContents.send('maximized-change', false);
+        }
+        const cursor = screen.getCursorScreenPoint();
+        const display = screen.getDisplayMatching({ x: cursor.x, y: cursor.y, width: 1, height: 1 });
+        const wa = display.workArea;
+        if (snap === 'top') {
+            // 顶部 → 最大化
+            mainWin.setBounds({ x: wa.x, y: wa.y, width: wa.width, height: wa.height });
+            mainWin.__isMaximized = true;
+            mainWin.webContents.send('maximized-change', true);
+        } else if (snap === 'left') {
+            // 左半屏
+            mainWin.setBounds({ x: wa.x, y: wa.y, width: Math.floor(wa.width / 2), height: wa.height });
+            mainWin.webContents.send('maximized-change', false);
+        } else if (snap === 'right') {
+            // 右半屏
+            const halfW = Math.floor(wa.width / 2);
+            mainWin.setBounds({ x: wa.x + halfW, y: wa.y, width: wa.width - halfW, height: wa.height });
+            mainWin.webContents.send('maximized-change', false);
+        }
+        return true;
+    });
 
     ipcMain.handle('set-always-on-top', (event, flag) => {
         mainWin.setAlwaysOnTop(flag);

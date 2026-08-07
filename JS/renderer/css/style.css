@@ -165,6 +165,13 @@ body.theme-light {
 .title-drag {
     flex: 1; -webkit-app-region: drag; height: 100%;
 }
+/* 最大化时把整个标题栏切到 no-drag：否则 mousedown 在合成器层被 drag region 吞掉，
+   preventDefault 也无效 → 渲染进程收不到事件 → JS 接管还原无法触发。
+   切到 no-drag 后，mousedown 正常到达渲染进程，由 tab-manager.js 接管。 */
+body.win-maximized #title-bar,
+body.win-maximized .title-drag {
+    -webkit-app-region: no-drag;
+}
 .window-controls {
     display: flex;
     margin-left: auto;

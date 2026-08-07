@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld('weAPI', {
     unmaximize: () => ipcRenderer.send('unmaximize-window'),
     close: () => ipcRenderer.send('close-window'),
     onMaximizedChanged: (callback) => ipcRenderer.on('maximized-change', (event, isMaximized) => callback(isMaximized)),
+    isMaximized: () => ipcRenderer.invoke('is-maximized'),
+    // 最大化→拖动还原：unmaximize + 按比例缩放抓取偏移重定位，返回 {grabX, grabY}
+    restoreForDrag: (cursorX, cursorY, clientX, clientY, maximizedWidth) =>
+        ipcRenderer.invoke('restore-for-drag', cursorX, cursorY, clientX, clientY, maximizedWidth),
+    // 逐帧跟随鼠标移动窗口
+    moveWindowTo: (x, y) => ipcRenderer.send('move-window-to', x, y),
+    // Aero snap 手动触发（top/left/right）
+    aeroSnap: (snap) => ipcRenderer.invoke('aero-snap', snap),
 
     getDefaultProjectPath: (name) => ipcRenderer.invoke('get-default-project-path', name),
     createProject: (folder, name, desc, template, projectMode) =>
