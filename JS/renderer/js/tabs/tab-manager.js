@@ -636,7 +636,7 @@ function doCloseTab(id) {
     // 清理独立节点图实例
     if (typeof nodeGraphInstances !== 'undefined' && nodeGraphInstances[id]) {
         weLog.debug('tab-manager', `doCloseTab: 清理独立节点图实例 (id=${id})`);
-        try { nodeGraphInstances[id].lf.clearData(); } catch (e) {}
+        try { if (nodeGraphInstances[id].engine) nodeGraphInstances[id].engine.destroy(); } catch (e) {}
         delete nodeGraphInstances[id];
     }
     // 清理嵌入项目编辑区的节点图实例

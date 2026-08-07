@@ -91,6 +91,7 @@ input, textarea, .ql-editor, [contenteditable] {
     --bg-main: #1e1e1e;
     --bg-sidebar: #252526;
     --bg-toolbar: #252526;
+    --bg-input: #3c3c3c;
     --border: #3c3c3c;
     --text: #cccccc;
     --text-secondary: #999999;
@@ -122,6 +123,7 @@ body.theme-light {
     --bg-main: #ffffff;
     --bg-sidebar: #f5f5f5;
     --bg-toolbar: #fafafa;
+    --bg-input: #ffffff;
     --border: #e0e0e0;
     --text: #1e1e1e;
     --text-secondary: #666666;
@@ -1202,14 +1204,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     height: 100%;
     background: var(--bg-main);
 }
-/* 覆盖 LogicFlow 画布默认白底，适配暗色主题 */
+/* 节点图画布容器：填满父容器（NGEngine 会设置 position:relative 等） */
 .node-graph-embed .node-graph-canvas,
-.node-graph-embed .lf-canvas,
-.node-graph-embed svg.lf-svg {
-    background: var(--bg-main) !important;
-}
-/* LogicFlow 内部 grid 层背景 */
-.node-graph-embed .lf-grid {
+.node-graph-layout .node-graph-canvas {
+    width: 100%;
+    height: 100%;
     background: var(--bg-main) !important;
 }
 #quill-toolbar {
@@ -2694,10 +2693,12 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     display: flex !important;
     flex-wrap: wrap;
     gap: 0;
-    padding: 4px 6px;
+    padding: 6px 8px;
     border-bottom: 1px solid var(--border) !important;
     background: var(--bg-sidebar);
     align-items: center;
+    min-height: 44px;
+    box-sizing: border-box;
 }
 .editor-toolbar .ql-formats {
     display: inline-flex;
@@ -2707,7 +2708,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 }
 .editor-toolbar .ql-formats.last-format { border-right: none; }
 .editor-toolbar button {
-    width: 28px; height: 28px;
+    width: 32px; height: 32px;
     border: none;
     background: transparent;
     color: var(--text);
@@ -2722,8 +2723,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .editor-toolbar button:hover { background: var(--hover-bg); color: var(--accent); }
 .editor-toolbar button.ql-active { color: var(--accent); background: var(--hover-bg); }
 .editor-toolbar select {
-    height: 28px;
-    min-width: 28px;
+    height: 32px;
+    min-width: 32px;
     background: var(--bg-main);
     color: var(--text);
     border: none;
@@ -2736,8 +2737,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 28px;
-    min-width: 28px;
+    height: 32px;
+    min-width: 32px;
     width: auto;
     border-radius: 0;
     padding: 0;
@@ -2747,16 +2748,16 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     align-items: center;
     justify-content: center;
     padding: 0 4px;
-    height: 28px;
+    height: 32px;
     width: auto;
 }
 .editor-toolbar .ql-snow .ql-color-picker,
 .editor-toolbar .ql-snow .ql-icon-picker {
-    width: 28px;
+    width: 32px;
 }
 .editor-toolbar .ql-snow .ql-align {
     width: auto;
-    min-width: 28px;
+    min-width: 32px;
 }
 
 /* Quill snow 主题暗色适配：覆盖硬编码的 #444 图标色和 #fff 下拉背景 */
@@ -4235,14 +4236,16 @@ body.material-active * {
     display: flex;
     align-items: center;
     gap: 0;
-    padding: 4px 8px;
+    padding: 6px 8px;
     background: var(--bg-toolbar, #f0f0f0);
     border-bottom: 1px solid var(--border, #ccc);
     flex-shrink: 0;
+    min-height: 44px;
+    box-sizing: border-box;
 }
 .ng-btn {
-    width: 26px;
-    height: 26px;
+    width: 32px;
+    height: 32px;
     border: none;
     border-radius: 0;
     background: transparent;
@@ -4251,7 +4254,7 @@ body.material-active * {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px 6px;
+    padding: 0 6px;
     transition: background var(--transition-fast, 0.15s);
 }
 .ng-btn:hover {
@@ -4262,9 +4265,9 @@ body.material-active * {
 }
 .ng-toolbar-divider {
     width: 1px;
-    height: 18px;
+    height: 22px;
     background: var(--border, #ccc);
-    margin: 0 4px;
+    margin: 0 6px;
     flex-shrink: 0;
 }
 .ng-toolbar-spacer {
@@ -4284,6 +4287,14 @@ body.material-active * {
     width: 100%;
     height: 100%;
 }
+/* G6 画布样式 */
+.node-graph-canvas canvas {
+    display: block;
+}
+/* G6 选中节点阴影效果 */
+.g6-node-item-selected {
+    filter: drop-shadow(0 0 6px rgba(74, 144, 217, 0.5));
+}
 /* 工具按钮选中态 */
 .node-graph-toolbar .ng-btn.active {
     background: var(--accent, #4a90d9);
@@ -4300,4 +4311,376 @@ body.material-active * {
     pointer-events: none;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.5px;
+}
+/* 节点图主体布局（画布 + 属性面板） */
+.node-graph-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+/* 属性面板 */
+.ng-property-panel {
+    width: 260px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border, #ccc);
+    background: var(--bg-sidebar, #fff);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    transition: width 0.2s ease;
+}
+.ng-property-panel.collapsed {
+    overflow: hidden;
+}
+.ng-panel-header {
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary, #888);
+    border-bottom: 1px solid var(--border, #ccc);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    background: var(--bg-secondary, rgba(0,0,0,0.02));
+}
+.ng-panel-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ng-panel-toggle {
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+    padding: 0;
+}
+.ng-panel-toggle:hover {
+    background: var(--hover-bg, rgba(0,0,0,0.06));
+    color: var(--text, #333);
+}
+.ng-zoom-label {
+    display: inline-block;
+    min-width: 42px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary, #888);
+    padding: 2px 4px;
+    border-radius: 3px;
+    background: var(--hover-bg, rgba(0,0,0,0.04));
+    cursor: default;
+    user-select: none;
+}
+.ng-property-panel.collapsed .ng-panel-empty,
+.ng-property-panel.collapsed .ng-panel-content {
+    display: none !important;
+}
+.ng-property-panel.collapsed .ng-panel-header {
+    padding: 10px 4px;
+    justify-content: center;
+}
+.ng-panel-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-secondary, #888);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+.ng-panel-empty-icon {
+    color: var(--text-secondary, #666);
+    opacity: 0.5;
+}
+.ng-panel-content {
+    padding: 12px;
+}
+.ng-prop-section {
+    margin-bottom: 16px;
+}
+.ng-prop-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text, #333);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border, #ddd);
+}
+.ng-panel-row {
+    margin-bottom: 10px;
+}
+.ng-panel-row > label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+    margin-bottom: 4px;
+}
+.ng-prop-name, .ng-prop-desc, .ng-prop-tag-input, .ng-prop-edge-label {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+.ng-prop-name:focus, .ng-prop-desc:focus, .ng-prop-tag-input:focus, .ng-prop-edge-label:focus {
+    border-color: var(--accent, #4a90d9);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74,144,217,0.15);
+}
+.ng-prop-desc {
+    resize: vertical;
+    font-family: inherit;
+    min-height: 60px;
+}
+.ng-prop-type {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    cursor: pointer;
+    box-sizing: border-box;
+}
+.ng-prop-layer-row { align-items: center; }
+.ng-prop-layer-btns {
+    display: flex;
+    gap: 4px;
+}
+.ng-layer-btn {
+    width: 32px; height: 28px;
+    padding: 0;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ng-layer-btn:hover { background: var(--hover-bg, rgba(0,0,0,0.06)); }
+/* ID 显示行 */
+.ng-prop-id-row .ng-prop-id {
+    flex: 1;
+    padding: 4px 8px;
+    background: var(--bg-input, #fff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12.5px;
+    color: var(--text-secondary, #666);
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ng-prop-id-row .ng-prop-id:hover {
+    border-color: var(--accent, #4a90d9);
+    color: var(--accent, #4a90d9);
+}
+.ng-prop-size-inputs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ng-prop-width, .ng-prop-height {
+    width: 60px;
+    padding: 4px 6px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    font-size: 13px;
+    box-sizing: border-box;
+    text-align: center; /* 非输入态居中 */
+}
+.ng-prop-width:focus, .ng-prop-height:focus {
+    border-color: var(--accent, #4a90d9);
+    outline: none;
+    text-align: left; /* 输入态左对齐，便于编辑 */
+}
+.ng-prop-size-x {
+    color: var(--text-secondary, #888);
+    font-size: 14px;
+}
+.ng-prop-color-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ng-prop-color, .ng-prop-edge-color {
+    width: 36px;
+    height: 28px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    padding: 2px;
+    cursor: pointer;
+    background: var(--bg-input, #fff);
+}
+.ng-prop-color-reset, .ng-prop-edge-color-reset {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.ng-prop-color-reset:hover, .ng-prop-edge-color-reset:hover {
+    background: var(--hover-bg, rgba(0,0,0,0.06));
+}
+.ng-prop-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+    min-height: 0;
+}
+.ng-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    background: var(--accent-bg, rgba(74,144,217,0.1));
+    color: var(--accent, #4a90d9);
+    font-weight: 500;
+}
+.ng-tag-remove {
+    cursor: pointer;
+    font-style: normal;
+    opacity: 0.6;
+    font-size: 11px;
+}
+.ng-tag-remove:hover {
+    opacity: 1;
+}
+.ng-prop-files {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.ng-file {
+    font-size: 12px;
+    color: var(--text, #333);
+    padding: 4px 8px;
+    background: var(--hover-bg, rgba(0,0,0,0.04));
+    border-radius: 4px;
+    word-break: break-all;
+}
+.ng-file-empty {
+    font-size: 12px;
+    color: var(--text-secondary, #888);
+    font-style: italic;
+}
+/* Toggle switch for edge properties */
+.ng-prop-row-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-direction: row;
+}
+.ng-prop-row-toggle > label {
+    margin-bottom: 0;
+}
+.ng-prop-row-toggle .toggle-switch {
+    margin: 0;
+}
+.ng-prop-edge-type {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    font-size: 13px;
+    box-sizing: border-box;
+}
+.ng-prop-edge-type:focus {
+    border-color: var(--accent, #4a90d9);
+    outline: none;
+}
+/* 右键菜单 */
+.ng-context-menu {
+    position: fixed;
+    z-index: 99999;
+    min-width: 80px;
+    background: var(--bg-sidebar, #fff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding: 4px 0;
+}
+.ng-ctx-item {
+    padding: 6px 16px;
+    font-size: 13px;
+    color: var(--text, #333);
+    cursor: pointer;
+}
+.ng-ctx-item:hover {
+    background: var(--accent, #4a90d9);
+    color: #fff;
+}
+
+/* ========== NGEngine：纯 SVG 节点图引擎补充样式 ========== */
+.nge-svg {
+    display: block;
+    outline: none;
+    touch-action: none;
+}
+.nge-handle {
+    cursor: pointer;
+}
+.nge-handle:hover {
+    fill: var(--accent, #4a90d9);
+}
+.nge-port {
+    cursor: crosshair;
+}
+.nge-port:hover {
+    fill: var(--accent, #4a90d9);
+}
+.node-graph-layout {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+.node-graph-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    min-height: 0;
 }

@@ -853,6 +853,13 @@ function createSettingsTab() {
                 <label class="toggle-switch"><input type="checkbox" id="smart-brackets-toggle"><span class="toggle-slider"></span></label>
             </div>
         </div>
+        <div class="setting-group">
+            <div class="setting-group-title">${t('ui.node_graph_group') || '节点图'}</div>
+            <div class="setting-row">
+                <span>${t('ui.ng_hide_arrow_default') || '默认创建隐藏箭头连线'}</span>
+                <label class="toggle-switch"><input type="checkbox" id="ng-hide-arrow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+        </div>
     `;
 
     const aboutSection = document.createElement('div');
@@ -1040,6 +1047,11 @@ function createSettingsTab() {
         const tb = content.querySelector('#toolbar-show-toggle'); if (tb) tb.checked = s.toolbarShow !== false;
         const md = content.querySelector('#md-render-toggle'); if (md) md.checked = s.markdownRender !== false;
         const sb = content.querySelector('#smart-brackets-toggle'); if (sb) sb.checked = s.smartBrackets === true;
+        const ha = content.querySelector('#ng-hide-arrow-toggle'); if (ha) ha.checked = s.ngHideArrowByDefault === true;
+        // 同步到节点图全局设置
+        if (typeof ngDefaultSettings !== 'undefined') {
+            ngDefaultSettings.hideArrowByDefault = s.ngHideArrowByDefault === true;
+        }
         savedFontFamily = s.fontFamily || 'Microsoft YaHei';
         savedFontSize = s.fontSize || '16';
         if (s.autoSave) setupAutoSave(s.autoSave);
@@ -1521,6 +1533,7 @@ function createSettingsTab() {
         const tbVal = content.querySelector('#toolbar-show-toggle')?.checked ?? true;
         const mdVal = content.querySelector('#md-render-toggle')?.checked ?? true;
         const sbVal = content.querySelector('#smart-brackets-toggle')?.checked ?? false;
+        const haVal = content.querySelector('#ng-hide-arrow-toggle')?.checked ?? false;
 
         // 收集自定义快捷键
         const customShortcuts = collectCustomShortcuts(content);
@@ -1532,12 +1545,17 @@ function createSettingsTab() {
         await weAPI.setSettings({
             language: lang, theme: theme,
             colorPreset: colorPreset, customColors: customColors,
-            fontFamily: fontFamily, fontSize: fontSize,
+            'font-family': fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal, ngHideArrowByDefault: haVal,
             backgroundImageEnabled: bgImgEnabledVal, backgroundImage: bgImgNameVal, backgroundImageOpacity: bgImgOpacityVal,
             customShortcuts: customShortcuts
         });
+
+        // 同步节点图全局设置（保存后立即生效，无需重启）
+        if (typeof ngDefaultSettings !== 'undefined') {
+            ngDefaultSettings.hideArrowByDefault = haVal === true;
+        }
 
         // 应用窗口置顶
         await weAPI.setAlwaysOnTop(aotVal);

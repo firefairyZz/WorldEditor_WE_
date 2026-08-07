@@ -3,8 +3,8 @@ let wordCountTimer = null;
 let editorStats = { words: 0, chars: 0, headings: 0 };
 let markdownEditor = null;
 let markdownPreviewVisible = true;
-// 嵌入项目编辑区的节点图实例：safeId -> { lf, graphFile, dirty }
-const embeddedNodeGraphs = {};
+// 嵌入项目编辑区的节点图实例：safeId -> { engine, graphFile, dirty }
+var embeddedNodeGraphs = (typeof embeddedNodeGraphs !== 'undefined') ? embeddedNodeGraphs : {};
 
 // updateEditorStats 的防抖版本：减少打字过程中的布局抖动
 let _debouncedStatsTimer = null;
@@ -138,6 +138,33 @@ function getHeadingsFromMarkdown(text) {
     return headings;
 }
 
+// ========== fileCache 类型包裹工具 ==========
+// 【切回内容消失终极修复】不同文件类型（Quill / Markdown / 节点图 JSON）共用一个 fileCache 会互串 key，
+// 导致节点图 JSON 被写成 Quill HTML（"<p>...</p>"），再解析时 JSON.parse 直接失败渲染空画布。
+// 统一用 { __type, __content } 包裹，读取时校验类型，类型不匹配就当作没缓存。
+// 兼容旧缓存（纯字符串）：unwrap 时如果 value 是字符串就按 wantType 判断是否放行（用开头特征判断）。
+function _fcWrap(type, content) {
+    return { __type: type, __content: content };
+}
+function _fcUnwrap(wantType, value) {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === 'object' && value.__type) {
+        return value.__type === wantType ? value.__content : undefined;
+    }
+    // 兼容旧缓存（纯字符串）：用开头特征判断是不是 wantType 期望的内容，判断失败返回 undefined
+    if (typeof value === 'string') {
+        if (wantType === 'ngjson') {
+            const s = value.trimStart();
+            return (s[0] === '{' || s[0] === '[') ? value : undefined;
+        }
+        if (wantType === 'md') return value;    // md 纯文本，不强制判断（md 可以任何文本）
+        if (wantType === 'quill') return value; // quill HTML，不强制判断
+        if (wantType === 'text') return value;
+        return value;
+    }
+    return undefined;
+}
+
 async function openProjectFile(safeId, filename) {
     weLog.info('editor', '→ openProjectFile 开始', { safeId, filename });
     const project = tabs[safeId];
@@ -173,10 +200,12 @@ async function openProjectFile(safeId, filename) {
 
     // 清理旧的 Markdown 编辑器前暂存未保存内容
     if (markdownEditor) {
-        if (project.currentFile && project.currentFile !== filename && project.dirty) {
+        // 【防御】project.currentFile 必须不是 .node.json，防止 key 串到节点图缓存上
+        if (project.currentFile && project.currentFile !== filename && project.dirty
+            && !project.currentFile.endsWith('.node.json')) {
             weLog.info('editor', 'openProjectFile: 暂存 Markdown 未保存内容', { prevFile: project.currentFile });
             project.fileCache = project.fileCache || {};
-            project.fileCache[project.currentFile] = markdownEditor.value;
+            project.fileCache[project.currentFile] = _fcWrap('md', markdownEditor.value);
         }
         markdownEditor = null;
     }
@@ -198,21 +227,32 @@ async function openProjectFile(safeId, filename) {
     // 富文本模式继续原有逻辑
     if (projectMode !== 'markdown') {
         // 暂存当前文件的未保存内容
-        if (project.currentFile && project.currentFile !== filename && project.dirty && quill) {
+        // 【防御】project.currentFile 必须不是 .node.json（上一次可能是在编辑节点图，然后切另一个 README，
+        //    此时 quill 是旧实例、project.dirty=true、currentFile=节点图文件名 → 三个条件都满足会把 Quill HTML
+        //    写进 fileCache[节点图文件名]，直接覆盖 destroyEmbeddedNodeGraph 刚写好的节点图 JSON，导致
+        //    下次切回来 JSON.parse 失败渲染空画布）。
+        if (project.currentFile && project.currentFile !== filename && project.dirty && quill
+            && !project.currentFile.endsWith('.node.json')) {
             weLog.info('editor', 'openProjectFile: 暂存 Quill 未保存内容', { prevFile: project.currentFile });
             project.fileCache = project.fileCache || {};
-            project.fileCache[project.currentFile] = quill.root.innerHTML;
+            project.fileCache[project.currentFile] = _fcWrap('quill', quill.root.innerHTML);
         }
     }
 
     // 优先使用缓存的未保存内容，否则从磁盘读取
     let content;
     let fromCache = false;
-    if (project.fileCache && project.fileCache[filename] !== undefined) {
-        weLog.info('editor', 'openProjectFile: 从缓存读取内容');
-        content = project.fileCache[filename];
-        fromCache = true;
-    } else {
+    if (project.fileCache) {
+        // 先按 quill 类型解包（类型不匹配返回 undefined，然后 fallback 再按 text 解一次兼容纯文本旧缓存）
+        let cached = _fcUnwrap('quill', project.fileCache[filename]);
+        if (cached === undefined) cached = _fcUnwrap('text', project.fileCache[filename]);
+        if (cached !== undefined) {
+            weLog.info('editor', 'openProjectFile: 从缓存读取内容', { filename });
+            content = cached;
+            fromCache = true;
+        }
+    }
+    if (!fromCache) {
         weLog.info('editor', 'openProjectFile: 从磁盘读取文件', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
         if (!result.success) {
@@ -921,20 +961,25 @@ async function openMarkdownFile(safeId, filename) {
     }
 
     // 暂存当前文件
-    if (project.currentFile && project.currentFile !== filename && project.dirty && markdownEditor) {
+    if (project.currentFile && project.currentFile !== filename && project.dirty && markdownEditor
+        && !project.currentFile.endsWith('.node.json')) {
         weLog.info('editor', 'openMarkdownFile: 暂存当前 Markdown 文件', { prevFile: project.currentFile });
         project.fileCache = project.fileCache || {};
-        project.fileCache[project.currentFile] = markdownEditor.value;
+        project.fileCache[project.currentFile] = _fcWrap('md', markdownEditor.value);
     }
 
     // 读取文件内容
     let content;
     let fromCache = false;
-    if (project.fileCache && project.fileCache[filename] !== undefined) {
-        weLog.info('editor', 'openMarkdownFile: 从缓存读取内容');
-        content = project.fileCache[filename];
-        fromCache = true;
-    } else {
+    if (project.fileCache) {
+        const cached = _fcUnwrap('md', project.fileCache[filename]);
+        if (cached !== undefined) {
+            weLog.info('editor', 'openMarkdownFile: 从缓存读取内容', { filename });
+            content = cached;
+            fromCache = true;
+        }
+    }
+    if (!fromCache) {
         weLog.info('editor', 'openMarkdownFile: 从磁盘读取文件', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
         if (!result.success) {
@@ -1043,7 +1088,7 @@ async function openMarkdownFile(safeId, filename) {
     textarea.addEventListener('input', () => {
         weLog.debug('editor', 'openMarkdownFile textarea input: 触发实时预览/统计');
         project.fileCache = project.fileCache || {};
-        project.fileCache[filename] = textarea.value;
+        project.fileCache[filename] = _fcWrap('md', textarea.value);
         project.dirty = true;
         project.currentFile = filename;
         renderMarkdownPreview(textarea.value, preview);
@@ -1765,19 +1810,41 @@ async function saveCurrentFile(silent) {
     isSaving = true;
     pendingSave = false;
 
+    // 独立节点图标签页（非嵌入式）
+    if (activeTabId && activeTabId.startsWith('nodegraph-') && typeof nodeGraphInstances !== 'undefined' && nodeGraphInstances[activeTabId]) {
+        weLog.info('editor', 'saveCurrentFile: 走独立节点图保存分支', { tabId: activeTabId });
+        try {
+            if (typeof saveNodeGraph === 'function') await saveNodeGraph(activeTabId);
+        } catch (e) {
+            weLog.error('editor', 'saveCurrentFile: 独立节点图保存异常', e && e.stack ? e.stack : String(e));
+        } finally {
+            isSaving = false;
+            if (pendingSave) { setTimeout(() => { pendingSave = false; saveCurrentFile(silent); }, 0); }
+        }
+        return;
+    }
+
     // 嵌入节点图：走节点图保存逻辑
     if (embeddedNodeGraphs[activeTabId] && project.currentFile.endsWith('.node.json')) {
         weLog.info('editor', 'saveCurrentFile: 走嵌入节点图保存分支', { file: project.currentFile });
         try {
             const inst = embeddedNodeGraphs[activeTabId];
-            const data = inst.lf.getGraphData();
+            const data = inst.engine.getData();
             const content = JSON.stringify(data, null, 2);
             showNotification(t('ui.saving') || '正在保存...', 0);
             const res = await weAPI.saveFile(project.projectPath, project.currentFile, content);
             if (res.success) {
                 inst.dirty = false;
                 project.dirty = false;
-                if (project.fileCache) delete project.fileCache[project.currentFile];
+                // 【修复切回内容消失 #7】保存成功后双 key 清理缓存（完整路径 + basename）
+                // 不然下次切回来如果 basename key 还在，fromCache=true 会误标 dirty，给用户"未保存"假象
+                if (project.fileCache) {
+                    const cf = project.currentFile;
+                    delete project.fileCache[cf];
+                    if (cf.includes('/') || cf.includes('\\')) {
+                        delete project.fileCache[cf.split(/[\\/]/).pop()];
+                    }
+                }
                 const status = document.getElementById(`ng-status-${activeTabId}`);
                 if (status) status.textContent = '';
                 updateStatusBar();
@@ -1931,24 +1998,37 @@ function destroyEmbeddedNodeGraph(safeId) {
     weLog.info('editor', '→ destroyEmbeddedNodeGraph', { safeId });
     const inst = embeddedNodeGraphs[safeId];
     if (!inst) return;
+    const project = tabs[safeId];
     try {
-        if (inst.lf) {
-            // 保存脏状态到 fileCache 再销毁
-            if (inst.dirty) {
-                const project = tabs[safeId];
-                if (project) {
-                    project.fileCache = project.fileCache || {};
-                    try {
-                        const data = inst.lf.getGraphData();
-                        project.fileCache[inst.graphFile] = JSON.stringify(data, null, 2);
-                        weLog.debug('editor', 'destroyEmbeddedNodeGraph: 脏数据已缓存', { graphFile: inst.graphFile });
-                    } catch (e) {}
+        if (inst.engine) {
+            // 【修复切回内容消失 #1】不管 dirty 与否，一律把当前引擎数据写入 fileCache 暂存
+            // （dirty 标记可能因某些操作漏触发，宁可缓存一份"至少比磁盘旧内容新"的状态，
+            //  也不能直接丢内存数据去读磁盘）
+            if (project) {
+                project.fileCache = project.fileCache || {};
+                try {
+                    const data = inst.engine.getData();
+                    const jsonStr = JSON.stringify(data, null, 2);
+                    // 【修复切回内容消失 #2】fileCache key 双写：graphFile 和 basename(graphFile) 都存一份
+                    // 因为 openEmbeddedNodeGraph 的 filename 参数有时带 subpath，有时是纯文件名
+                    // 【终极修复 #类型包裹】用 _fcWrap('ngjson', ...) 包裹，防止 Quill HTML 覆盖 key
+                    const wrapped = _fcWrap('ngjson', jsonStr);
+                    project.fileCache[inst.graphFile] = wrapped;
+                    const base = inst.graphFile.includes('/') || inst.graphFile.includes('\\')
+                        ? inst.graphFile.split(/[\\/]/).pop()
+                        : inst.graphFile;
+                    if (base !== inst.graphFile) { project.fileCache[base] = wrapped; }
+                    weLog.debug('editor', 'destroyEmbeddedNodeGraph: 数据已缓存',
+                        { graphFile: inst.graphFile, base, dirty: inst.dirty, nodes: data.nodes.length, edges: data.edges.length });
+                } catch (e) {
+                    // 【修复切回内容消失 #3】不再静默吞异常，打印便于定位
+                    weLog.error('editor', 'destroyEmbeddedNodeGraph: 缓存写入失败', e && e.stack ? e.stack : String(e));
                 }
             }
-            inst.lf.destroy?.();
+            inst.engine.destroy?.();
         }
     } catch (e) {
-        weLog.warn('editor', 'destroyEmbeddedNodeGraph: 销毁异常', String(e));
+        weLog.warn('editor', 'destroyEmbeddedNodeGraph: 销毁异常', e && e.stack ? e.stack : String(e));
     }
     const embedEl = document.getElementById(`ng-embed-${safeId}`);
     if (embedEl) embedEl.innerHTML = '';
@@ -1960,7 +2040,7 @@ async function saveEmbeddedNodeGraph(safeId) {
     const project = tabs[safeId];
     if (!inst || !project) return;
     try {
-        const data = inst.lf.getGraphData();
+        const data = inst.engine.getData();
         const json = JSON.stringify(data, null, 2);
         const res = await weAPI.saveFile(project.projectPath, inst.graphFile, json);
         if (res.success) {
@@ -1993,65 +2073,52 @@ async function openEmbeddedNodeGraph(safeId, filename) {
     // 清理旧实例
     if (embeddedNodeGraphs[safeId]) destroyEmbeddedNodeGraph(safeId);
 
-    const LogicFlow = typeof getLogicFlowClass === 'function' ? getLogicFlowClass() : null;
-    if (!LogicFlow) {
-        weLog.warn('editor', 'openEmbeddedNodeGraph: LogicFlow 未加载');
-        embedEl.innerHTML = `<div style="padding:20px;color:var(--text-muted,#999)">节点图库未加载，请重启应用</div>`;
+    // 检查 NGEngine 是否可用
+    if (typeof NGEngine === 'undefined') {
+        weLog.warn('editor', 'openEmbeddedNodeGraph: NGEngine 未加载');
+        embedEl.innerHTML = `<div style="padding:20px;color:var(--text-muted,#999)">节点图引擎未加载，请重启应用</div>`;
         return;
     }
 
     // 构建内嵌节点图 UI
     embedEl.innerHTML = `
-        <div class="node-graph-toolbar">
-            <button class="ng-btn" data-tool="select" title="${t('ui.ng_select') || '选择/拖拽'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-7 2-3 7z"/></svg>
-            </button>
-            <div class="ng-toolbar-divider"></div>
-            <button class="ng-btn" data-tool="rect" title="${t('ui.ng_rect') || '矩形'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
-            </button>
-            <button class="ng-btn" data-tool="circle" title="${t('ui.ng_circle') || '圆形'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/></svg>
-            </button>
-            <button class="ng-btn" data-tool="diamond" title="${t('ui.ng_diamond') || '菱形'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4l8 8-8 8-8-8z"/></svg>
-            </button>
-            <button class="ng-btn" data-tool="ellipse" title="${t('ui.ng_ellipse') || '椭圆'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
-            </button>
-            <div class="ng-toolbar-divider"></div>
-            <button class="ng-btn" data-action="delete" title="${t('ui.ng_delete') || '删除选中'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>
-            </button>
-            <div class="ng-toolbar-divider"></div>
-            <button class="ng-btn" data-action="save" title="${t('ui.save') || '保存'}">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
-            </button>
-            <div class="ng-toolbar-spacer"></div>
-            <span class="ng-status" id="ng-status-${safeId}"></span>
-        </div>
-        <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
-            <div class="node-graph-canvas" id="ng-canvas-embed-${safeId}"></div>
-            <div class="ng-coords" id="ng-coords-${safeId}">0, 0</div>
+        ${typeof buildNodeGraphToolbarHTML === 'function' ? buildNodeGraphToolbarHTML(`ng-status-${safeId}`) : ''}
+        <div class="node-graph-body">
+            <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
+                <div class="node-graph-canvas" id="ng-canvas-embed-${safeId}"></div>
+                <div class="ng-coords" id="ng-coords-${safeId}" style="position:absolute;left:8px;bottom:8px;font-size:11px;font-family:monospace;color:var(--text-secondary,#888);pointer-events:none;z-index:3;background:rgba(0,0,0,0.03);padding:2px 6px;border-radius:3px;">0, 0</div>
+            </div>
+            ${typeof buildNodeGraphPropertyPanelHTML === 'function' ? buildNodeGraphPropertyPanelHTML() : ''}
         </div>
     `;
 
-    let lf;
+    const canvasEl = embedEl.querySelector(`#ng-canvas-embed-${safeId}`);
+    const wrapperEl = embedEl.querySelector('.node-graph-canvas-wrapper');
+    const coordsEl = embedEl.querySelector(`#ng-coords-${safeId}`);
+    const toolbar = embedEl.querySelector('.node-graph-toolbar');
+    const panelEl = embedEl.querySelector('.ng-property-panel');
+    const zoomLabel = toolbar.querySelector('.ng-zoom-label');
+
+    // 创建 NGEngine 实例
+    let engine;
     try {
-        lf = new LogicFlow({
-            container: embedEl.querySelector(`#ng-canvas-embed-${safeId}`),
-            grid: { size: 20, type: 'dot', config: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim() || '#888', opacity: 0.4 } },
-            background: { color: 'transparent' },
-            keyboard: { enabled: true },
-            style: typeof buildLogicFlowTheme === 'function' ? buildLogicFlowTheme() : {},
-            edgeType: 'polyline',
+        engine = new NGEngine(canvasEl, {
+            onChange: () => markDirty(),
+            onSelectionChange: () => {
+                const nid = engine.getSelectedNodeId();
+                const eid = engine.getSelectedEdgeId();
+                if (typeof updateNodeGraphPropertyPanel === 'function') {
+                    updateNodeGraphPropertyPanel(panelEl, engine, nid, eid);
+                }
+            },
         });
+        if (coordsEl) engine.setCoordsEl(coordsEl);
     } catch (e) {
-        weLog.error('editor', 'openEmbeddedNodeGraph: LogicFlow 初始化失败', String(e));
+        weLog.error('editor', 'openEmbeddedNodeGraph: NGEngine 初始化失败', String(e));
         return;
     }
 
-    embeddedNodeGraphs[safeId] = { lf, graphFile: filename, dirty: false };
+    embeddedNodeGraphs[safeId] = { engine, graphFile: filename, dirty: false };
     const inst = embeddedNodeGraphs[safeId];
 
     function markDirty() {
@@ -2061,102 +2128,138 @@ async function openEmbeddedNodeGraph(safeId, filename) {
         const status = document.getElementById(`ng-status-${safeId}`);
         if (status) status.textContent = '●';
     }
-    lf.on('node:add,node:delete,node:dnd-add,edge:add,edge:delete,node:text-update,edge:text-update', markDirty);
-    lf.on('node:delete,edge:delete', markDirty);
 
-    // 工具栏交互：工具选择 + 点击画布创建
-    const toolbar = embedEl.querySelector('.node-graph-toolbar');
-    const canvasEl = embedEl.querySelector(`#ng-canvas-embed-${safeId}`);
-    const coordsEl = embedEl.querySelector(`#ng-coords-${safeId}`);
-
-    // 工具状态：null = 选择/拖拽模式，'rect'/'circle'/'diamond'/'ellipse' = 创建模式
-    let activeTool = null;
-
-    function setActiveTool(tool) {
-        activeTool = tool;
-        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => {
-            b.classList.toggle('active', b.dataset.tool === tool);
-        });
-        canvasEl.style.cursor = tool ? 'crosshair' : '';
+    // 属性面板绑定
+    if (panelEl) {
+        if (typeof bindNodeGraphPropertyPanel === 'function') bindNodeGraphPropertyPanel(panelEl, engine, markDirty);
+        if (typeof setupPropertyPanelToggle === 'function') setupPropertyPanelToggle(panelEl);
     }
 
-    // 默认选中"选择"工具
-    setActiveTool(null);
-    toolbar.querySelector('.ng-btn[data-tool="select"]').classList.add('active');
+    // 右键菜单
+    if (typeof setupNodeGraphContextMenu === 'function') setupNodeGraphContextMenu(engine, markDirty);
 
-    toolbar.addEventListener('click', (e) => {
+    // ========== 工具栏交互 ==========
+    function setActiveTool(tool) {
+        engine.setActiveTool(tool === 'select' ? null : tool);
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (tool || 'select')));
+    }
+    function setActiveEdge(edgeType) {
+        engine.setActiveEdge(edgeType);
+        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === edgeType));
+        if (edgeType) {
+            engine.setActiveTool(null);
+            toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
+        }
+    }
+    function updateZoomLabel() {
+        if (zoomLabel) zoomLabel.textContent = Math.round(engine.zoom * 100) + '%';
+    }
+
+    // 包装 zoom 方法以更新标签
+    const origZoomTo = engine.zoomTo.bind(engine);
+    engine.zoomTo = (s, c) => { origZoomTo(s, c); updateZoomLabel(); };
+    const origZoomReset = engine.zoomReset.bind(engine);
+    engine.zoomReset = () => { origZoomReset(); updateZoomLabel(); };
+
+    toolbar.addEventListener('click', async e => {
         const btn = e.target.closest('.ng-btn');
         if (!btn) return;
         const tool = btn.dataset.tool;
+        const edge = btn.dataset.edge;
         const action = btn.dataset.action;
         if (tool) {
-            setActiveTool(tool === 'select' ? null : tool);
+            setActiveTool(tool);
+            if (tool !== 'select') setActiveEdge(null);
+        } else if (edge) {
+            setActiveEdge(engine.activeEdgeType === edge ? null : edge);
         } else if (action === 'delete') {
-            const { nodes, edges } = lf.getSelectElements(true);
-            if (nodes.length > 0) lf.deleteNode(nodes[0].id);
-            if (edges.length > 0) lf.deleteEdge(edges[0].id);
+            engine.deleteSelected();
             markDirty();
+        } else if (action === 'undo') {
+            engine.undo();
+            markDirty();
+        } else if (action === 'redo') {
+            engine.redo();
+            markDirty();
+        } else if (action === 'zoom-in') {
+            const rect = canvasEl.getBoundingClientRect();
+            engine.zoomTo(engine.zoom * 1.2, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        } else if (action === 'zoom-out') {
+            const rect = canvasEl.getBoundingClientRect();
+            engine.zoomTo(engine.zoom / 1.2, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        } else if (action === 'zoom-reset') {
+            engine.zoomReset();
         } else if (action === 'save') {
             saveEmbeddedNodeGraph(safeId);
         }
     });
 
-    // Esc 退出创建模式
-    canvasEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && activeTool) {
-            setActiveTool(null);
-            toolbar.querySelector('.ng-btn[data-tool="select"]')?.classList.add('active');
-        }
-    });
-
-    // 鼠标移动更新坐标
-    canvasEl.addEventListener('mousemove', (e) => {
-        const rect = canvasEl.getBoundingClientRect();
-        try {
-            const pt = lf.getPointByClient(e.clientX, e.clientY);
-            if (coordsEl) coordsEl.textContent = `${Math.round(pt.x)}, ${Math.round(pt.y)}`;
-        } catch {}
-    });
-    canvasEl.addEventListener('mouseleave', () => {
-        if (coordsEl) coordsEl.textContent = '';
-    });
-
-    // 点击画布：创建模式下在点击位置创建节点
-    canvasEl.addEventListener('click', (e) => {
-        if (!activeTool) return;
-        try {
-            const pt = lf.getPointByClient(e.clientX, e.clientY);
-            lf.addNode({
-                type: activeTool,
-                x: pt.x,
-                y: pt.y,
-                text: t('ui.ng_node') || '节点',
-            });
-            markDirty();
-        } catch (err) {
-            weLog.error('editor', '点击画布创建节点失败', String(err));
-        }
-    });
-
-    // 读取数据（缓存优先）
+    // 读取数据（【修复切回内容消失 #4】缓存优先，同时尝试 filename 和 basename(filename) 两个 key）
+    // 【终极修复 #类型包裹】用 _fcUnwrap('ngjson') 解开，类型不匹配（比如是 Quill HTML）直接当作没缓存，
+    //   这样即使以后 key 被不小心串到 HTML 上，也不会再 JSON.parse 失败渲染空画布
     let jsonStr = null;
-    if (project.fileCache && project.fileCache[filename] !== undefined) {
-        jsonStr = project.fileCache[filename];
-    } else {
+    let fromCache = false;
+    if (project.fileCache) {
+        const base = (filename.includes('/') || filename.includes('\\'))
+            ? filename.split(/[\\/]/).pop()
+            : filename;
+        const unwrappedA = _fcUnwrap('ngjson', project.fileCache[filename]);
+        if (unwrappedA !== undefined) {
+            jsonStr = unwrappedA;
+            fromCache = true;
+            weLog.debug('editor', 'openEmbeddedNodeGraph: 从缓存（完整路径）读取', { filename });
+        } else if (base !== filename) {
+            const unwrappedB = _fcUnwrap('ngjson', project.fileCache[base]);
+            if (unwrappedB !== undefined) {
+                jsonStr = unwrappedB;
+                fromCache = true;
+                weLog.debug('editor', 'openEmbeddedNodeGraph: 从缓存（basename）读取', { filename, base });
+            }
+        }
+    }
+    if (jsonStr === null || jsonStr === undefined) {
+        // 如果上一步"读到了但类型不匹配/内容是 HTML"→此时 jsonStr 还是 null，去读磁盘最新内容（更安全）
+        if (fromCache === false && project.fileCache && (project.fileCache[filename] !== undefined
+            || ((filename.includes('/') || filename.includes('\\'))
+                && project.fileCache[filename.split(/[\\/]/).pop()] !== undefined))) {
+            weLog.warn('editor', 'openEmbeddedNodeGraph: 缓存存在但类型不匹配（可能是 Quill HTML），放弃缓存改读磁盘',
+                { filename });
+        }
+        weLog.debug('editor', 'openEmbeddedNodeGraph: 从磁盘读取', { filename });
         const result = await weAPI.readFile(project.projectPath, filename);
         if (result.success) jsonStr = result.content || null;
     }
+
+    let parsedData = null;
     try {
-        const data = jsonStr ? JSON.parse(jsonStr) : { nodes: [], edges: [] };
-        lf.render(data);
+        if (jsonStr && jsonStr.trim()) {
+            parsedData = JSON.parse(jsonStr);
+            if (typeof migrateNodeGraphData === 'function') parsedData = migrateNodeGraphData(parsedData);
+            weLog.debug('editor', 'openEmbeddedNodeGraph: 数据解析成功',
+                { fromCache, nodes: parsedData.nodes && parsedData.nodes.length, edges: parsedData.edges && parsedData.edges.length });
+        }
     } catch (e) {
-        weLog.warn('editor', 'openEmbeddedNodeGraph: 解析数据失败，渲染空画布', String(e));
-        lf.render({ nodes: [], edges: [] });
+        // 【修复切回内容消失 #5】详细打印解析失败的原因和 jsonStr 片段，方便定位
+        weLog.error('editor', 'openEmbeddedNodeGraph: 数据解析失败，渲染空画布',
+            { fromCache, err: e && e.stack ? e.stack : String(e), jsonPreview: jsonStr ? jsonStr.slice(0, 200) : null });
+        parsedData = null;
     }
+    engine.loadData(parsedData && (parsedData.nodes || parsedData.edges) ? parsedData : { nodes: [], edges: [] });
+
+    // 初始化
+    setActiveTool('select');
+    updateZoomLabel();
 
     // 标记为当前文件
     project.currentFile = filename;
-    project.dirty = false;
+    // 【修复切回内容消失 #6】如果是从缓存加载，说明是上次切换时暂存的未保存状态 → 恢复 dirty=true
+    // （即使之前 dirty=false，也只是没标脏而已，内容和磁盘内容相比未保存；用 fromCache 最准确）
+    inst.dirty = fromCache && inst.dirty ? true : fromCache;
+    project.dirty = inst.dirty || project.dirty;
+    if (inst.dirty) {
+        const status = document.getElementById(`ng-status-${safeId}`);
+        if (status) status.textContent = '●';
+    }
 
     // 高亮文件树
     const tree = document.getElementById(`file-tree-${safeId}`);
