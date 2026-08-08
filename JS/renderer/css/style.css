@@ -75,6 +75,7 @@ body {
 body {
     user-select: none;
     -webkit-user-select: none;
+    background: var(--gap-color);     /* 默认背景色，防止 JS 加载前闪白 */
 }
 input, textarea, .ql-editor, [contenteditable] {
     user-select: text;
@@ -174,22 +175,9 @@ body.win-maximized #title-bar,
 body.win-maximized .title-drag {
     -webkit-app-region: no-drag;
 }
-/* 最大化时：所有边框/内部圆角清零，padding 也清零消除缝隙 */
+/* 最大化时：OA/TA 模板 area-wrap 圆角清零，内部容器本来 border-radius:0 无需单独处理 */
 body.win-maximized,
-body.win-maximized .project-layout,
-body.win-maximized .project-sidebar,
-body.win-maximized .project-editor,
-body.win-maximized .quill-wrapper,
-body.win-maximized .md-editor-pane textarea,
-body.win-maximized .md-preview-pane,
-body.win-maximized .node-graph-layout,
-body.win-maximized .node-graph-embed,
-body.win-maximized .node-graph-canvas-wrapper,
-body.win-maximized .settings-layout {
-    border-radius: 0 !important;
-}
-body.win-maximized .project-layout,
-body.win-maximized .project-editor { padding: 0 !important; }
+body.win-maximized .area-wrap { border-radius: 0 !important; }
 .window-controls {
     display: flex;
     margin-left: auto;
@@ -708,27 +696,138 @@ body.material-active #notification-bar {
     transition: opacity 0.3s ease;
 }
 
-/* ====== #main 包装容器（背景为遮罩层，覆盖边框+内容区；标签栏在遮罩之上） ====== */
+/* ====== #main 包装容器 ======
+ * material 激活（mica/acrylic 等）时：透明透出窗口材质，由 .area-root padding:8px 管四周留缝
+ * material=none 时：回退到 --content-tint 不透明遮罩，防止 BrowserWindow 黑色底透出
+ */
 #main {
     position: relative;
     z-index: 1;
     flex: 1;
     display: flex;
     flex-direction: column;
-    padding: 0 5px 5px 5px;
-    background: var(--overlay-tint);
+    padding: 0;
+    background: transparent;
     min-height: 0;
+}
+/* material=none 兜底：不让 BrowserWindow 黑底透出，同时显示"边框色"（gap-color）。
+ * .area-root padding:8px 的四周缝隙会透出 .area-root 父层（#main / body）的背景，
+ * 因此用 --gap-color（边框色，light=#E8E8E8，dark=#2a2a2a）作为外框底色，
+ * 让内部两张 area-card 仿佛嵌在一个"边框带"里，而不是和外框糊成同一块。
+ * title-bar 用 --title-bar-tint(=bg-sidebar 实心)，tab-bar 也沿用 --gap-color 保持边框色一致性。 */
+body.material-none { background: var(--gap-color); }
+body.material-none #tab-bar { background: var(--gap-color); }
+body.material-none #main { background: var(--gap-color); }
+
+/* 内容区：material 激活时透明；material=none 时跟随 #main */
+#content-container {
+    flex: 1; overflow: hidden;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 0;
+}
+body.material-none #content-container { background: transparent; }
+.tab-page { height: 100%; display: flex; flex-direction: column; }
+
+/* ========== OA / TA 统一模板（Area:One / Area:Two） ==========
+ * 每张「区域」都是独立卡片 .area-card，自带 border+圆角+背景；
+ * .area-root 透明（透材质），padding 让卡四周留缝，gap 让 TA 两卡之间留缝。
+ *
+ * 结构：
+ *   OA: .area-root(.oa) ──> 1 张 .area-card（占满可用空间）
+ *   TA: .area-root(.ta) ──> .area-card.is-left + [gap 透材质 + area-resizer 拖拽条 + gap]
+ *                             + .area-card.is-right
+ */
+.area-root {
+    height: 100%;
+    width: 100%;
+    background: transparent;          /* 根层透明：四周留缝透出窗口材质 */
+    display: flex;
+    flex-direction: row;
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 0 8px 8px 8px;           /* 顶部 0（紧贴 tab-bar），左/右/底 8px */
+    gap: 8px;                         /* TA 两卡之间 8px 空白透材质 */
+}
+.area-card {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-main);
+}
+/* OA: 单卡占满可用空间 */
+.area-root.oa > .area-card:only-child { flex: 1; width: 100%; }
+/* TA: 左% + 右% = 100%，用 CSS 变量 --area-left 控制
+ * 左卡 flex-basis: N%  右卡 flex:1，gap:8px 自动扣在两卡之间，整体占满容器内宽
+ * 编辑器默认左 33%；设置页默认左 20%（下面单独覆盖）
+ */
+.area-root.ta { --area-left: 33; }
+.area-root.ta.settings-layout { --area-left: 20; }  /* 设置页：导航区更窄 */
+.area-root.ta .area-card.is-left {
+    background: var(--bg-sidebar);
+    flex: 0 0 calc(var(--area-left) * 1%);
+    min-width: 160px;
+    max-width: 500px;
+}
+.area-root.ta .area-card.is-right {
+    background: var(--bg-main);
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-/* 内容区（对齐测试文件 #content：使用 --content-tint 控制背景，独立于边框） */
-#content-container {
-    flex: 1; overflow: auto;
-    background: var(--content-tint, var(--bg-sidebar));
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-sm);
-    min-height: 0;
+/* 拖拽调宽条：作为左 area-card.is-left 的子元素，绝对定位到其右外边缘，正好对齐两卡之间的 gap
+ * 这样编辑器 TA 的 flex 子节点只有两个（左卡 + 右卡），gap 只触发一次 = 8px，与设置页一致
+ * 命中区：8px 透明（::after 覆盖 -4~+4px）
+ * 视觉条：默认不显示，只有 hover 或 dragging 时显示一条 2px accent 色竖条（居中于 gap），
+ *         符合"碰到显示，拖动调整"的交互（类似之前的蓝色条）。
+ */
+.area-resizer {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 100%;                       /* 贴左卡右边缘 */
+    width: 0;                         /* 宽度 0，不占空间 */
+    cursor: col-resize;
+    background: transparent;
+    z-index: 20;
 }
-.tab-page { height: 100%; display: flex; flex-direction: column; }
+.area-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -4px; right: -4px;          /* 8px 命中区：覆盖整个 gap 左侧 4px + 右侧 4px */
+    /* 注意：不能用 background:transparent；否则浏览器 hit-test 把这一块视为"未绘制"，
+       鼠标事件会直接穿透到下方的 area-card / gap，mousedown 根本收不到 → 拖不动。
+       用几乎不可见但确实"绘制了"的 rgba(0,0,0,0.001) + pointer-events:auto 让整块 8px
+       都能接收事件，hover/mousedown 才能稳定触发。 */
+    background: rgba(0, 0, 0, 0.001);
+    pointer-events: auto;
+    transition: background 0.15s ease;
+}
+/* hover：8px 命中区居中显示一条 2px accent 色竖条（用线性渐变画中心一条，两侧透明） */
+.area-resizer:hover::after {
+    background: linear-gradient(to right,
+        rgba(0, 0, 0, 0.001) 0,
+        rgba(0, 0, 0, 0.001) calc(50% - 1px),
+        var(--accent, #0078d4) calc(50% - 1px),
+        var(--accent, #0078d4) calc(50% + 1px),
+        rgba(0, 0, 0, 0.001) calc(50% + 1px),
+        rgba(0, 0, 0, 0.001) 100%);
+}
+/* dragging：加宽到 4px 蓝色实条，高亮当前正在拖动的分割线 */
+.area-resizer.dragging::after {
+    left: -2px; right: -2px;          /* 4px 实条，依然居中覆盖 gap 中心 */
+    background: var(--accent, #0078d4);
+}
+
+/* 最大化：padding/gap/圆角全部归零，满铺 */
+body.win-maximized .area-root { padding: 0 !important; gap: 0 !important; }
+body.win-maximized .area-card { border-radius: 0 !important; }
 
 /* ====== 启程页 ====== */
 .welcome-new {
@@ -911,16 +1010,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 }
 
 /* ====== 项目布局 ====== */
-.project-layout { display: flex; height: 100%; border-radius: var(--radius-md); overflow: hidden; padding: 0 0 4px 4px; background: var(--gap-color); box-sizing: border-box; }
+/* 不用 gap-color + padding 的方式（会产生多余绿色空隙），改为 1px border 形成圆角边缘 */
+/* background: transparent：目录区与编辑区之间的缝隙（夹 sidebar-resizer 的 1px）直接透出窗口材质（Mica/Acrylic 等），不再是一块纯色挡住材质 */
+.project-layout { display: flex; height: 100%; overflow: hidden; box-sizing: border-box; background: transparent; }
 .project-sidebar {
-    width: 260px; min-width: 160px; max-width: 500px;
-    background: var(--bg-sidebar);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; flex-shrink: 0;
+    /* 注：宽度/背景/边框由 TA 模板 .area-wrap.ta > .area-block.is-left 统一负责，这里只保留内部布局 */
+    display: flex; flex-direction: column;
     position: relative; overflow: hidden;
-    border-bottom-left-radius: var(--radius-md, 8px);   /* 左下圆角：和输入区卡片感统一 */
-    border-top-left-radius: 0;                           /* 左上贴顶（外层.project-layout有全局圆角） */
-    margin: 0;                                            /* 顶部/左侧由 .project-layout padding 提供视觉边缘 */
+    margin: 0;
 }
 .project-sidebar h3 { padding: 16px; font-size: 14px; font-weight: 600; color: var(--text); }
 .file-tree-wrapper { flex: 1; overflow-y: auto; padding: 0 12px; user-select: none; }
@@ -1186,42 +1283,32 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 .sidebar-footer button { width: 100%; padding: 6px; background: var(--hover-bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; transition: background 0.15s; }
 .sidebar-footer button:hover { background: var(--active-bg); color: white; }
 
+/* resizer 现在作为 layout 的直接子元素（不在 sidebar 内），避免被 overflow:hidden 裁剪 */
 .sidebar-resizer {
-    width: 1px;            /* 从4px压缩到1px，消除红框可见竖条 */
+    position: absolute;
+    top: 0;
+    left: 260px;           /* 默认 sidebar 宽度，JS 会动态更新 */
+    width: 4px;
+    height: 100%;
     cursor: col-resize;
     background: transparent;
-    flex-shrink: 0;
-    position: relative;
     z-index: 5;
     transition: background 0.15s;
 }
-.sidebar-resizer::after {  /* 扩大命中区域到6px，方便拖拽 */
-    content: '';
-    position: absolute;
-    top: 0; bottom: 0;
-    left: -3px; right: -3px;
-}
-.sidebar-resizer:hover,
-.sidebar-resizer.dragging {
-    background: var(--accent);
-    width: 2px;
-}
 
 .project-editor {
-    flex: 1;
+    /* 注：flex/背景/边框由 TA 模板 .area-wrap.ta > .area-block.is-right 统一负责，这里保留内部 row 排版 */
     display: flex;
     flex-direction: row;
     min-height: 0;
     min-width: 0;
-    padding: 0 4px 4px 0;       /* 缝隙从 8px 缩到 4px，左侧0（紧挨resizer） */
-    background: var(--gap-color);
+    padding: 0;
+    background: transparent;
     box-sizing: border-box;
+    height: 100%;
 }
 
-/* 最大化时缝隙/圆角都清零（上面 win-maximized 已清 radius/padding，这里保证最大化 resizer 也无影响） */
-body.win-maximized .sidebar-resizer { width: 1px; background: transparent !important; }
-
-/* Quill 容器 */
+/* Quill 容器：嵌入在 area-block.is-right 内部，不再需要外 border/圆角（由 area-wrap 负责） */
 .quill-wrapper {
     flex: 1;
     min-height: 0;
@@ -1232,9 +1319,11 @@ body.win-maximized .sidebar-resizer { width: 1px; background: transparent !impor
     background: var(--bg-main);
     position: relative;
     overflow: hidden;
-    border-radius: var(--radius-md, 8px);
+    border-radius: 0;
+    border: none;
+    box-sizing: border-box;
 }
-/* 项目编辑区中的嵌入节点图容器 */
+/* 项目编辑区中的嵌入节点图容器（同上，外框改由 area-wrap 统一） */
 .node-graph-embed {
     flex: 1;
     min-height: 0;
@@ -1244,7 +1333,9 @@ body.win-maximized .sidebar-resizer { width: 1px; background: transparent !impor
     height: 100%;
     background: var(--bg-main);
     overflow: hidden;
-    border-radius: var(--radius-md, 8px);
+    border-radius: 0;
+    border: none;
+    box-sizing: border-box;
 }
 /* 节点图画布容器：填满父容器（NGEngine 会设置 position:relative 等） */
 .node-graph-embed .node-graph-canvas,
@@ -1283,12 +1374,13 @@ body.win-maximized .sidebar-resizer { width: 1px; background: transparent !impor
 }
 
 /* ====== 设置页 ====== */
-.settings-layout { display: flex; height: 100%; color: var(--text); border-radius: var(--radius-md); overflow: hidden; }
-.settings-nav { width: 180px; background: var(--bg-sidebar); border-right: 1px solid var(--border); padding-top: 20px; }
+/* 注：外框/圆角由 TA 模板 .area-wrap.ta 统一负责；左块 width 仍由 settings-nav 180px 负责（比 is-left 默认 260px 优先级更高）*/
+.settings-layout { height: 100%; color: var(--text); flex: 1; min-width: 0; }
+.settings-nav { width: 180px; flex-shrink: 0; padding-top: 20px; display: flex; flex-direction: column; min-height: 0; }
 .nav-item { padding: 10px 24px; color: var(--text-secondary); cursor: pointer; font-size: 14px; border-left: 3px solid transparent; transition: background 0.15s, color 0.15s; margin-bottom: 2px; }
 .nav-item:hover { background: var(--hover-bg); color: var(--text); }
 .nav-item.active { color: var(--text); background: var(--bg-main); border-left-color: var(--accent); font-weight: 500; }
-.settings-panel { flex: 1; display: flex; flex-direction: column; background: var(--bg-main); }
+.settings-panel { display: flex; flex-direction: column; min-height: 0; }
 .settings-content { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
 .settings-footer { padding: 16px 30px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--bg-main); }
 .settings-section { display: none; }
@@ -3373,6 +3465,9 @@ body.win-maximized .sidebar-resizer { width: 1px; background: transparent !impor
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    border: none;
+    border-radius: 0;
+    box-sizing: border-box;
 }
 .md-editor-pane {
     flex: 1;
@@ -3394,18 +3489,19 @@ body.win-maximized .sidebar-resizer { width: 1px; background: transparent !impor
     tab-size: 4;
     white-space: pre-wrap;
     word-wrap: break-word;
-    border-radius: var(--radius-md, 8px);
+    box-sizing: border-box;
 }
 .md-preview-pane {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-width: 0;
+    border: none;
     border-left: 1px solid var(--border);
     background: var(--bg-main);
     transition: flex 0.3s ease, border 0.3s ease;
     overflow: hidden;
-    border-radius: var(--radius-md, 8px);
+    box-sizing: border-box;
 }
 .md-preview-pane.md-hidden {
     flex: 0 0 0 !important;
@@ -4273,8 +4369,10 @@ body.material-active * {
 .node-graph-layout {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
-    background: var(--bg-content, transparent);
+    /* 外框由 OA 模板 area-wrap 负责，这里内部填充即可 */
+    background: var(--bg-main);
 }
 .node-graph-toolbar {
     display: flex;
@@ -4326,7 +4424,7 @@ body.material-active * {
     flex: 1;
     overflow: hidden;
     position: relative;
-    border-radius: var(--radius-md, 8px);
+    border-radius: 0;
 }
 .node-graph-canvas {
     width: 100%;
@@ -4869,13 +4967,6 @@ body.material-active * {
 }
 .nge-port:hover {
     fill: var(--accent, #4a90d9);
-}
-.node-graph-layout {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
 }
 .node-graph-body {
     flex: 1;

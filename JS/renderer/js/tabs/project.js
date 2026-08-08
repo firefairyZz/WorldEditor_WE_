@@ -3,6 +3,11 @@ function createNewProjectTab() {
     weLog.info('project', '→ createNewProjectTab 开始');
     const id = 'new-project';
     if (tabs[id]) { weLog.debug('project', 'createNewProjectTab: 标签已存在，切换过去'); switchTab(id); return; }
+    // OA 模板：area-root.oa > 单个 area-card > new-project-page
+    const root = document.createElement('div');
+    root.className = 'area-root oa';
+    const block = document.createElement('div');
+    block.className = 'area-card';
     const content = document.createElement('div');
     content.className = 'new-project-page';
     content.innerHTML = `
@@ -174,7 +179,9 @@ function createNewProjectTab() {
         }
     };
     content.querySelector('#create-project-cancel').onclick = () => closeTab(id);
-    addTab(id, t('ui.new_project_tab'), content, true);
+    block.appendChild(content);
+    root.appendChild(block);
+    addTab(id, t('ui.new_project_tab'), root, true);
     updateOwnerDisplay(currentAccount);
 }
 
@@ -209,10 +216,11 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     }
 
     const layout = document.createElement('div');
-    layout.className = 'project-layout';
+    // TA 模板：area-root.ta(透材质+8px padding+8px gap) ──> area-card.is-left + area-resizer + area-card.is-right
+    layout.className = 'project-layout area-root ta';
 
     const sidebar = document.createElement('div');
-    sidebar.className = 'project-sidebar';
+    sidebar.className = 'project-sidebar area-card is-left';
 
     const projectNameEl = document.createElement('h3');
     projectNameEl.className = 'project-name-editable';
@@ -387,15 +395,16 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     addBtn.onclick = () => addFileToProject(safeId);
 
     const resizer = document.createElement('div');
-    resizer.className = 'sidebar-resizer';
+    resizer.className = 'sidebar-resizer area-resizer';
 
     const editorArea = document.createElement('div');
-    editorArea.className = 'project-editor';
+    editorArea.className = 'project-editor area-card is-right';
     editorArea.innerHTML = `
         <div class="quill-wrapper" id="quill-${safeId}"></div>
         <div class="node-graph-embed" id="ng-embed-${safeId}" style="display:none;"></div>
     `;
 
+    // resizer 作为 layout 的直接子元素（绝对定位），避免被 sidebar 的 overflow:hidden 裁剪拖拽区域
     layout.appendChild(sidebar);
     layout.appendChild(resizer);
     layout.appendChild(editorArea);
@@ -433,10 +442,18 @@ function setupSidebarResizer(resizer, sidebar) {
         e.preventDefault();
     });
 
+    // TA 百分比拖拽：根据像素偏移换算成 --area-left 百分比写回 .area-root.ta
+    // overall = layout.clientWidth - padding(8*2) - gap(8)；左% + 右 flex:1 占满剩余
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
+        const layout = sidebar.closest('.area-root.ta');
+        if (!layout) return;
         const newWidth = Math.max(140, Math.min(500, startWidth + e.clientX - startX));
-        sidebar.style.width = newWidth + 'px';
+        const overall = layout.clientWidth - 16 - 8;
+        if (overall > 0) {
+            const percent = Math.round((newWidth / overall) * 100);
+            layout.style.setProperty('--area-left', percent);
+        }
     });
 
     document.addEventListener('mouseup', () => {
