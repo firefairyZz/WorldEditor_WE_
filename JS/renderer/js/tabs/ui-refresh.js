@@ -168,43 +168,52 @@ function refreshSettingsTexts(container) {
 
     // 编辑器区
     const editor = container.querySelector('#section-editor');
-    editor.querySelector('h3').textContent = t('ui.editor');
-    // 刷新分组标题
-    const groupTitles = editor.querySelectorAll('.setting-group-title');
-    if (groupTitles.length >= 3) {
-        groupTitles[0].textContent = t('ui.font_group') || '字体';
-        groupTitles[1].textContent = t('ui.auto_save_group') || '自动保存';
-        groupTitles[2].textContent = t('ui.tools_group') || '工具';
-    }
-    // 刷新各设置项标签
-    const groups = editor.querySelectorAll('.setting-group');
-    if (groups.length >= 3) {
+    if (editor) {
+        editor.querySelector('h3').textContent = t('ui.editor');
+        // 刷新分组标题
+        const groupTitles = editor.querySelectorAll('.setting-group-title');
+        groupTitles.forEach((el, i) => {
+            const keys = ['font_group', 'tools_group', 'node_graph_group'];
+            if (i < keys.length) el.textContent = t('ui.' + keys[i]) || el.textContent;
+        });
+        // 刷新各设置项标签
+        const groups = editor.querySelectorAll('.setting-group');
         // 字体组: 字体, 字体大小
-        const fontSpans = groups[0].querySelectorAll('.setting-row > span');
-        fontSpans[0].textContent = t('ui.font');
-        fontSpans[1].textContent = t('ui.font_size');
-        // 自动保存组: 自动保存, 关闭标签确认
-        const saveSpans = groups[1].querySelectorAll('.setting-row > span');
-        saveSpans[0].textContent = t('ui.auto_save');
-        saveSpans[1].textContent = t('ui.tab_close_confirm') || '关闭标签确认';
-        // 工具组: 字数统计, 显示工具栏, 启用 Markdown
-        const toolSpans = groups[2].querySelectorAll('.setting-row > span');
-        toolSpans[0].textContent = t('ui.word_count');
-        toolSpans[1].textContent = t('ui.toolbar_show') || '显示工具栏';
-        toolSpans[2].textContent = t('ui.markdown_render') || '启用 Markdown 渲染';
+        if (groups[0]) {
+            const fontSpans = groups[0].querySelectorAll('.setting-row > span');
+            if (fontSpans[0]) fontSpans[0].textContent = t('ui.font');
+            if (fontSpans[1]) fontSpans[1].textContent = t('ui.font_size');
+        }
+        // 工具组: 字数统计, 显示工具栏, 启用 Markdown, 智能括号
+        if (groups[1]) {
+            const toolSpans = groups[1].querySelectorAll('.setting-row > span');
+            const toolKeys = ['word_count', 'toolbar_show', 'markdown_render', 'smart_brackets'];
+            toolSpans.forEach((span, i) => {
+                if (i < toolKeys.length) span.textContent = t('ui.' + toolKeys[i]) || span.textContent;
+            });
+        }
+        // 节点图组: 默认创建隐藏箭头连线
+        if (groups[2]) {
+            const ngSpans = groups[2].querySelectorAll('.setting-row > span');
+            if (ngSpans[0]) ngSpans[0].textContent = t('ui.ng_hide_arrow_default') || ngSpans[0].textContent;
+        }
     }
 
     // 关于区
     const about = container.querySelector('#section-about');
-    about.querySelector('h3').textContent = t('ui.about');
-    const aboutPs = about.querySelectorAll('p');
-    // 保留 span#about-version 结构，只更新前缀文本
-    const verSpan = aboutPs[0].querySelector('#about-version');
-    if (verSpan) {
-        aboutPs[0].textContent = 'World Editor ';
-        aboutPs[0].appendChild(verSpan);
+    if (about) {
+        const aboutH3 = about.querySelector('h3');
+        if (aboutH3) aboutH3.textContent = t('ui.about');
+        const aboutPs = about.querySelectorAll('p');
+        if (aboutPs[0]) {
+            const verSpan = aboutPs[0].querySelector('#about-version');
+            if (verSpan) {
+                aboutPs[0].textContent = 'World Editor ';
+                aboutPs[0].appendChild(verSpan);
+            }
+        }
+        if (aboutPs[1]) aboutPs[1].textContent = t('ui.about_desc');
     }
-    aboutPs[1].textContent = t('ui.about_desc');
 
     // 底部按钮
     const applyBtn = container.querySelector('.settings-apply-btn');

@@ -285,6 +285,7 @@ class GlobalUndoManager {
         this._flushPending(true);
         if (this.mode === 'local' || this.cursor <= 0) return false;
         const op = this.stack[this.cursor - 1];
+        if (!op) { this.cursor = Math.min(this.cursor, this.stack.length); return false; }
         weLog.info('editor', 'GlobalUndoManager.undo →', { type: op.type, file: op.file, label: op.label });
         // 先切回对应文件
         if (op.file && op.file !== this.project.currentFile) {
@@ -309,6 +310,7 @@ class GlobalUndoManager {
         this._flushPending(true);
         if (this.mode === 'local' || this.cursor >= this.stack.length) return false;
         const op = this.stack[this.cursor];
+        if (!op) { this.cursor = Math.min(this.cursor, this.stack.length); return false; }
         weLog.info('editor', 'GlobalUndoManager.redo →', { type: op.type, file: op.file, label: op.label });
         if (op.file && op.file !== this.project.currentFile) {
             try { await openProjectFile(this.safeId, op.file); } catch (e) { /* ignore */ }

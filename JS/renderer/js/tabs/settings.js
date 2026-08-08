@@ -461,10 +461,10 @@ function refreshSettingsI18n() {
     const editorSection = panel.querySelector('#section-editor');
     if (editorSection) {
         const groupTitles = editorSection.querySelectorAll('.setting-group-title');
-        const gt0 = t('ui.font_group') || t('ui.fonts');
-        const gt1 = t('ui.tools_group') || t('ui.tools');
-        if (gt0 && groupTitles[0]) groupTitles[0].textContent = gt0;
-        if (gt1 && groupTitles[1]) groupTitles[1].textContent = gt1;
+        const gtKeys = ['font_group', 'tools_group', 'node_graph_group'];
+        groupTitles.forEach((el, i) => {
+            if (i < gtKeys.length) { const v = t('ui.' + gtKeys[i]); if (v) el.textContent = v; }
+        });
 
         // Font label
         const rows = editorSection.querySelectorAll('.setting-row');
@@ -500,6 +500,10 @@ function refreshSettingsI18n() {
         if (rows[5]) {
             const span = rows[5].querySelector('span');
             if (span) { const v = t('ui.smart_brackets'); if (v) span.textContent = v; }
+        }
+        if (rows[6]) {
+            const span = rows[6].querySelector('span');
+            if (span) { const v = t('ui.ng_hide_arrow_default'); if (v) span.textContent = v; }
         }
     }
 
