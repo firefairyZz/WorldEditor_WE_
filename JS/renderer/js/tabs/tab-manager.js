@@ -323,18 +323,60 @@ function updateEditMenuTexts() {
 
 function handleEditAction(action) {
     weLog.info('tab-manager', `→ handleEditAction: action=${action}`);
-    // 获取当前活动的编辑器（Quill 或 Markdown）
+    // 获取当前活动的编辑器（Quill / Markdown / NodeGraph）
     const isMarkdown = markdownEditor && markdownEditor.offsetParent !== null;
     weLog.debug('tab-manager', `handleEditAction: isMarkdown=${isMarkdown}`);
 
+    // ============ 0.7.0_alpha 全局/局部撤回接管 ============
     if (action === 'undo' || action === 'redo') {
+        // 找到 active tab → 对应的 globalUndo
+        if (typeof activeTabId !== 'undefined' && activeTabId && typeof ensureGlobalUndo === 'function'
+            && typeof getActiveEditor === 'function') {
+            const gu = ensureGlobalUndo(activeTabId);
+            if (gu) {
+                // 先 flush 掉合并窗口里的 pending op（确保当前操作已经入账）
+                gu.flush(true);
+                if (gu.mode === 'global') {
+                    // 全局模式：走全局 stack
+                    if (action === 'undo') { gu.undo(); return; }
+                    else { gu.redo(); return; }
+                }
+                // 局部模式：交给当前活跃编辑器自己的内部栈
+                const active = getActiveEditor(activeTabId);
+                weLog.debug('tab-manager', 'handleEditAction undo/redo: 局部模式',
+                    active ? { type: active.type, file: active.file } : null);
+                if (active) {
+                    if (active.type === 'nodegraph') {
+                        if (action === 'undo') active.instance.undo();
+                        else active.instance.redo();
+                        return;
+                    }
+                    if (active.type === 'quill') {
+                        if (action === 'undo') active.instance.undo();
+                        else active.instance.redo();
+                        return;
+                    }
+                    if (active.type === 'markdown') {
+                        // textarea.undo() 是 HTMLTextAreaElement 原生方法（现代浏览器都支持）
+                        const ta = active.instance;
+                        try {
+                            if (action === 'undo') ta.undo(); else ta.redo();
+                        } catch (e) {
+                            document.execCommand(action === 'undo' ? 'undo' : 'redo');
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        // 兜底（没有 globalUndo 时保留老逻辑）
         if (isMarkdown) {
-            // Markdown 模式：用 document.execCommand 作兜底
             document.execCommand(action === 'undo' ? 'undo' : 'redo');
         } else if (typeof quill !== 'undefined' && quill) {
             if (action === 'undo') quill.undo();
             else quill.redo();
         }
+        return;
     } else if (action === 'cut') {
         if (isMarkdown) {
             document.execCommand('cut');

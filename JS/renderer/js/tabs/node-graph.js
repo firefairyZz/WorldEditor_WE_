@@ -1152,7 +1152,16 @@ class NGEngine {
         return true;
     }
 
+    // 设置历史变化回调（prevSnap, nextSnap, kind: 'push'|'undo'|'redo'）
+    // 给 GlobalUndoManager 用来同步全局撤回栈
+    setOnHistoryChange(cb) {
+        this._onHistoryChange = typeof cb === 'function' ? cb : null;
+    }
+
     _snapshot() {
+        const prevSnap = this.undoStack.length > 0
+            ? JSON.parse(JSON.stringify(this.undoStack[this.undoStack.length - 1]))
+            : null;
         const snap = JSON.parse(JSON.stringify({
             nodes: this.data.nodes,
             edges: this.data.edges,
@@ -1161,6 +1170,10 @@ class NGEngine {
         this.undoStack.push(snap);
         if (this.undoStack.length > 50) this.undoStack.shift();
         this.redoStack.length = 0;
+        // 【0.7.0_alpha 全局撤回】回调通知 GlobalUndoManager push 一个 nodegraph op
+        if (this._onHistoryChange) {
+            try { this._onHistoryChange(prevSnap, snap, 'push'); } catch (err) { console.warn('[NG] onHistoryChange(push) error:', err); }
+        }
     }
     _restoreSnapshot(snap) {
         this.data.nodes = JSON.parse(JSON.stringify(snap.nodes));
@@ -1828,6 +1841,8 @@ function buildNodeGraphToolbarHTML(statusId) {
             ${iconBtn('zoom-reset', t('ui.ng_zoom_reset') || '重置缩放', ICON.zoomReset)}
             <div class="ng-toolbar-divider"></div>
             ${iconBtn('save', t('ui.save') || '保存', ICON.save)}
+            <div class="ng-toolbar-divider"></div>
+            <button class="ng-btn" data-action="history" title="${t('ui.ng_history') || '历史记录 (Ctrl+H)'}"><svg viewBox="0 0 24 24" width="15" height="15" ${S}><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></button>
             <div class="ng-toolbar-spacer"></div>
             <span class="ng-status"${statusId ? ` id="${statusId}"` : ''}></span>
         </div>
