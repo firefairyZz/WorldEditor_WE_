@@ -484,3 +484,4 @@ ui.select_tags_to_remove = 选择要删除的标签
 ui.no_tags_to_remove = 选中项没有标签
 ui.tags_removed = 已删除标签
 ui.ng_history = 历史记录
+ui.ng_continuous_draw = 连续绘制 (Tab)

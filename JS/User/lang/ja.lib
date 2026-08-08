@@ -465,3 +465,4 @@ ui.batch_remove_tag = 一括タグ削除
 ui.select_tags_to_remove = 削除するタグを選択
 ui.no_tags_to_remove = 選択項目にタグがありません
 ui.tags_removed = タグを削除しました
+ui.ng_continuous_draw = 連続描画 (Tab)

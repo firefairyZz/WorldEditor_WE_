@@ -514,3 +514,4 @@ ui.select_tags_to_remove = Select tags to remove
 ui.no_tags_to_remove = No tags found in selection
 ui.tags_removed = Tags removed
 ui.ng_history = History
+ui.ng_continuous_draw = Continuous Draw (Tab)

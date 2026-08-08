@@ -2821,18 +2821,19 @@ async function openEmbeddedNodeGraph(safeId, filename) {
     if (typeof setupNodeGraphContextMenu === 'function') setupNodeGraphContextMenu(engine, markDirty);
 
     // ========== 工具栏交互 ==========
+    function syncToolbarButtons() {
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (engine.activeTool || 'select')));
+        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === engine.activeEdgeType));
+    }
     function setActiveTool(tool) {
         engine.setActiveTool(tool === 'select' ? null : tool);
-        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (tool || 'select')));
+        syncToolbarButtons();
     }
     function setActiveEdge(edgeType) {
         engine.setActiveEdge(edgeType);
-        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === edgeType));
-        if (edgeType) {
-            engine.setActiveTool(null);
-            toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
-        }
+        syncToolbarButtons();
     }
+    engine.onToolChange = syncToolbarButtons;
     function updateZoomLabel() {
         if (zoomLabel) zoomLabel.textContent = Math.round(engine.zoom * 100) + '%';
     }
@@ -2854,6 +2855,10 @@ async function openEmbeddedNodeGraph(safeId, filename) {
             if (tool !== 'select') setActiveEdge(null);
         } else if (edge) {
             setActiveEdge(engine.activeEdgeType === edge ? null : edge);
+        } else if (action === 'continuous') {
+            engine.continuousDraw = !engine.continuousDraw;
+            const cBtn = toolbar.querySelector('[data-action="continuous"]');
+            if (cBtn) cBtn.classList.toggle('active', engine.continuousDraw);
         } else if (action === 'delete') {
             engine.deleteSelected();
             markDirty();

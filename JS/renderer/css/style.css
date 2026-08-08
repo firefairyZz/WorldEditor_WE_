@@ -1193,6 +1193,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     height: 100%;
     background: var(--bg-main);
     position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
 }
 /* 项目编辑区中的嵌入节点图容器 */
 .node-graph-embed {
@@ -1203,6 +1205,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     flex-direction: column;
     height: 100%;
     background: var(--bg-main);
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
 }
 /* 节点图画布容器：填满父容器（NGEngine 会设置 position:relative 等） */
 .node-graph-embed .node-graph-canvas,
@@ -3352,6 +3356,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     tab-size: 4;
     white-space: pre-wrap;
     word-wrap: break-word;
+    border-radius: var(--radius-md, 8px);
 }
 .md-preview-pane {
     flex: 1;
@@ -3362,6 +3367,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
     background: var(--bg-main);
     transition: flex 0.3s ease, border 0.3s ease;
     overflow: hidden;
+    border-radius: var(--radius-md, 8px);
 }
 .md-preview-pane.md-hidden {
     flex: 0 0 0 !important;
@@ -4282,6 +4288,7 @@ body.material-active * {
     flex: 1;
     overflow: hidden;
     position: relative;
+    border-radius: var(--radius-md, 8px);
 }
 .node-graph-canvas {
     width: 100%;

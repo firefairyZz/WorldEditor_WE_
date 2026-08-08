@@ -761,8 +761,8 @@ function applyMicaMaterial(win, material) {
             if (typeof win.disableDWM === 'function') win.disableDWM();
         }
         // 圆角：库强制 transparent:true 会丢失 OS 原生圆角，统一用 DWM 圆角属性恢复
-        // 若实测 setRoundedCorner 在 transparent:true 下失效，渲染进程 CSS 兜底
-        if (typeof win.setRoundedCorner === 'function') win.setRoundedCorner();
+        // 最大化时不需要圆角（窗口占满全屏），仅非最大化时调用
+        if (typeof win.setRoundedCorner === 'function' && !win.__isMaximized) win.setRoundedCorner();
     } catch (e) {
         console.error(`[applyMicaMaterial] 异常: ${e.message}`);
     }

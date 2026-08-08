@@ -466,3 +466,4 @@ ui.batch_remove_tag = Массовое удаление тегов
 ui.select_tags_to_remove = Выберите теги для удаления
 ui.no_tags_to_remove = В выборе нет тегов
 ui.tags_removed = Теги удалены
+ui.ng_continuous_draw = Непрерывное рисование (Tab)

@@ -173,6 +173,8 @@ class NGEngine {
         this.redoStack = [];
         this.activeTool = null; // node type: character/scene/... or null (select)
         this.activeEdgeType = null; // edge type or null
+        this.continuousDraw = false; // 连续绘制模式：创建后不自动返回选择
+        this.onToolChange = null; // 工具/线型变化时的回调（供工具栏同步 UI）
 
         // 内部状态（交互时使用）
         this._creatingEdge = null; // { fromNodeId, fromPort, tempPathEl }
@@ -277,6 +279,7 @@ class NGEngine {
         if (toolType) this.activeEdgeType = null;
         this._updateCursor();
         this._updateOverlayMode();
+        if (this.onToolChange) try { this.onToolChange(); } catch (_) {}
     }
     setActiveEdge(edgeType) {
         this.activeEdgeType = edgeType;
@@ -287,6 +290,7 @@ class NGEngine {
         this._updateCursor();
         this._updateOverlayMode();
         this._renderNodes(); // 立即刷新端口显示（连线模式所有节点显示端口）
+        if (this.onToolChange) try { this.onToolChange(); } catch (_) {}
     }
 
     getSelectedNodeIds() { return [...this.selectedNodeIds]; }
@@ -1111,6 +1115,12 @@ class NGEngine {
             this._renderAll();
             this._emitSelection();
         }
+        // Tab：切换连续绘制模式
+        if (e.key === 'Tab' && !isInput) {
+            e.preventDefault();
+            this.continuousDraw = !this.continuousDraw;
+            if (this.onToolChange) try { this.onToolChange(); } catch (_) {}
+        }
         if (e.key === 'Delete' || e.key === 'Backspace') {
             if (this.activeTool || this.activeEdgeType) return;
             if (isInput) return; // 不删除属性面板正在输入的内容
@@ -1589,7 +1599,19 @@ class NGEngine {
             const finalW = w >= MIN ? w : def.width;
             const finalH = h >= MIN ? h : def.height;
             const cx = x + finalW / 2, cy = y + finalH / 2;
-            this.addNode(state.ngType, cx, cy, def.label, finalW, finalH);
+            const newId = this.addNode(state.ngType, cx, cy, def.label, finalW, finalH);
+            // 非连续绘制模式：创建后自动返回选择模式
+            if (!this.continuousDraw) {
+                this.setActiveTool(null);
+            }
+            // 选中刚创建的节点
+            if (newId) {
+                this.selectedNodeIds.clear();
+                this.selectedEdgeIds.clear();
+                this.selectedNodeIds.add(newId);
+                this._renderAll();
+                this._emitSelection();
+            }
             return;
         }
 
@@ -1684,6 +1706,16 @@ class NGEngine {
             this.data.edges.push(edge);
             this._renderAll();
             this._emitChange();
+            // 非连续绘制模式：创建后自动返回选择模式
+            if (!this.continuousDraw) {
+                this.setActiveEdge(null);
+            }
+            // 选中刚创建的连线
+            this.selectedNodeIds.clear();
+            this.selectedEdgeIds.clear();
+            this.selectedEdgeIds.add(edge.id);
+            this._renderAll();
+            this._emitSelection();
         }
     }
     _abortCreatingEdge() {
@@ -1802,6 +1834,7 @@ function buildNodeGraphToolbarHTML(statusId) {
         zoomIn: '<circle cx="11" cy="11" r="8"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
         zoomReset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
         save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+        continuous: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
     };
     const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -1829,6 +1862,8 @@ function buildNodeGraphToolbarHTML(statusId) {
             ${nodeButtons}
             <div class="ng-toolbar-divider"></div>
             ${edgeButtons}
+            <div class="ng-toolbar-divider"></div>
+            ${iconBtn('continuous', t('ui.ng_continuous_draw') || '连续绘制 (Tab)', ICON.continuous)}
             <div class="ng-toolbar-divider"></div>
             ${iconBtn('delete', t('ui.ng_delete') || '删除选中', ICON.trash)}
             <div class="ng-toolbar-divider"></div>
@@ -2033,14 +2068,16 @@ function updateNodeGraphPropertyPanel(panelEl, engine, nodeId, edgeId) {
         panelEl.dataset.nodeId = '';
         panelEl.dataset.edgeId = '';
         if (!node && !edge) {
-            console.info('[NG] → show EMPTY panel');
-            if (emptyEl) emptyEl.style.display = '';
+            console.info('[NG] → hide panel (no selection)');
+            panelEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'none';
             if (contentEl) contentEl.style.display = 'none';
             if (nodeSection) nodeSection.style.display = 'none';
             if (edgeSection) edgeSection.style.display = 'none';
             return;
         }
         console.info('[NG] → show CONTENT panel (node:' + !!node + ', edge:' + !!edge + ')');
+        panelEl.style.display = '';
         if (emptyEl) emptyEl.style.display = 'none';
         if (contentEl) contentEl.style.display = '';
 
@@ -2438,17 +2475,19 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     // 选择工具 / 节点工具
     function setActiveTool(tool) {
         engine.setActiveTool(tool === 'select' ? null : tool);
-        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (tool || 'select')));
+        syncToolbarButtons();
     }
     function setActiveEdge(edgeType) {
         engine.setActiveEdge(edgeType);
-        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === edgeType));
-        if (edgeType) {
-            // 选择连线类型时，清除工具按钮高亮，恢复"选择"状态
-            engine.setActiveTool(null);
-            toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === 'select'));
-        }
+        syncToolbarButtons();
     }
+    // 同步工具栏按钮高亮状态（供 onToolChange 回调和手动切换共用）
+    function syncToolbarButtons() {
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (engine.activeTool || 'select')));
+        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === engine.activeEdgeType));
+    }
+    // 引擎内部工具变化时（如创建后自动返回选择）同步工具栏 UI
+    engine.onToolChange = syncToolbarButtons;
     setActiveTool('select');
 
     toolbar.addEventListener('click', async (e) => {
@@ -2459,6 +2498,10 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             if (tool !== 'select') setActiveEdge(null);
         } else if (edge) {
             setActiveEdge(engine.activeEdgeType === edge ? null : edge);
+        } else if (action === 'continuous') {
+            engine.continuousDraw = !engine.continuousDraw;
+            const btn = toolbar.querySelector('[data-action="continuous"]');
+            if (btn) btn.classList.toggle('active', engine.continuousDraw);
         } else if (action === 'delete') {
             engine.deleteSelected();
             markDirty();
