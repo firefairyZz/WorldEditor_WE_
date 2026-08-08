@@ -4684,6 +4684,31 @@ body.material-active * {
     cursor: move;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+.ng-history-header-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ng-history-close {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #888);
+    font-size: 16px;
+    line-height: 1;
+    border-radius: 3px;
+    cursor: pointer;
+    padding: 0;
+}
+.ng-history-close:hover {
+    background: var(--accent, #4a90d9);
+    color: #fff;
 }
 .ng-history-mode-badge {
     font-size: 10px;
@@ -4712,6 +4737,9 @@ body.material-active * {
     line-height: 1.4;
     border-left: 3px solid transparent;
     transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 .ng-history-item:hover { background: var(--bg-secondary, rgba(0,0,0,0.04)); }
 .ng-history-item.current {
@@ -4731,13 +4759,25 @@ body.material-active * {
     width: 14px;
     height: 14px;
     opacity: 0.7;
+    flex-shrink: 0;
 }
 .ng-history-item.current .ng-history-icon { opacity: 1; }
+.ng-history-item .ng-history-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ng-history-item .ng-history-file {
+    opacity: 0.6;
+    font-size: 10px;
+}
 .ng-history-item .ng-history-time {
     font-size: 10px;
     color: var(--text-muted, #999);
-    margin-left: 6px;
-    float: right;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 .ng-history-item.current .ng-history-time { color: rgba(255,255,255,0.7); }
 .ng-history-empty {

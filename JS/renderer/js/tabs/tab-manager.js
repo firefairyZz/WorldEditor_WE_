@@ -211,6 +211,10 @@ function updateFileMenuTexts() {
         </div>
         <div class="menu-separator"></div>
         <div class="menu-item" data-action="switch-mode">${t('ui.switch_editor_mode') || '切换编辑器模式'}</div>
+        <div class="menu-item" data-action="history">
+            <span class="menu-label">${t('ui.history') || '历史记录'}</span>
+            <span class="menu-shortcut">Ctrl + H</span>
+        </div>
         <div class="menu-separator"></div>
         <div class="menu-item" data-action="new-file">
             <span class="menu-label">${t('ui.new_file') || '新建文件'}</span>
@@ -228,6 +232,17 @@ function updateFileMenuTexts() {
             else if (action === 'save') saveCurrentFile();
             else if (action === 'switch-mode') {
                 if (typeof switchEditorMode === 'function') switchEditorMode();
+            }
+            else if (action === 'history') {
+                // 仅全局模式：打开面板前强制切换到全局
+                if (activeTabId && tabs[activeTabId]?.projectPath) {
+                    if (typeof ensureGlobalUndo === 'function' && typeof showHistoryPanel === 'function') {
+                        const gu = ensureGlobalUndo(activeTabId);
+                        if (gu) { gu.setMode('global'); showHistoryPanel(activeTabId); }
+                    }
+                } else {
+                    showNotification(t('ui.open_project_first') || '请先打开一个项目');
+                }
             }
             else if (action === 'new-file') {
                 weLog.info('tab-manager', '文件菜单点击: new-file, activeTabId=', activeTabId);

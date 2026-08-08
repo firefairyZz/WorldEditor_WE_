@@ -548,7 +548,8 @@ function _makeHistoryPanelDraggable(panel) {
     if (!header) return;
     let dragging = false, offsetX = 0, offsetY = 0;
     header.addEventListener('mousedown', (e) => {
-        if (e.target.classList.contains('ng-history-mode-badge')) return;
+        // 点击模式徽章或关闭按钮时，不触发拖拽
+        if (e.target.closest('.ng-history-mode-badge') || e.target.closest('.ng-history-close')) return;
         dragging = true;
         const rect = panel.getBoundingClientRect();
         offsetX = e.clientX - rect.left;
@@ -580,7 +581,10 @@ function renderHistoryPanel(safeId) {
     let html = `
         <div class="ng-history-header">
             <span>📋 历史记录</span>
-            <span class="ng-history-mode-badge ${mode === 'global' ? 'global' : ''}" title="点击切换 全局/局部 模式">${mode === 'global' ? '🌐 全局' : '📄 局部'}</span>
+            <div class="ng-history-header-right">
+                <span class="ng-history-mode-badge ${mode === 'global' ? 'global' : ''}" title="点击切换 全局/局部 模式">${mode === 'global' ? '🌐 全局' : '📄 局部'}</span>
+                <button class="ng-history-close" title="关闭面板 (Esc)">×</button>
+            </div>
         </div>
         <div class="ng-history-list">
     `;
@@ -595,10 +599,11 @@ function renderHistoryPanel(safeId) {
             const timeStr = new Date(op.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
             const fileShort = op.file ? op.file.split(/[\\/]/).pop() : '';
             const cls = isCurrent ? 'current' : (isFuture ? 'future' : '');
-            html += `<div class="ng-history-item ${cls}" data-step="${i}" title="${op.label} · ${fileShort}">`;
+            // file_switch 类型：label 里已有文件名，不再重复显示右侧的 fileShort
+            const showFileBadge = op.type !== 'file_switch' && !!fileShort;
+            html += `<div class="ng-history-item ${cls}" data-step="${i}" title="${op.label}${showFileBadge ? ' · ' + fileShort : ''}">`;
             html += `<span class="ng-history-icon">${icon}</span>`;
-            html += `${op.label}`;
-            if (fileShort) html += ` <span style="opacity:0.6;font-size:10px">${fileShort}</span>`;
+            html += `<span class="ng-history-label">${op.label}${showFileBadge ? ` <span class="ng-history-file">${fileShort}</span>` : ''}</span>`;
             html += `<span class="ng-history-time">${timeStr}</span>`;
             html += `</div>`;
         }
@@ -616,6 +621,11 @@ function renderHistoryPanel(safeId) {
 
     // 重新绑定拖拽（innerHTML 刷新后 header 是新元素）
     _makeHistoryPanelDraggable(panel);
+
+    // 关闭按钮
+    panel.querySelector('.ng-history-close')?.addEventListener('click', () => {
+        hideHistoryPanel();
+    });
 
     // 模式切换
     panel.querySelector('.ng-history-mode-badge')?.addEventListener('click', () => {
@@ -641,10 +651,12 @@ function renderHistoryPanel(safeId) {
         setTimeout(() => renderHistoryPanel(safeId), 50);
     });
     panel.querySelector('[data-hist-action="clear"]')?.addEventListener('click', () => {
-        gu.stack.length = 0;
-        gu.cursor = 0;
-        gu._pendingOp = null;
-        renderHistoryPanel(safeId);
+        if (confirm('确定要清空所有历史记录吗？此操作不可撤销。')) {
+            gu.stack.length = 0;
+            gu.cursor = 0;
+            gu._pendingOp = null;
+            renderHistoryPanel(safeId);
+        }
     });
 
     // 自动滚动到当前步骤
@@ -699,10 +711,11 @@ function _commitFileSwitchOp(safeId, oldFile, newFile) {
     if (!oldFile || oldFile === newFile) return;
     const gu = ensureGlobalUndo(safeId);
     if (!gu) return;
+    const shortName = newFile.split(/[\\/]/).pop();
     gu.push({
         type: 'file_switch',
         file: newFile,
-        label: `切换到 ${newFile}`,
+        label: `切换到 ${shortName}`,
         prev: oldFile,
         next: newFile,
     });
@@ -913,6 +926,8 @@ async function openProjectFile(safeId, filename) {
         if (tocBtn) tocBtn.onclick = toggleTableOfContents;
         const jumpBtn = toolbarEl.querySelector('.btn-jump-link');
         if (jumpBtn) jumpBtn.onclick = () => showJumpLinkDialog(safeId);
+        const histBtn = toolbarEl.querySelector('.btn-history');
+        if (histBtn) histBtn.onclick = () => toggleHistoryPanel(safeId);
 
         quill.on('text-change', updateEditorStats);
         quill.root.style.fontFamily = savedFontFamily;
@@ -1005,6 +1020,13 @@ async function openProjectFile(safeId, filename) {
             }
             if (typeof handleEditAction === 'function') handleEditAction(action);
         }, true);
+
+        // Esc：关闭弹出的历史面板
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && _historyPanelVisible) {
+                hideHistoryPanel();
+            }
+        });
     }
 
     quill.root.innerHTML = '';
@@ -1116,6 +1138,9 @@ function editorToolbar() {
             <button class="ql-image" title="${t('ui.image') || 'Image'}"></button>
         </span>
         <span class="editor-actions">
+            <button class="custom-btn btn-history" title="${t('ui.ng_history') || '历史记录 (Ctrl+H)'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            </button>
             <button class="custom-btn btn-export-md" title="${t('ui.export') || 'Export'}">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 15h2l2-3 2 3h2v-5H6v5z"/></svg>
             </button>
@@ -1648,6 +1673,9 @@ async function openMarkdownFile(safeId, filename) {
             </button>
         </span>
         <span class="editor-actions">
+            <button class="custom-btn btn-md-history" title="${t('ui.ng_history') || '历史记录 (Ctrl+H)'}">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            </button>
             <button class="custom-btn btn-md-export" title="${t('ui.export') || 'Export'}">
                 <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 7V3.5L18.5 9H13zM6 15h2l2-3 2 3h2v-5H6v5z"/></svg>
             </button>
@@ -1786,6 +1814,9 @@ async function openMarkdownFile(safeId, filename) {
             previewPane.classList.add('md-hidden');
         }
     };
+
+    const mdHistBtn = mdToolbar.querySelector('.btn-md-history');
+    if (mdHistBtn) mdHistBtn.onclick = () => toggleHistoryPanel(safeId);
 
     // 预览区点击跳转处理
     const previewEl = mdContainer.querySelector('.md-preview-content');
