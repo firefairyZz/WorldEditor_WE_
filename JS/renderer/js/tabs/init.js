@@ -142,9 +142,10 @@ window.onload = async () => {
         setupTabContextMenu();
 
         weLog.info('init', '→ 初始化文件拖放');
-        // 监听最大化/还原：仅更新图标（原生窗口接管 DWM 合成，材质不会丢失）
+        // 监听最大化/还原：同步 win-maximized 类（tab-manager 也会设置，但这里再次同步以保证事件监听先后顺序不影响）
         weAPI.onMaximizedChanged((isMaximized) => {
             document.body.classList.toggle('is-maximized', isMaximized);
+            document.body.classList.toggle('win-maximized', isMaximized);
         });
         // 初始化文件拖放
         initFileDragDrop();
