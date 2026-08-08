@@ -31,7 +31,7 @@ const SETTINGS_PATH = path.join(USER_DIR, 'settings.json');
 const ACCOUNT_PATH = path.join(USER_DIR, 'account.json');
 const ACCOUNT_AVATAR_DIR = path.join(USER_DIR, 'avatars');
 const LANG_DIR = path.join(USER_DIR, 'lang');
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 
 if (!fs.existsSync(USER_DIR)) fs.mkdirSync(USER_DIR, { recursive: true });
 if (!fs.existsSync(path.join(DATA_DIR, 'resources'))) fs.mkdirSync(path.join(DATA_DIR, 'resources'), { recursive: true });

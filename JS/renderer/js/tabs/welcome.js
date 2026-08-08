@@ -2,10 +2,17 @@ function createWelcomeTab() {
     weLog.info('welcome', '→ createWelcomeTab 开始');
     const id = 'welcome';
     if (tabs[id]) { weLog.info('welcome', 'createWelcomeTab: 已存在 welcome 标签，切换过去'); switchTab(id); return; }
+
+    // OA 模板：area-root.oa > 单个 area-card > inner(welcome-new)
+    const root = document.createElement('div');
+    root.className = 'area-root oa';
+    const block = document.createElement('div');
+    block.className = 'area-card';
+
     const content = document.createElement('div');
     content.className = 'welcome-new';
     const folderOpenSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>';
-    const filePlusSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>';
+    const filePlusSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2 0 0 1 1.704.706l3.588 3.588A2.4 2 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 15h6"/><path d="M12 18v-6"/></svg>';
     const actions = [
         { icon: folderOpenSvg, labelKey: 'ui.open_folder', action: openProject },
         { icon: filePlusSvg, labelKey: 'ui.new_project', action: createNewProjectTab }
@@ -33,9 +40,13 @@ function createWelcomeTab() {
     content.appendChild(actionsContainer);
     content.appendChild(pinnedContainer);
     content.appendChild(recentContainer);
-    loadPinnedProjects(content.querySelector('#pinned-list'));
-    loadRecentProjectsNew(content.querySelector('#recent-list'));
-    addTab(id, t('ui.welcome_tab'), content, false);
+
+    block.appendChild(content);
+    root.appendChild(block);
+
+    loadPinnedProjects(root.querySelector('#pinned-list'));
+    loadRecentProjectsNew(root.querySelector('#recent-list'));
+    addTab(id, t('ui.welcome_tab'), root, false);
     weLog.info('welcome', '← createWelcomeTab 完成');
 }
 

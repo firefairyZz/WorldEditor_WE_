@@ -215,6 +215,15 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
         weLog.error('project', 'openProjectDirectly: 获取账户信息失败', e && e.stack ? e.stack : String(e));
     }
 
+    // 读取默认打开第一项设置
+    let defaultOpenFirst = false;
+    try {
+        const settings = await weAPI.getSettings();
+        defaultOpenFirst = settings.defaultOpenFirst === true;
+    } catch(e) {
+        weLog.error('project', 'openProjectDirectly: 读取设置失败', e && e.stack ? e.stack : String(e));
+    }
+
     const layout = document.createElement('div');
     // TA 模板：area-root.ta(透材质+8px padding+8px gap) ──> area-card.is-left + area-resizer + area-card.is-right
     layout.className = 'project-layout area-root ta';
@@ -395,7 +404,7 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     addBtn.onclick = () => addFileToProject(safeId);
 
     const resizer = document.createElement('div');
-    resizer.className = 'sidebar-resizer area-resizer';
+    resizer.className = 'area-resizer';
 
     const editorArea = document.createElement('div');
     editorArea.className = 'project-editor area-card is-right';
@@ -404,9 +413,10 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
         <div class="node-graph-embed" id="ng-embed-${safeId}" style="display:none;"></div>
     `;
 
-    // resizer 作为 layout 的直接子元素（绝对定位），避免被 sidebar 的 overflow:hidden 裁剪拖拽区域
+    // resizer 作为 sidebar 的子元素，CSS left:100% 自动贴右边缘
+    // sidebar 的 overflow:visible（CSS）让 resizer 伸入 gap 不被裁剪
+    sidebar.appendChild(resizer);
     layout.appendChild(sidebar);
-    layout.appendChild(resizer);
     layout.appendChild(editorArea);
 
     setupSidebarResizer(resizer, sidebar);
@@ -422,9 +432,28 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     refreshFileTree(safeId, fileList);
     setupSearch(safeId);
     setupSortToggle(safeId);
-    if (fileList.includes('README.txt')) openProjectFile(safeId, 'README.txt');
+    // 状态 1：项目打开后默认进入目录独占模式（文件树 100%），用户点击具体文件后再切完整 TA
+    // 若 defaultOpenFirst 开启，则直接进入 TA 模式
+    if (!defaultOpenFirst) {
+        layout.classList.add('only-left');
+    }
     weLog.info('project', '← openProjectDirectly 完成', { safeId });
 }
+
+/**
+ * 切换 TA 布局状态
+ * @param {string} safeId - 项目 tab id
+ * @param {'ta'|'only-left'} state - 'ta' 完整双栏 / 'only-left' 目录独占
+ */
+function setTaState(safeId, state) {
+    const tab = tabs[safeId];
+    if (!tab || !tab.element) return;
+    const layout = tab.element.querySelector('.area-root.ta');
+    if (!layout) return;
+    layout.classList.toggle('only-left', state === 'only-left');
+    weLog.debug('project', 'setTaState', { safeId, state });
+}
+window.setTaState = setTaState;
 
 function setupSidebarResizer(resizer, sidebar) {
     weLog.info('project', '→ setupSidebarResizer 开始');
@@ -443,13 +472,13 @@ function setupSidebarResizer(resizer, sidebar) {
     });
 
     // TA 百分比拖拽：根据像素偏移换算成 --area-left 百分比写回 .area-root.ta
-    // overall = layout.clientWidth - padding(8*2) - gap(8)；左% + 右 flex:1 占满剩余
+    // resizer 的位置由 CSS left:100% 自动跟随 sidebar 宽度，无需手动更新
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
         const layout = sidebar.closest('.area-root.ta');
         if (!layout) return;
         const newWidth = Math.max(140, Math.min(500, startWidth + e.clientX - startX));
-        const overall = layout.clientWidth - 16 - 8;
+        const overall = layout.clientWidth - 16;  /* content-box 宽度（减去 padding 16px），百分比 flex-basis 基于此值 */
         if (overall > 0) {
             const percent = Math.round((newWidth / overall) * 100);
             layout.style.setProperty('--area-left', percent);

@@ -537,12 +537,41 @@ function showHistoryPanel(safeId) {
     }
     panel.classList.remove('hidden');
     renderHistoryPanel(safeId);
+    // 窗口缩放时限制面板位置，防止移出可视区域
+    window.addEventListener('resize', _clampHistoryPanelPosition);
 }
 
 function hideHistoryPanel() {
     _historyPanelVisible = false;
     const panel = document.getElementById('ng-history-panel');
     if (panel) panel.classList.add('hidden');
+    window.removeEventListener('resize', _clampHistoryPanelPosition);
+}
+
+// 窗口缩放时限制历史记录面板位置，不超出可视区域
+function _clampHistoryPanelPosition() {
+    const panel = document.getElementById('ng-history-panel');
+    if (!panel || panel.classList.contains('hidden')) return;
+    const rect = panel.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let changed = false;
+    // 如果面板有用户拖拽设定的 left，则限制 left 范围
+    if (panel.style.left) {
+        const left = parseFloat(panel.style.left) || rect.left;
+        const clampedLeft = Math.max(4, Math.min(left, vw - rect.width - 4));
+        if (clampedLeft !== left) { panel.style.left = clampedLeft + 'px'; changed = true; }
+    }
+    // 限制 top 范围
+    const top = parseFloat(panel.style.top) || rect.top;
+    const clampedTop = Math.max(4, Math.min(top, vh - rect.height - 4));
+    if (clampedTop !== top) { panel.style.top = clampedTop + 'px'; changed = true; }
+    // 如果面板使用的是 CSS 默认 right/top 定位（未拖拽过），也限制 right
+    if (!panel.style.left) {
+        const right = parseFloat(panel.style.right) || 0;
+        const clampedRight = Math.max(4, Math.min(right, vw - rect.width - 4));
+        if (clampedRight !== right) { panel.style.right = clampedRight + 'px'; changed = true; }
+    }
 }
 
 function _makeHistoryPanelDraggable(panel) {
@@ -560,8 +589,14 @@ function _makeHistoryPanelDraggable(panel) {
     });
     document.addEventListener('mousemove', (e) => {
         if (!dragging) return;
-        panel.style.left = (e.clientX - offsetX) + 'px';
-        panel.style.top = (e.clientY - offsetY) + 'px';
+        const pw = panel.offsetWidth;
+        const ph = panel.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const left = Math.max(0, Math.min(e.clientX - offsetX, vw - pw));
+        const top = Math.max(0, Math.min(e.clientY - offsetY, vh - ph));
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
         panel.style.right = 'auto';
     });
     document.addEventListener('mouseup', () => { dragging = false; });
@@ -731,6 +766,8 @@ async function openProjectFile(safeId, filename) {
         weLog.warn('editor', 'openProjectFile: project 不存在', { safeId });
         return;
     }
+    // 点击文件即切完整 TA（从目录独占进入正式编辑模式），即使后续加载失败也保留 TA
+    if (window.setTaState) window.setTaState(safeId, 'ta');
     // 【全局撤回：文件切换 step】记录 oldFile，等两个分支（嵌入 or 富文本/md）成功后各调用 commit
     const oldFile = project.currentFile || null;
 
@@ -2700,6 +2737,34 @@ function destroyEmbeddedNodeGraph(safeId) {
     delete embeddedNodeGraphs[safeId];
 }
 
+/**
+ * 关闭当前打开的文件，清空编辑器，回到目录独占模式（only-left）。
+ * 用于右键菜单"关闭文件"、删除当前文件等场景。
+ */
+function closeProjectFile(safeId) {
+    weLog.info('editor', '→ closeProjectFile', { safeId });
+    const project = tabs[safeId];
+    if (!project) return;
+    // 销毁节点图实例（会缓存脏数据）
+    if (embeddedNodeGraphs[safeId]) destroyEmbeddedNodeGraph(safeId);
+    // 清空 Quill / Markdown
+    if (quill) { try { quill.setText(''); } catch (e) {} }
+    if (markdownEditor) { markdownEditor.value = ''; }
+    // 清理 TOC 面板
+    if (typeof tocPanel !== 'undefined' && tocPanel) { tocPanel.remove(); tocPanel = null; }
+    // 隐藏编辑区容器（避免空白编辑器残留显示）
+    const embedEl = document.getElementById(`ng-embed-${safeId}`);
+    const quillWrapper = document.getElementById(`quill-${safeId}`);
+    if (embedEl) embedEl.style.display = 'none';
+    if (quillWrapper) quillWrapper.style.display = '';
+    // 清除当前文件标记
+    project.currentFile = null;
+    // 切回目录独占模式
+    if (window.setTaState) window.setTaState(safeId, 'only-left');
+    weLog.debug('editor', 'closeProjectFile: 已清空编辑器，切回 only-left', { safeId });
+}
+window.closeProjectFile = closeProjectFile;
+
 async function saveEmbeddedNodeGraph(safeId) {
     const inst = embeddedNodeGraphs[safeId];
     const project = tabs[safeId];
@@ -2815,6 +2880,14 @@ async function openEmbeddedNodeGraph(safeId, filename) {
     if (panelEl) {
         if (typeof bindNodeGraphPropertyPanel === 'function') bindNodeGraphPropertyPanel(panelEl, engine, markDirty);
         if (typeof setupPropertyPanelToggle === 'function') setupPropertyPanelToggle(panelEl);
+        // 初始化：无选中节点/边 → 隐藏属性面板（同独立 tab 处理）
+        // 同步立即执行一次 + 下一轮事件循环兜底触发，保证 panel 入 DOM 后 display:none 确实生效。
+        if (typeof updateNodeGraphPropertyPanel === 'function') {
+            try { updateNodeGraphPropertyPanel(panelEl, engine, null, null); } catch (_) {}
+            setTimeout(() => {
+                try { updateNodeGraphPropertyPanel(panelEl, engine, null, null); } catch (_) {}
+            }, 0);
+        }
     }
 
     // 右键菜单

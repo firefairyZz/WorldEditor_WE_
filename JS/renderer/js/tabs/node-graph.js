@@ -2410,6 +2410,12 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     const tabId = 'nodegraph-' + sanitizeId(graphId);
     if (tabs[tabId]) { switchTab(tabId); return; }
 
+    // OA 模板：area-root.oa > 单个 area-card > node-graph-layout(inner)
+    const root = document.createElement('div');
+    root.className = 'area-root oa';
+    const block = document.createElement('div');
+    block.className = 'area-card';
+
     const content = document.createElement('div');
     content.className = 'node-graph-layout';
     content.innerHTML = `
@@ -2421,7 +2427,9 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             ${buildNodeGraphPropertyPanelHTML()}
         </div>
     `;
-    addTab(tabId, title || graphId, content, true);
+    block.appendChild(content);
+    root.appendChild(block);
+    addTab(tabId, title || graphId, root, true);
 
     const canvasEl = content.querySelector(`#ng-canvas-${tabId}`);
     const wrapperEl = content.querySelector('.node-graph-canvas-wrapper');
@@ -2461,6 +2469,14 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     bindNodeGraphPropertyPanel(panelEl, engine, markDirty);
     setupPropertyPanelToggle(panelEl);
     setupNodeGraphContextMenu(engine, markDirty);
+
+    // 初始化：无选中节点/边 → 隐藏属性面板（用户要求"空选时面板完全隐藏，刚打开文件不显示")
+    // 同步立即执行一次，确保进入 DOM 前就设好 display:none；再在下一轮事件循环兜底执行一次，
+    // 防止 addTab 后 DOM 挂载过程中样式被重置。
+    try { updateNodeGraphPropertyPanel(panelEl, engine, null, null); } catch (_) {}
+    setTimeout(() => {
+        try { updateNodeGraphPropertyPanel(panelEl, engine, null, null); } catch (_) {}
+    }, 0);
 
     // ========== 工具栏交互 ==========
     const zoomLabel = toolbar.querySelector('.ng-zoom-label');

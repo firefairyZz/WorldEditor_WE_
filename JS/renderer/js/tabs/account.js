@@ -40,10 +40,65 @@ function updateAccountUI() {
     if (!currentAccount) {
         updateAvatarButton(null);
         updateOwnerDisplay(null);
+        updateUserProfileCards(null);
         return;
     }
     updateAvatarButton(currentAccount);
     updateOwnerDisplay(currentAccount);
+    updateUserProfileCards(currentAccount);
+}
+
+function createUserProfileCard(options = {}) {
+    const card = document.createElement('div');
+    card.className = 'sidebar-user-profile';
+    if (options.id) card.id = options.id;
+    card.innerHTML = `
+        <div class="sidebar-user-profile-avatar" data-profile-avatar></div>
+        <div class="sidebar-user-profile-name" data-profile-name></div>
+        <div class="sidebar-user-profile-bio" data-profile-bio></div>
+        <hr class="sidebar-divider">
+    `;
+    updateUserProfileCard(card, getAccount());
+    return card;
+}
+
+function updateUserProfileCard(card, account) {
+    if (!card) return;
+    const avatarEl = card.querySelector('[data-profile-avatar]');
+    const nameEl = card.querySelector('[data-profile-name]');
+    const bioEl = card.querySelector('[data-profile-bio]');
+    if (!avatarEl || !nameEl || !bioEl) return;
+
+    if (!account || !account.name) {
+        avatarEl.innerHTML = '<span>?</span>';
+        nameEl.textContent = t('ui.not_set') || '未设置';
+        bioEl.textContent = t('ui.bio_edit_hint') || '在「账户」选项卡内可编辑签名';
+        bioEl.classList.add('is-placeholder');
+        return;
+    }
+
+    const displayName = (account.displayName || account.name).replace(/[<>]/g, '');
+    if (account.avatarDataUrl) {
+        avatarEl.innerHTML = `<img src="${account.avatarDataUrl}" alt="avatar" />`;
+    } else {
+        avatarEl.innerHTML = `<span>${(account.name[0] || '?').toUpperCase()}</span>`;
+    }
+    nameEl.textContent = displayName;
+
+    const bio = (account.bio || '').trim();
+    if (bio) {
+        bioEl.textContent = bio.replace(/[<>]/g, '');
+        bioEl.classList.remove('is-placeholder');
+    } else {
+        bioEl.textContent = t('ui.bio_edit_hint') || '在「账户」选项卡内可编辑签名';
+        bioEl.classList.add('is-placeholder');
+    }
+}
+
+function updateUserProfileCards(account) {
+    document.querySelectorAll('.sidebar-user-profile').forEach(card => {
+        updateUserProfileCard(card, account);
+    });
 }
 
 function updateAvatarButton(account) {
@@ -117,12 +172,18 @@ function createAccountTab() {
     weLog.info('account', '→ createAccountTab 开始');
     const id = 'account';
     if (tabs[id]) { weLog.info('account', 'createAccountTab: 已存在 account 标签，切换过去'); switchTab(id); return; }
+    // OA 模板：area-root.oa > 单个 area-card > account-page
+    const root = document.createElement('div');
+    root.className = 'area-root oa';
+    const block = document.createElement('div');
+    block.className = 'area-card';
     const content = document.createElement('div');
     content.className = 'account-page';
 
     const isNew = !currentAccount;
     const accountName = currentAccount?.name || '';
     const accountDisplayName = currentAccount?.displayName || '';
+    const accountBio = currentAccount?.bio || '';
     const avatarDataUrl = currentAccount?.avatarDataUrl || '';
     weLog.info('account', 'createAccountTab', { isNew, accountName });
 
@@ -150,6 +211,10 @@ function createAccountTab() {
                         <div class="account-page-field">
                             <label>${t('ui.display_name') || '显示名称'}</label>
                             <input type="text" id="account-display-input" value="${accountDisplayName}" placeholder="${t('ui.display_name_placeholder') || '请输入显示名称'}" maxlength="30" />
+                        </div>
+                        <div class="account-page-field">
+                            <label>${t('ui.bio') || '简介'}</label>
+                            <textarea id="account-bio-input" rows="3" maxlength="120" placeholder="${t('ui.bio_placeholder') || '写一句个人签名…'}">${accountBio.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
                         </div>
                     </div>
                 </div>
@@ -213,6 +278,7 @@ function createAccountTab() {
     content.querySelector('#account-btn-submit').onclick = async () => {
         const name = content.querySelector('#account-name-input').value.trim();
         const displayName = content.querySelector('#account-display-input').value.trim();
+        const bio = content.querySelector('#account-bio-input').value.trim();
         weLog.info('account', 'createAccountTab: 点击保存', { name, displayName, isNew });
 
         if (!name) {
@@ -229,6 +295,7 @@ function createAccountTab() {
         const accountData = {
             name,
             displayName: displayName || name,
+            bio,
             avatarDataUrl: tempAvatarDataUrl || generateInitialAvatar(name),
             createdAt: currentAccount?.createdAt || new Date().toISOString()
         };
@@ -274,6 +341,8 @@ function createAccountTab() {
         };
     }
 
-    addTab(id, t('ui.account') || '账户', content, true);
+    block.appendChild(content);
+    root.appendChild(block);
+    addTab(id, t('ui.account') || '账户', root, true);
     weLog.info('account', '← createAccountTab 完成');
 }

@@ -467,3 +467,10 @@ ui.select_tags_to_remove = Выберите теги для удаления
 ui.no_tags_to_remove = В выборе нет тегов
 ui.tags_removed = Теги удалены
 ui.ng_continuous_draw = Непрерывное рисование (Tab)
+
+ui.bio_edit_hint = О себе можно редактировать в вкладке «Аккаунт»
+ui.default_open_first = Открывать первый пункт по умолчанию
+ui.bio = О себе
+ui.bio_placeholder = Напишите подпись…
+ui.bio_empty = Нет описания
+ui.history = История

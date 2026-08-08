@@ -485,3 +485,10 @@ ui.no_tags_to_remove = 选中项没有标签
 ui.tags_removed = 已删除标签
 ui.ng_history = 历史记录
 ui.ng_continuous_draw = 连续绘制 (Tab)
+
+ui.bio_edit_hint = 在「账户」选项卡内可编辑签名
+ui.default_open_first = 默认打开第一项
+ui.bio = 简介
+ui.bio_placeholder = 写一句个人签名…
+ui.bio_empty = 暂无简介
+ui.history = 历史记录

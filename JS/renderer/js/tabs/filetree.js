@@ -383,8 +383,7 @@ async function batchDelete(safeId, projectPath) {
                     successCount++;
                     lastFileList = res.fileList;
                     if (tabs[safeId].currentFile === path) {
-                        tabs[safeId].currentFile = null;
-                        if (quill) quill.setText('');
+                        if (window.closeProjectFile) window.closeProjectFile(safeId);
                     }
                 }
             } else {
@@ -393,8 +392,7 @@ async function batchDelete(safeId, projectPath) {
                     successCount++;
                     lastFileList = res.fileList;
                     if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(path + '/')) {
-                        tabs[safeId].currentFile = null;
-                        if (quill) quill.setText('');
+                        if (window.closeProjectFile) window.closeProjectFile(safeId);
                     }
                 }
             }
@@ -739,10 +737,9 @@ function showFileContextMenu(e, filePath, container) {
         if (!ok) return;
         const res = await weAPI.deleteFile(projectPath, filePath);
         if (res.success) {
-            // 若当前已打开该文件，关闭标签
+            // 若当前已打开该文件，关闭并切回目录独占
             if (tabs[safeId].currentFile === filePath) {
-                tabs[safeId].currentFile = null;
-                if (quill) { quill.setText(''); }
+                if (window.closeProjectFile) window.closeProjectFile(safeId);
             }
             tabs[safeId].fileList = res.fileList;
             refreshFileTree(safeId, res.fileList);
@@ -752,11 +749,28 @@ function showFileContextMenu(e, filePath, container) {
         }
     };
 
+    // "关闭文件"：仅当右键的是当前已打开文件时显示，用于从完整 TA 回目录独占
+    const isCurrentOpen = tabs[safeId]?.currentFile === filePath;
+    let closeItem = null;
+    if (isCurrentOpen) {
+        closeItem = document.createElement('div');
+        closeItem.className = 'context-item';
+        closeItem.textContent = t('ui.close_file') || '关闭文件';
+        closeItem.onclick = () => {
+            menu.remove();
+            if (window.closeProjectFile) window.closeProjectFile(safeId);
+        };
+    }
+
     menu.appendChild(tagItem);
     menu.appendChild(thumbItem);
     menu.appendChild(document.createElement('div')).className = 'context-sep';
     menu.appendChild(renameItem);
     menu.appendChild(deleteItem);
+    if (closeItem) {
+        menu.appendChild(document.createElement('div')).className = 'context-sep';
+        menu.appendChild(closeItem);
+    }
 
     positionContextMenu(menu, e);
 }

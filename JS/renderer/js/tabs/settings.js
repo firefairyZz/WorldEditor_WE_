@@ -358,6 +358,7 @@ function refreshSettingsI18n() {
         if (rows[1]) rows[1].textContent = t('ui.auto_save') || rows[1].textContent;
         if (rows[2]) rows[2].textContent = t('ui.tab_close_confirm') || rows[2].textContent;
         if (rows[3]) rows[3].textContent = t('ui.always_on_top') || rows[3].textContent;
+        if (rows[4]) rows[4].textContent = t('ui.default_open_first') || rows[4].textContent;
 
         const autoSaveSelect = generalSection.querySelector('#auto-save-select');
         if (autoSaveSelect) {
@@ -395,6 +396,7 @@ function refreshSettingsI18n() {
         if (labels[0]) labels[0].textContent = 'ID';
         if (labels[1]) labels[1].textContent = t('ui.account_name') || labels[1].textContent;
         if (labels[2]) labels[2].textContent = t('ui.display_name') || labels[2].textContent;
+        if (labels[3]) labels[3].textContent = t('ui.bio') || labels[3].textContent;
         const editBtns = accountSection.querySelectorAll('.settings-account-edit-btn');
         editBtns.forEach(btn => { btn.textContent = t('ui.edit') || btn.textContent; });
         const copyBtn = accountSection.querySelector('#btn-copy-id');
@@ -406,10 +408,16 @@ function refreshSettingsI18n() {
             const val = currentAccount?.name;
             nameValue.textContent = val || t('ui.not_set') || 'Not set';
         }
-        const displayValue = accountSection.querySelector('#display-account-display');
-        if (displayValue && !displayValue.querySelector('input')) {
+        const displayValue = accountSection.querySelector('#display-account-bio');
+        if (displayValue && !displayValue.querySelector('textarea')) {
+            const val = (currentAccount?.bio || '').trim();
+            displayValue.textContent = val || (t('ui.bio_empty') || '暂无简介');
+            displayValue.classList.toggle('is-empty', !val);
+        }
+        const displayNameValue = accountSection.querySelector('#display-account-display');
+        if (displayNameValue && !displayNameValue.querySelector('input')) {
             const val = currentAccount?.displayName;
-            displayValue.textContent = val || t('ui.not_set') || 'Not set';
+            displayNameValue.textContent = val || t('ui.not_set') || 'Not set';
         }
     }
 
@@ -548,22 +556,50 @@ function createSettingsTab() {
     weLog.info('settings', '→ createSettingsTab 开始');
     const id = 'settings';
     if (tabs[id]) { weLog.debug('settings', 'createSettingsTab: 标签已存在，切换过去'); switchTab(id); return; }
+    // TA 模板：content 本身就是 area-root.ta（这样后续 content.querySelector(...) 能找到内部所有节点）
+    //                          content(settings-layout.area-root.ta)
+    //                            ├── nav(settings-nav.area-card.is-left)
+    //                            └── panel(settings-panel.area-card.is-right)
     const content = document.createElement('div');
-    content.className = 'settings-layout';
+    content.className = 'settings-layout area-root ta';
 
     const nav = document.createElement('div');
-    nav.className = 'settings-nav';
-    nav.innerHTML = `
-        <div class="nav-item active" data-section="general">${t('ui.general')}</div>
-        <div class="nav-item" data-section="tags">${t('ui.tags_settings') || '标签'}</div>
-        <div class="nav-item" data-section="account">${t('ui.account') || '账户'}</div>
-        <div class="nav-item" data-section="appearance">${t('ui.appearance') || '外观'}</div>
-        <div class="nav-item" data-section="editor">${t('ui.editor')}</div>
-        <div class="nav-item" data-section="shortcuts">${t('ui.shortcuts') || '快捷键'}</div>
-        <div class="nav-item" data-section="about">${t('ui.about')}</div>
+    nav.className = 'settings-nav area-card is-left';
+    const userCard = createUserProfileCard({ id: 'settings-user-profile' });
+    // 用户卡片（尤其头像）点击 → 切到「账户」选项卡并激活完整 TA
+    const triggerAccount = () => {
+        const accountItem = navItemsWrap.querySelector('[data-section="account"]');
+        if (accountItem) accountItem.click();
+    };
+    userCard.addEventListener('click', triggerAccount);
+    const avatarEl = userCard.querySelector('[data-profile-avatar]');
+    if (avatarEl) avatarEl.style.cursor = 'pointer';
+    userCard.style.cursor = 'pointer';
+    nav.appendChild(userCard);
+    const navItemsWrap = document.createElement('div');
+    navItemsWrap.className = 'settings-nav-items';
+    // Lucide 图标：sliders-horizontal, bookmark, user, paintbrush, pencil-ruler, keyboard, book-open
+    const navIcons = {
+        general: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><circle cx="14" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="20" r="2"/></svg>',
+        tags: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>',
+        account: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+        appearance: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18.37 2.63 14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l4 4 1.59-1.59a2 2 0 0 0 0-2.82L17 3.63a2 2 0 1 1 1.37 1z"/><path d="M7 12l-3 3a2 2 0 0 0 0 2.83L9 22a2 2 0 0 0 2.83 0L14 19"/></svg>',
+        editor: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13"/><path d="m8 8 6 6"/><path d="m12 16 5 5"/><path d="m14 14 7.5 7.5"/><path d="m6 6 3 3"/></svg>',
+        shortcuts: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M6 16h.01M18 16h.01M10 16h4"/></svg>',
+        about: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>'
+    };
+    navItemsWrap.innerHTML = `
+        <div class="nav-item" data-section="general">${navIcons.general}${t('ui.general')}</div>
+        <div class="nav-item" data-section="tags">${navIcons.tags}${t('ui.tags_settings') || '标签'}</div>
+        <div class="nav-item" data-section="account">${navIcons.account}${t('ui.account') || '账户'}</div>
+        <div class="nav-item" data-section="appearance">${navIcons.appearance}${t('ui.appearance') || '外观'}</div>
+        <div class="nav-item" data-section="editor">${navIcons.editor}${t('ui.editor')}</div>
+        <div class="nav-item" data-section="shortcuts">${navIcons.shortcuts}${t('ui.shortcuts') || '快捷键'}</div>
+        <div class="nav-item" data-section="about">${navIcons.about}${t('ui.about')}</div>
     `;
+    nav.appendChild(navItemsWrap);
     const panel = document.createElement('div');
-    panel.className = 'settings-panel';
+    panel.className = 'settings-panel area-card is-right';
     settingsPanelRef = panel;
     const contentArea = document.createElement('div');
     contentArea.className = 'settings-content';
@@ -598,6 +634,10 @@ function createSettingsTab() {
         <div class="setting-row">
             <span>${t('ui.always_on_top') || '窗口置顶'}</span>
             <label class="toggle-switch"><input type="checkbox" id="always-on-top-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+            <span>${t('ui.default_open_first') || '默认打开第一项'}</span>
+            <label class="toggle-switch"><input type="checkbox" id="default-open-first-toggle"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-group" id="update-check-group">
             <div class="setting-group-title">${t('ui.update_check') || '检查更新'}</div>
@@ -648,6 +688,7 @@ function createSettingsTab() {
     accountSection.id = 'section-account';
     const accountName = currentAccount?.name || '';
     const accountDisplayName = currentAccount?.displayName || '';
+    const accountBio = (currentAccount?.bio || '').trim();
     const avatarUrl = currentAccount?.avatarDataUrl || '';
     accountSection.innerHTML = `
         <h3>${t('ui.account') || '账户'}</h3>
@@ -675,6 +716,11 @@ function createSettingsTab() {
                     <span class="settings-account-label">${t('ui.display_name') || '显示名称'}</span>
                     <span class="settings-account-value" id="display-account-display">${accountDisplayName || (t('ui.not_set') || '未设置')}</span>
                     <button class="settings-account-edit-btn" id="btn-edit-display">${t('ui.edit') || '修改'}</button>
+                </div>
+                <div class="settings-account-row settings-account-row-bio" data-field="bio">
+                    <span class="settings-account-label">${t('ui.bio') || '简介'}</span>
+                    <span class="settings-account-value settings-account-value-bio${accountBio ? '' : ' is-empty'}" id="display-account-bio">${accountBio || (t('ui.bio_empty') || '暂无简介')}</span>
+                    <button class="settings-account-edit-btn" id="btn-edit-bio">${t('ui.edit') || '修改'}</button>
                 </div>
             </div>
         </div>
@@ -979,10 +1025,19 @@ function createSettingsTab() {
     panel.appendChild(contentArea);
     panel.appendChild(footer);
     content.appendChild(nav);
+    // 插入拖拽调宽条（复用编辑器的 area-resizer 样式 + setupSidebarResizer 逻辑）
+    const resizer = document.createElement('div');
+    resizer.className = 'area-resizer';
+    nav.appendChild(resizer);
+    if (typeof setupSidebarResizer === 'function') setupSidebarResizer(resizer, nav);
     content.appendChild(panel);
+    // 状态 1：设置页打开后默认进入导航区独占（only-left），点击栏目后切完整 TA
+    content.classList.add('only-left');
 
     nav.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
+            // 点击栏目即切完整 TA（去掉目录独占）
+            content.classList.remove('only-left');
             nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             item.classList.add('active');
             const section = item.dataset.section;
@@ -1022,6 +1077,7 @@ function createSettingsTab() {
         content.querySelector('#auto-save-select').value = s.autoSave || '0';
         const tc = content.querySelector('#tab-close-confirm'); if (tc) tc.checked = s.tabCloseConfirm !== false;
         const aot = content.querySelector('#always-on-top-toggle'); if (aot) aot.checked = s.alwaysOnTop === true;
+        const dof = content.querySelector('#default-open-first-toggle'); if (dof) dof.checked = s.defaultOpenFirst === true;
         const bgm = content.querySelector('#bg-material-select'); if (bgm) bgm.value = s.backgroundMaterial || 'none';
         const bgTint = content.querySelector('#bg-tint-slider'); if (bgTint) { bgTint.value = s.materialTint ?? 78; content.querySelector('#bg-tint-val').textContent = bgTint.value + '%'; }
         const bgOverlay = content.querySelector('#bg-overlay-slider'); if (bgOverlay) { bgOverlay.value = s.materialOverlay ?? 30; content.querySelector('#bg-overlay-val').textContent = bgOverlay.value + '%'; }
@@ -1055,6 +1111,12 @@ function createSettingsTab() {
         // 同步到节点图全局设置
         if (typeof ngDefaultSettings !== 'undefined') {
             ngDefaultSettings.hideArrowByDefault = s.ngHideArrowByDefault === true;
+        }
+        // 默认打开第一项：移除 only-left 并自动点击第一个导航项
+        if (s.defaultOpenFirst === true) {
+            content.classList.remove('only-left');
+            const firstNav = content.querySelector('.nav-item');
+            if (firstNav) firstNav.click();
         }
         savedFontFamily = s.fontFamily || 'Microsoft YaHei';
         savedFontSize = s.fontSize || '16';
@@ -1341,6 +1403,7 @@ function createSettingsTab() {
     let tempAvatarUrl = currentAccount?.avatarDataUrl || '';
     let tempAccountName = currentAccount?.name || '';
     let tempAccountDisplay = currentAccount?.displayName || '';
+    let tempAccountBio = (currentAccount?.bio || '').trim();
     let accountChanged = false;
 
     // 更换头像
@@ -1388,25 +1451,33 @@ function createSettingsTab() {
         if (!row) return;
         const valueSpan = row.querySelector('.settings-account-value');
         const editBtn = row.querySelector('.settings-account-edit-btn');
-        const oldValue = field === 'name' ? tempAccountName : tempAccountDisplay;
+        const oldValue = field === 'name'
+            ? tempAccountName
+            : field === 'display'
+                ? tempAccountDisplay
+                : tempAccountBio;
 
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'settings-account-input';
+        const input = field === 'bio' ? document.createElement('textarea') : document.createElement('input');
+        input.className = field === 'bio' ? 'settings-account-textarea' : 'settings-account-input';
+        if (field !== 'bio') input.type = 'text';
         input.value = oldValue;
         if (field === 'name') {
             input.maxLength = 20;
             input.placeholder = t('ui.account_name_placeholder') || '请输入账户名称';
-        } else {
+        } else if (field === 'display') {
             input.maxLength = 30;
             input.placeholder = t('ui.display_name_placeholder') || '请输入显示名称';
+        } else {
+            input.maxLength = 120;
+            input.rows = 3;
+            input.placeholder = t('ui.bio_placeholder') || '写一句个人签名…';
         }
 
         valueSpan.style.display = 'none';
         editBtn.style.display = 'none';
         valueSpan.parentNode.insertBefore(input, editBtn);
         input.focus();
-        input.select();
+        if (field !== 'bio') input.select();
 
         let finished = false;
         const finishEdit = () => {
@@ -1423,16 +1494,30 @@ function createSettingsTab() {
             }
             if (field === 'name') {
                 tempAccountName = val || oldValue;
-            } else {
+            } else if (field === 'display') {
                 tempAccountDisplay = val || tempAccountName;
+            } else {
+                tempAccountBio = val;
             }
             accountChanged = true;
 
             // 恢复显示
             input.remove();
-            valueSpan.textContent = (field === 'name' ? tempAccountName : tempAccountDisplay) || (t('ui.not_set') || '未设置');
+            if (field === 'bio') {
+                valueSpan.textContent = tempAccountBio || (t('ui.bio_empty') || '暂无简介');
+                valueSpan.classList.toggle('is-empty', !tempAccountBio);
+            } else {
+                valueSpan.textContent = (field === 'name' ? tempAccountName : tempAccountDisplay) || (t('ui.not_set') || '未设置');
+            }
             valueSpan.style.display = '';
             editBtn.style.display = '';
+            updateUserProfileCards({
+                ...(currentAccount || {}),
+                name: tempAccountName,
+                displayName: tempAccountDisplay || tempAccountName,
+                bio: tempAccountBio,
+                avatarDataUrl: tempAvatarUrl || currentAccount?.avatarDataUrl || ''
+            });
 
             // 名称变更时同步头像首字母
             if (field === 'name' && !tempAvatarUrl) {
@@ -1443,6 +1528,15 @@ function createSettingsTab() {
         };
 
         input.addEventListener('keydown', (e) => {
+            if (field === 'bio') {
+                if (e.key === 'Escape') {
+                    finished = true;
+                    input.remove();
+                    valueSpan.style.display = '';
+                    editBtn.style.display = '';
+                }
+                return;
+            }
             if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
             else if (e.key === 'Escape') { finished = true; input.remove(); valueSpan.style.display = ''; editBtn.style.display = ''; }
         });
@@ -1453,6 +1547,8 @@ function createSettingsTab() {
     if (editNameBtn) editNameBtn.onclick = () => startInlineEdit('name');
     const editDisplayBtn = content.querySelector('#btn-edit-display');
     if (editDisplayBtn) editDisplayBtn.onclick = () => startInlineEdit('display');
+    const editBioBtn = content.querySelector('#btn-edit-bio');
+    if (editBioBtn) editBioBtn.onclick = () => startInlineEdit('bio');
 
     // 复制账户ID
     const copyIdBtn = content.querySelector('#btn-copy-id');
@@ -1491,6 +1587,7 @@ function createSettingsTab() {
                 currentAccount = null;
                 tempAccountName = '';
                 tempAccountDisplay = '';
+                tempAccountBio = '';
                 tempAvatarUrl = '';
                 accountChanged = false;
                 updateAccountUI();
@@ -1501,6 +1598,11 @@ function createSettingsTab() {
                 if (nameEl) nameEl.textContent = t('ui.not_set') || '未设置';
                 const dispEl = content.querySelector('#display-account-display');
                 if (dispEl) dispEl.textContent = t('ui.not_set') || '未设置';
+                const bioEl = content.querySelector('#display-account-bio');
+                if (bioEl) {
+                    bioEl.textContent = t('ui.bio_empty') || '暂无简介';
+                    bioEl.classList.add('is-empty');
+                }
                 showNotification(t('ui.account_deleted') || '账户已删除');
             } else {
                 weLog.warn('settings', 'deleteAccountBtn: 账户删除失败', { error: result.error });
@@ -1538,6 +1640,7 @@ function createSettingsTab() {
         const mdVal = content.querySelector('#md-render-toggle')?.checked ?? true;
         const sbVal = content.querySelector('#smart-brackets-toggle')?.checked ?? false;
         const haVal = content.querySelector('#ng-hide-arrow-toggle')?.checked ?? false;
+        const dofVal = content.querySelector('#default-open-first-toggle')?.checked ?? false;
 
         // 收集自定义快捷键
         const customShortcuts = collectCustomShortcuts(content);
@@ -1551,7 +1654,7 @@ function createSettingsTab() {
             colorPreset: colorPreset, customColors: customColors,
             'font-family': fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal, ngHideArrowByDefault: haVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, defaultOpenFirst: dofVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal, ngHideArrowByDefault: haVal,
             backgroundImageEnabled: bgImgEnabledVal, backgroundImage: bgImgNameVal, backgroundImageOpacity: bgImgOpacityVal,
             customShortcuts: customShortcuts
         });
@@ -1615,6 +1718,7 @@ function createSettingsTab() {
             const accountData = {
                 name: tempAccountName,
                 displayName: tempAccountDisplay || tempAccountName,
+                bio: tempAccountBio,
                 avatarDataUrl: tempAvatarUrl || generateInitialAvatar(tempAccountName),
                 createdAt: currentAccount?.createdAt || new Date().toISOString()
             };
@@ -1629,6 +1733,19 @@ function createSettingsTab() {
         }
 
         showNotification(t('ui.settings_saved'));
+        // 立即应用「默认打开第一项」设置
+        if (dofVal) {
+            content.classList.remove('only-left');
+            const firstNav = content.querySelector('.nav-item');
+            if (firstNav) firstNav.click();
+        } else {
+            content.classList.add('only-left');
+            // 切换到 only-left 后需要重置右侧面板状态
+            const activeNav = content.querySelector('.nav-item.active');
+            if (activeNav) activeNav.classList.remove('active');
+            const activeSection = content.querySelector('.settings-section.active');
+            if (activeSection) activeSection.classList.remove('active');
+        }
         // 全面刷新UI文本（包括欢迎页、标签页标题等）
         if (typeof refreshAllUITexts === 'function') {
             refreshAllUITexts();
@@ -1793,8 +1910,7 @@ function applyOverlay(overlay) {
     const { gapColor } = readThemeColors();
     const alpha = (overlay ?? 30) / 100;
     document.body.style.setProperty('--overlay-tint', hexToRgba(gapColor, alpha));
-    // 标签栏边框色跟随遮罩（标签栏在遮罩之上，用 gap-color 半透明）
-    document.body.style.setProperty('--gap-color', hexToRgba(gapColor, alpha));
+    // 不再修改 --gap-color（保持实心主题色，避免 body 背景变半透明透出白色窗口底）
 }
 
 // 仅控制标题栏不透明度
@@ -1850,6 +1966,7 @@ function applyBackgroundMaterial(material, tint, overlay, barTint) {
     console.log(`[renderer] applyBackgroundMaterial | material=${material} tint=${tint} overlay=${overlay} barTint=${barTint} active=${active}`);
     document.documentElement.classList.toggle('material-active', active);
     document.body.classList.toggle('material-active', active);
+    document.body.classList.toggle('material-none', !active);  // material=无 时 #main 回退到不透明遮罩
     document.body.dataset.bgMaterial = material || 'none';
     window.__lastMaterialSettings = { material, tint, overlay, barTint };
 

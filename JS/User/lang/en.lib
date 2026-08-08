@@ -515,3 +515,10 @@ ui.no_tags_to_remove = No tags found in selection
 ui.tags_removed = Tags removed
 ui.ng_history = History
 ui.ng_continuous_draw = Continuous Draw (Tab)
+
+ui.bio_edit_hint = Edit your bio in Account tab
+ui.default_open_first = Default open first item
+ui.bio = Bio
+ui.bio_placeholder = Write a personal signature…
+ui.bio_empty = No bio yet
+ui.history = History
