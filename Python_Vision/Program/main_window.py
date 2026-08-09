@@ -1,17 +1,18 @@
+import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
-    QToolBar, QSizePolicy, QTabWidget, QTabBar, QMenu, QFileDialog
+    QToolBar, QSizePolicy, QTabWidget, QTabBar, QMenu, QFileDialog,
+    QSplitter, QMessageBox
 )
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtCore import Qt, QPoint, QEvent
 from .title_bar import TitleBar
-import os
+from .file_tree_widget import FileTreeWidget
+from .text_editor_widget import TextEditorWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # 无边框窗口，但保留任务栏交互
-        # self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
         self.setMinimumSize(800, 500)
         self.setStyleSheet("background-color: #1e1e1e;")
 
@@ -73,6 +74,17 @@ class MainWindow(QMainWindow):
         self.add_tab("欢迎", self.create_welcome_tab(), closable=False)
         self.resize(1000, 700)
 
+        # 项目状态
+        self._current_project_path = None
+        self._file_tree = None
+        self._text_editor = None
+
+        # 注册 Ctrl+S 快捷键
+        save_shortcut = QAction("保存", self)
+        save_shortcut.setShortcut(QKeySequence("Ctrl+S"))
+        save_shortcut.triggered.connect(self._save_current_file)
+        self.addAction(save_shortcut)
+
     def toggle_maximize(self):
         if self.isMaximized():
             self.showNormal()
@@ -81,7 +93,6 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event):
         if event.type() == QEvent.WindowStateChange:
-            # 可在此处理最大化图标切换，目前简单处理
             pass
         super().changeEvent(event)
 
@@ -124,21 +135,99 @@ class MainWindow(QMainWindow):
             self.open_project_folder(folder)
 
     def open_project_folder(self, folder):
+        """打开项目文件夹，显示文件树和编辑器"""
         try:
             from .project_manager import open_project as pm_open
             pm_open(folder)
-            self.add_tab(os.path.basename(folder), QLabel(f"项目内容占位：{folder}"))
+
+            # 扫描项目文件夹中的文件
+            files = []
+            if os.path.isdir(folder):
+                for f in os.listdir(folder):
+                    fpath = os.path.join(folder, f)
+                    if os.path.isfile(fpath) and not f.startswith('.') and not f.endswith('.wep'):
+                        files.append(f)
+
+            # 创建项目视图
+            container = QWidget()
+            splitter = QSplitter(Qt.Horizontal)
+            splitter.setStyleSheet("""
+                QSplitter::handle { background: #3c3c3c; width: 3px; }
+            """)
+
+            # 文件树
+            self._file_tree = FileTreeWidget(folder)
+            self._file_tree.set_files(files)
+            self._file_tree.file_selected.connect(self._on_file_selected)
+            splitter.addWidget(self._file_tree)
+
+            # 文本编辑器
+            self._text_editor = TextEditorWidget()
+            self._text_editor.content_changed.connect(self._on_editor_changed)
+            splitter.addWidget(self._text_editor)
+
+            splitter.setSizes([200, 600])
+
+            main_lay = QVBoxLayout(container)
+            main_lay.setContentsMargins(0, 0, 0, 0)
+            main_lay.addWidget(splitter)
+
+            self._current_project_path = folder
+            self.add_tab(os.path.basename(folder), container)
+            self.status_label.setText(f"已打开项目: {os.path.basename(folder)}")
+
         except Exception as e:
-            print(f"打开项目失败: {e}")
+            self.status_label.setText(f"打开项目失败")
+            QMessageBox.critical(self, "错误", f"打开项目失败: {e}")
+
+    def _on_file_selected(self, filename):
+        """文件树选中文件后加载到编辑器"""
+        if not self._current_project_path or not self._text_editor:
+            return
+        # 如果当前文件已修改，先保存
+        if self._text_editor.is_dirty:
+            reply = QMessageBox.question(self, "保存", f"是否保存当前文件？",
+                                         QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            if reply == QMessageBox.Cancel:
+                return
+            if reply == QMessageBox.Yes:
+                self._save_current_file()
+        filepath = os.path.join(self._current_project_path, filename)
+        self._text_editor.load_file(filepath)
+        self.status_label.setText(f"已打开: {filename}")
+
+    def _on_editor_changed(self):
+        """编辑器内容变更时更新状态"""
+        self.status_label.setText("已修改 *")
+
+    def _save_current_file(self):
+        """保存当前文件"""
+        if self._text_editor and self._text_editor.current_file:
+            if self._text_editor.save_file():
+                self.status_label.setText("已保存")
+            else:
+                self.status_label.setText("保存失败")
+        else:
+            self.status_label.setText("没有打开的文件")
 
     def add_tab(self, title, widget, closable=True):
         idx = self.tab_widget.addTab(widget, title)
         if not closable:
             self.tab_widget.tabBar().setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
+        self.tab_widget.setCurrentIndex(idx)
 
     def close_tab(self, index):
         if index == 0:
             return
+        # 关闭项目标签时清理状态
+        widget = self.tab_widget.widget(index)
+        if widget:
+            # 查找关联的文件树和编辑器
+            for child in widget.findChildren(FileTreeWidget):
+                self._file_tree = None
+            for child in widget.findChildren(TextEditorWidget):
+                self._text_editor = None
+            self._current_project_path = None
         self.tab_widget.removeTab(index)
 
     def show_tab_context_menu(self, pos: QPoint):
@@ -156,21 +245,10 @@ class MainWindow(QMainWindow):
         title = self.tab_widget.tabText(index)
         self.tab_widget.removeTab(index)
         child_win = QMainWindow(self)
-        child_win.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
+        child_win.setWindowFlags(Qt.Window)
         child_win.setWindowTitle(title)
         child_win.resize(600, 400)
-        # 子窗口简单添加标题栏
-        tb = TitleBar(child_win, title)
-        tb.minimize_clicked.connect(child_win.showMinimized)
-        tb.maximize_clicked.connect(lambda: child_win.showNormal() if child_win.isMaximized() else child_win.showMaximized())
-        tb.close_clicked.connect(child_win.close)
-        container = QVBoxLayout()
-        container.setContentsMargins(0,0,0,0)
-        container.addWidget(tb)
-        container.addWidget(widget)
-        central = QWidget()
-        central.setLayout(container)
-        child_win.setCentralWidget(central)
+        child_win.setCentralWidget(widget)
         child_win.show()
 
     def open_settings(self):
