@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NGEngine Embedded Test</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: sans-serif; background: #1a1a1a; color: #ddd; height: 100vh; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+#sidebar { width: 200px; background: #252525; padding: 10px; }
+#editor { flex: 1; display: flex; flex-direction: column; position: relative; }
+
+/* 模拟项目标签页中的嵌入节点图容器 */
+.node-graph-embed {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg-main, #2d2d2d);
+}
+.node-graph-toolbar {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #2a2a2a;
+    border-bottom: 1px solid #444;
+    flex-shrink: 0;
+    align-items: center;
+}
+.ng-btn {
+    padding: 4px 8px;
+    background: transparent;
+    color: #ccc;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+}
+.ng-btn:hover { background: rgba(255,255,255,0.1); }
+.ng-btn.active { background: #4a90d9; color: #fff; }
+.ng-toolbar-divider { width: 1px; height: 20px; background: #555; margin: 0 4px; }
+.ng-zoom-label { font-size: 12px; color: #aaa; min-width: 40px; text-align: center; }
+.node-graph-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.node-graph-canvas-wrapper { flex: 1; overflow: hidden; position: relative; }
+.node-graph-canvas { width: 100%; height: 100%; background: var(--bg-main, #2d2d2d); }
+.ng-property-panel { width: 220px; background: #252525; padding: 10px; overflow-y: auto; }
+.ng-coords { position: absolute; left: 8px; bottom: 8px; font-size: 11px; font-family: monospace; color: #888; pointer-events: none; z-index: 3; }
+#log { position: fixed; top: 10px; right: 10px; width: 400px; max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.85); color: #0f0; font-family: monospace; font-size: 11px; padding: 6px; z-index: 999; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">Sidebar (file tree)</div>
+  <div id="editor">
+    <div id="ng-embed-test" class="node-graph-embed"></div>
+  </div>
+</div>
+<div id="log"></div>
+
+<script src="../renderer/js/tabs/node-graph.js?v=195715"></script>
+<script>
+function t(key) { return key; }
+function escapeHtml(text) { return String(text == null ? '' : text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showNotification(msg) { console.log('[NOTIFY]', msg); }
+const weLog = { info:(m,...a)=>console.log('[INFO]',m,...a), warn:(m,...a)=>console.warn('[WARN]',m,...a), error:(m,...a)=>console.error('[ERR]',m,...a), debug:(m,...a)=>console.log('[DBG]',m,...a) };
+
+const logEl = document.getElementById('log');
+function log(msg) {
+    const line = document.createElement('div');
+    line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+log('=== Embedded Mode Test ===');
+
+// 模拟 editor.js 中的 openEmbeddedNodeGraph 流程
+const safeId = 'test';
+const filename = 'test.node.json';
+const embedEl = document.getElementById('ng-embed-test');
+
+// 1. 构建 HTML（和 editor.js 中一样）
+embedEl.innerHTML = `
+  ${typeof buildNodeGraphToolbarHTML === 'function' ? buildNodeGraphToolbarHTML('ng-status-test') : '<div class="node-graph-toolbar"></div>'}
+  <div class="node-graph-body">
+    <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
+      <div class="node-graph-canvas" id="ng-canvas-embed-test"></div>
+      <div class="ng-coords" id="ng-coords-test">0, 0</div>
+    </div>
+    ${typeof buildNodeGraphPropertyPanelHTML === 'function' ? buildNodeGraphPropertyPanelHTML() : '<div class="ng-property-panel"></div>'}
+  </div>
+`;
+
+// 确保可见
+embedEl.style.display = 'flex';
+
+const canvasEl = embedEl.querySelector('#ng-canvas-embed-test');
+const coordsEl = embedEl.querySelector('#ng-coords-test');
+const toolbar = embedEl.querySelector('.node-graph-toolbar');
+const panelEl = embedEl.querySelector('.ng-property-panel');
+const zoomLabel = toolbar ? toolbar.querySelector('.ng-zoom-label') : null;
+
+log('HTML built, canvasEl exists: ' + !!canvasEl);
+log('canvasEl rect: ' + JSON.stringify(canvasEl.getBoundingClientRect()));
+
+// 2. 创建 NGEngine
+let engine;
+try {
+    engine = new NGEngine(canvasEl, {
+        onChange: () => { log('onChange'); },
+        onSelectionChange: () => {
+            const nid = engine.getSelectedNodeId();
+            log('selection changed: ' + (nid || 'none'));
+            if (typeof updateNodeGraphPropertyPanel === 'function') {
+                updateNodeGraphPropertyPanel(panelEl, engine, nid);
+            }
+        },
+    });
+    if (coordsEl) engine.setCoordsEl(coordsEl);
+    log('NGEngine created, zoom=' + engine.zoom);
+} catch (e) {
+    log('NGEngine FAILED: ' + e.message);
+    console.error(e);
+}
+
+// 3. 绑定工具栏
+if (toolbar && engine) {
+    function setActiveTool(tool) {
+        engine.setActiveTool(tool === 'select' ? null : tool);
+        toolbar.querySelectorAll('.ng-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === (tool || 'select')));
+        log('setActiveTool: ' + tool + ', activeTool=' + engine.activeTool);
+    }
+    function setActiveEdge(edgeType) {
+        engine.setActiveEdge(edgeType);
+        toolbar.querySelectorAll('.ng-btn[data-edge]').forEach(b => b.classList.toggle('active', b.dataset.edge === edgeType));
+    }
+    function updateZoomLabel() {
+        if (zoomLabel) zoomLabel.textContent = Math.round(engine.zoom * 100) + '%';
+    }
+
+    toolbar.addEventListener('click', e => {
+        const btn = e.target.closest('.ng-btn');
+        if (!btn) { log('click on toolbar but no .ng-btn found'); return; }
+        const tool = btn.dataset.tool;
+        const edge = btn.dataset.edge;
+        const action = btn.dataset.action;
+        log('toolbar click: tool=' + tool + ', edge=' + edge + ', action=' + action);
+        
+        if (tool) {
+            setActiveTool(tool);
+            if (tool !== 'select') setActiveEdge(null);
+        } else if (edge) {
+            setActiveEdge(engine.activeEdgeType === edge ? null : edge);
+        } else if (action === 'delete') {
+            engine.deleteSelected();
+        } else if (action === 'undo') {
+            engine.undo();
+        } else if (action === 'redo') {
+            engine.redo();
+        } else if (action === 'zoom-in') {
+            const r = canvasEl.getBoundingClientRect();
+            engine.zoomTo(engine.zoom * 1.2, { x: r.left + r.width/2, y: r.top + r.height/2 });
+            updateZoomLabel();
+        } else if (action === 'zoom-out') {
+            const r = canvasEl.getBoundingClientRect();
+            engine.zoomTo(engine.zoom / 1.2, { x: r.left + r.width/2, y: r.top + r.height/2 });
+            updateZoomLabel();
+        } else if (action === 'zoom-reset') {
+            engine.zoomReset();
+            updateZoomLabel();
+        }
+    });
+    
+    setActiveTool('select');
+    updateZoomLabel();
+}
+
+// 属性面板
+if (panelEl && engine && typeof bindNodeGraphPropertyPanel === 'function') {
+    bindNodeGraphPropertyPanel(panelEl, engine, () => {});
+}
+
+// 测试创建
+log('=== Test: Programmatic node creation ===');
+engine.loadData({ version: 1, viewport: { scale: 1, tx: 0, ty: 0 }, nodes: [], edges: [] });
+log('loadData done, nodes=' + engine.data.nodes.length);
+
+// 等待一帧后添加节点
+requestAnimationFrame(() => {
+    try {
+        const id = engine.addNode('character', 200, 150, '测试角色', 160, 50);
+        log('addNode returned: ' + id);
+        log('nodes count: ' + engine.data.nodes.length);
+        log('SVG nodes: ' + canvasEl.querySelectorAll('[data-node-id]').length);
+        
+        // 模拟工具栏点击
+        log('=== Test: Simulate toolbar click ===');
+        const characterBtn = toolbar.querySelector('.ng-btn[data-tool="character"]');
+        if (characterBtn) {
+            characterBtn.click();
+            log('Clicked character button, activeTool=' + engine.activeTool);
+            log('overlay exists: ' + !!engine.creationOverlay);
+        } else {
+            log('Character button NOT FOUND');
+        }
+    } catch (e) {
+        log('Test FAILED: ' + e.message);
+        console.error(e);
+    }
+});
+
+log('Setup complete. Try clicking toolbar buttons and dragging on canvas.');
+</script>
+</body>
+</html>

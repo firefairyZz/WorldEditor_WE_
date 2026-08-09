@@ -12,4 +12,4 @@ WINDOW_SIZE = (1000, 700)
 
 LANG_DIR = os.path.join(USER_DIR, "lang")
 DEFAULT_LANG = "zh_CN"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.1.0"
