@@ -325,7 +325,7 @@ function refreshSettingsI18n() {
     }
     const panel = settingsPanelRef;
 
-    // 导航项
+    // 导航项（保留图标 SVG，只更新文本）
     const navItems = panel.querySelectorAll('.nav-item');
     navItems.forEach(item => {
         const section = item.dataset.section;
@@ -337,7 +337,13 @@ function refreshSettingsI18n() {
         if (section === 'appearance') key = 'ui.appearance';
         if (section === 'editor') key = 'ui.editor';
         const translated = t(key);
-        if (translated) item.textContent = translated;
+        if (translated) {
+            // 导航项结构：<svg>图标 + 文本，保留第一个子元素（图标），只更新文本
+            const icon = item.querySelector('svg');
+            item.innerHTML = '';
+            if (icon) item.appendChild(icon);
+            item.appendChild(document.createTextNode(translated));
+        }
     });
 
     // Section 标题 (h3)
@@ -1738,14 +1744,8 @@ function createSettingsTab() {
             content.classList.remove('only-left');
             const firstNav = content.querySelector('.nav-item');
             if (firstNav) firstNav.click();
-        } else {
-            content.classList.add('only-left');
-            // 切换到 only-left 后需要重置右侧面板状态
-            const activeNav = content.querySelector('.nav-item.active');
-            if (activeNav) activeNav.classList.remove('active');
-            const activeSection = content.querySelector('.settings-section.active');
-            if (activeSection) activeSection.classList.remove('active');
         }
+        // else: 不改变当前布局，保持用户正在查看的设置项
         // 全面刷新UI文本（包括欢迎页、标签页标题等）
         if (typeof refreshAllUITexts === 'function') {
             refreshAllUITexts();
@@ -1897,6 +1897,10 @@ function applyTint(tint) {
     weLog.debug('settings', '→ applyTint 开始（只读日志）', { tint });
     const { bgSidebar, bgMain, border } = readThemeColors();
     const alpha = (tint ?? 78) / 100;
+    // 保存原始不透明值供开关、输入框等需要实色的组件使用
+    document.body.style.setProperty('--bg-sidebar-solid', bgSidebar);
+    document.body.style.setProperty('--bg-main-solid', bgMain);
+    document.body.style.setProperty('--border-solid', border);
     document.body.style.setProperty('--content-tint', hexToRgba(bgSidebar, alpha));
     document.body.style.setProperty('--bg-sidebar', hexToRgba(bgSidebar, alpha));
     document.body.style.setProperty('--bg-main', hexToRgba(bgMain, alpha));
@@ -1951,6 +1955,10 @@ function resetMaterialStyles() {
     document.body.style.setProperty('--gap-color', gapColor);
     document.body.style.setProperty('--overlay-tint', gapColor);
     document.body.style.setProperty('--title-bar-tint', bgSidebar);
+    // 同步更新实色变量
+    document.body.style.setProperty('--bg-sidebar-solid', bgSidebar);
+    document.body.style.setProperty('--bg-main-solid', bgMain);
+    document.body.style.setProperty('--border-solid', border);
     const titleBar = document.getElementById('title-bar');
     if (titleBar) titleBar.style.removeProperty('border-bottom');
 }

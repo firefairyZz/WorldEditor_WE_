@@ -51,3 +51,7 @@ JS/resources/recent.json
 
 # Electron test runtime data (cache, cookies, local storage - privacy)
 JS/test/.userData/
+
+#Design files
+Design/
+.design_library/

@@ -55,18 +55,26 @@ function refreshAllUITexts() {
 function refreshSettingsTexts(container) {
     weLog.info('ui-refresh', '→ refreshSettingsTexts 开始');
     try {
-    // 导航项
-    container.querySelector('.nav-item[data-section="general"]').textContent = t('ui.general');
+    // 导航项（保留图标 SVG，只更新文本）
+    function updateNavItemText(selector, text) {
+        const el = container.querySelector(selector);
+        if (!el) return;
+        const icon = el.querySelector('svg');
+        el.innerHTML = '';
+        if (icon) el.appendChild(icon);
+        el.appendChild(document.createTextNode(text));
+    }
+    updateNavItemText('.nav-item[data-section="general"]', t('ui.general'));
     const tagsNav = container.querySelector('.nav-item[data-section="tags"]');
-    if (tagsNav) tagsNav.textContent = t('ui.tags_settings') || '标签';
+    if (tagsNav) updateNavItemText('.nav-item[data-section="tags"]', t('ui.tags_settings') || '标签');
     const accountNav = container.querySelector('.nav-item[data-section="account"]');
-    if (accountNav) accountNav.textContent = t('ui.account') || '账户';
+    if (accountNav) updateNavItemText('.nav-item[data-section="account"]', t('ui.account') || '账户');
     const appearanceNav = container.querySelector('.nav-item[data-section="appearance"]');
-    if (appearanceNav) appearanceNav.textContent = t('ui.appearance') || '外观';
-    container.querySelector('.nav-item[data-section="editor"]').textContent = t('ui.editor');
+    if (appearanceNav) updateNavItemText('.nav-item[data-section="appearance"]', t('ui.appearance') || '外观');
+    updateNavItemText('.nav-item[data-section="editor"]', t('ui.editor'));
     const shortcutsNav = container.querySelector('.nav-item[data-section="shortcuts"]');
-    if (shortcutsNav) shortcutsNav.textContent = t('ui.shortcuts') || '快捷键';
-    container.querySelector('.nav-item[data-section="about"]').textContent = t('ui.about');
+    if (shortcutsNav) updateNavItemText('.nav-item[data-section="shortcuts"]', t('ui.shortcuts') || '快捷键');
+    updateNavItemText('.nav-item[data-section="about"]', t('ui.about'));
 
     // 通用区
     const general = container.querySelector('#section-general');

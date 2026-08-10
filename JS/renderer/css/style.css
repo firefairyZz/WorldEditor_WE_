@@ -734,6 +734,11 @@ body.material-none { background: var(--gap-color); }
 body.material-none #tab-bar { background: var(--gap-color); }
 body.material-none #main { background: var(--gap-color); }
 
+/* material 激活时：使用 --overlay-tint 作为遮罩背景（由 applyOverlay 控制透明度），
+   遮罩层既存在又能透出 OS 材质（Mica/Acrylic） */
+body.material-active { background: var(--overlay-tint); }
+body.material-active #tab-bar { background: var(--overlay-tint); }
+
 /* 内容区：material 激活时透明；material=none 时跟随 #main */
 #content-container {
     flex: 1; overflow: hidden;
@@ -2165,7 +2170,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 /* Toggle Switch */
 .toggle-switch { position: relative; display: block; width: 44px; height: 22px; flex-shrink: 0; }
 .toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border); transition: .3s; border-radius: 22px; }
+.toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--border-solid, var(--border)); transition: .3s; border-radius: 22px; }
 .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 2px; bottom: 2px; background-color: white; transition: .3s; border-radius: 50%; }
 .toggle-switch input:checked + .toggle-slider { background-color: var(--accent); }
 .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }

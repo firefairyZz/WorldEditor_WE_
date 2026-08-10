@@ -92,8 +92,8 @@ class SplashScreen(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor("#2d2d2d"))
-        painter.setPen(QPen(QColor("#555555"), 1))
+        painter.setBrush(QColor("#252526"))
+        painter.setPen(QPen(QColor("#3c3c3c"), 1))
         bg_rect = QRectF(self.rect()).adjusted(5, 5, -5, -5)
         painter.drawRoundedRect(bg_rect, 12, 12)
         painter.end()
