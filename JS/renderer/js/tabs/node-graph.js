@@ -80,6 +80,8 @@ const NG_EDGE_TYPES = {
     causality: { label: '因果', color: '#fa8c16', dash: '6,4',   arrow: true,  desc: '原因→结果' },
     contain:   { label: '所属', color: '#722ed1', dash: null,    arrow: false, desc: '场景包含角色' },
 };
+// 暴露到全局，供 quill-blots.js 缩略图生成使用
+window.NG_EDGE_TYPES = NG_EDGE_TYPES;
 // 旧类型名映射（向后兼容）
 const OLD_EDGE_TYPE_MAP = {
     cause: 'causality', causal: 'causality', sequence: 'timeline',
@@ -90,6 +92,7 @@ const OLD_EDGE_TYPE_MAP = {
 // ========== 数据迁移 / 格式兼容 ==========
 function migrateNodeGraphData(data) {
     if (!data || !data.nodes) return { version: 2, viewport: { scale: 1, tx: 0, ty: 0 }, nodes: [], edges: [] };
+    let _migSeq = 0; // 自增序列，确保迁移时生成的 ID 不重复
     const result = {
         version: 2,
         viewport: data.viewport || { scale: 1, tx: 0, ty: 0 },
@@ -135,7 +138,7 @@ function migrateNodeGraphData(data) {
             if (srcNodeId && !sourcePortId) sourcePortId = buildPortId(srcNodeId, NG_PORT_SIDE_RIGHT); // 默认 右(4) 出
             if (tgtNodeId && !targetPortId) targetPortId = buildPortId(tgtNodeId, NG_PORT_SIDE_LEFT);  // 默认 左(2) 入
             return {
-                id: e.id || ('e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+                id: e.id || ('e_' + Date.now() + '_' + (++_migSeq) + '_' + Math.random().toString(36).slice(2, 7)),
                 type: edgeType,
                 sourcePortId, targetPortId,
                 sourceNodeId: srcNodeId, targetNodeId: tgtNodeId,
@@ -148,9 +151,15 @@ function migrateNodeGraphData(data) {
 }
 // 保存时统一用引擎格式（version=2，含端口ID）
 function toSaveFormat(engine) {
+    // 保存当前视口 + 画布尺寸（用于缩略图还原摄像机位置）
+    const vp = { ...engine.data.viewport };
+    if (engine.container) {
+        vp.canvasWidth = engine.container.clientWidth;
+        vp.canvasHeight = engine.container.clientHeight;
+    }
     return {
         version: 2,
-        viewport: engine.data.viewport,
+        viewport: vp,
         nodes: engine.data.nodes.map(n => ({ ...n })),
         edges: engine.data.edges.map(e => ({
             ...e,
@@ -212,9 +221,13 @@ class NGEngine {
     _dedupeIds() {
         const seenNodeIds = new Set();
         const idMap = {}; // oldId → newId
+        let _idSeq = 0; // 自增序列，确保同一批次内生成的 ID 不重复
         for (const n of this.data.nodes) {
             if (!n.id || seenNodeIds.has(n.id)) {
-                const newId = 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+                let newId;
+                do {
+                    newId = 'n_' + Date.now() + '_' + (++_idSeq) + '_' + Math.random().toString(36).slice(2, 7);
+                } while (seenNodeIds.has(newId) || this.data.nodes.some(x => x.id === newId && x !== n));
                 if (n.id) idMap[n.id] = newId;
                 n.id = newId;
             }
@@ -238,7 +251,11 @@ class NGEngine {
             if (!e.sourcePortId && e.sourceNodeId) e.sourcePortId = buildPortId(e.sourceNodeId, NG_PORT_SIDE_RIGHT);
             if (!e.targetPortId && e.targetNodeId) e.targetPortId = buildPortId(e.targetNodeId, NG_PORT_SIDE_LEFT);
             if (!e.id || seenEdgeIds.has(e.id)) {
-                e.id = 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+                let newId;
+                do {
+                    newId = 'e_' + Date.now() + '_' + (++_idSeq) + '_' + Math.random().toString(36).slice(2, 7);
+                } while (seenEdgeIds.has(newId) || this.data.edges.some(x => x.id === newId && x !== e));
+                e.id = newId;
             }
             seenEdgeIds.add(e.id);
         }
@@ -328,6 +345,31 @@ class NGEngine {
         });
         this.selectedNodeIds.clear();
         this.selectedEdgeIds.clear();
+        this._renderAll();
+        this._emitChange();
+        this._emitSelection();
+    }
+
+    duplicateSelected() {
+        if (this.selectedNodeIds.size === 0) return;
+        this._snapshot();
+        const oldIds = new Set(this.selectedNodeIds);
+        const offset = 30;
+        let _dupSeq = 0;
+        const newNodes = [];
+        this.data.nodes.forEach(n => {
+            if (oldIds.has(n.id)) {
+                const copy = JSON.parse(JSON.stringify(n));
+                copy.id = 'n_' + Date.now() + '_' + (++_dupSeq) + '_' + Math.random().toString(36).slice(2, 7);
+                copy.x += offset;
+                copy.y += offset;
+                newNodes.push(copy);
+            }
+        });
+        this.data.nodes.push(...newNodes);
+        this.selectedNodeIds.clear();
+        this.selectedEdgeIds.clear();
+        newNodes.forEach(n => this.selectedNodeIds.add(n.id));
         this._renderAll();
         this._emitChange();
         this._emitSelection();
@@ -1017,22 +1059,98 @@ class NGEngine {
             shape.style.pointerEvents = 'none';
             g.appendChild(shape);
 
-            // 节点文字 —— 跟随缩放，带最大最小限制
+            // 节点图片 + 描述
+            const nodeImage = (n.properties && n.properties.image) || '';
+            const nodeDesc = (n.properties && n.properties.description) || '';
+            const hasImage = !!nodeImage;
+            const hasDesc = !!nodeDesc;
+
+            // 如果有图片，渲染图片（用 clipPath 裁剪到节点形状）
+            if (hasImage) {
+                const clipId = 'clip_' + n.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+                let clipPath = doc.createElementNS('http://www.w3.org/2000/svg', 'clipPath');
+                clipPath.setAttribute('id', clipId);
+                let clipShape;
+                if (def.shape === 'rect') {
+                    clipShape = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    clipShape.setAttribute('x', b.left); clipShape.setAttribute('y', b.top);
+                    clipShape.setAttribute('width', n.width); clipShape.setAttribute('height', n.height);
+                    clipShape.setAttribute('rx', def.radius); clipShape.setAttribute('ry', def.radius);
+                } else if (def.shape === 'ellipse') {
+                    clipShape = doc.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                    clipShape.setAttribute('cx', n.x); clipShape.setAttribute('cy', n.y);
+                    clipShape.setAttribute('rx', n.width / 2); clipShape.setAttribute('ry', n.height / 2);
+                } else { // diamond
+                    clipShape = doc.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    const pts = `${n.x},${b.top} ${b.right},${n.y} ${n.x},${b.bottom} ${b.left},${n.y}`;
+                    clipShape.setAttribute('points', pts);
+                }
+                clipPath.appendChild(clipShape);
+                const existing = this._defs.querySelector('#' + clipId);
+                if (!existing) this._defs.appendChild(clipPath);
+
+                const img = doc.createElementNS('http://www.w3.org/2000/svg', 'image');
+                img.setAttribute('x', b.left);
+                img.setAttribute('y', b.top);
+                img.setAttribute('width', n.width);
+                img.setAttribute('height', n.height);
+                img.setAttribute('href', nodeImage);
+                img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+                img.setAttribute('clip-path', 'url(#' + clipId + ')');
+                img.style.pointerEvents = 'none';
+                g.appendChild(img);
+
+                // 底部半透明文字区（防止文字在图片上看不清）
+                const textOverlay = doc.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                textOverlay.setAttribute('x', b.left);
+                textOverlay.setAttribute('y', b.top + n.height * 0.60);
+                textOverlay.setAttribute('width', n.width);
+                textOverlay.setAttribute('height', n.height * 0.40);
+                textOverlay.setAttribute('fill', 'rgba(0,0,0,0.5)');
+                textOverlay.setAttribute('clip-path', 'url(#' + clipId + ')');
+                textOverlay.style.pointerEvents = 'none';
+                g.appendChild(textOverlay);
+            }
+
+            // 计算文字 Y 坐标：有图片时文字在底部 1/3 区域，否则居中
+            const textAreaTop = hasImage ? b.top + n.height * 0.62 : b.top;
+            const textAreaHeight = hasImage ? n.height * 0.38 : n.height;
+            const textCenterY = textAreaTop + textAreaHeight / 2 - (hasDesc ? nodeFontSize * 0.3 : 0);
+
+            // 节点标题文字
             if (n.text) {
                 const text = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
-                text.setAttribute('x', n.x); text.setAttribute('y', n.y);
+                text.setAttribute('x', n.x); text.setAttribute('y', textCenterY);
                 text.setAttribute('text-anchor', 'middle');
                 text.setAttribute('dominant-baseline', 'central');
                 text.setAttribute('font-size', nodeFontSize);
                 text.setAttribute('fill', '#ffffff');
                 text.setAttribute('font-weight', '500');
                 text.setAttribute('pointer-events', 'none');
-                // 简单截断，按当前字号（SVG 单位）估算字符宽度
                 const maxChars = Math.max(3, Math.floor(n.width / charSvgPx));
                 let display = n.text;
                 if (display.length > maxChars) display = display.slice(0, maxChars - 1) + '…';
                 text.textContent = display;
                 g.appendChild(text);
+            }
+
+            // 节点描述文字（标题下方，更小字号）
+            if (hasDesc) {
+                const descFontSize = Math.max(8, Math.min(14, nodeFontSize * 0.7));
+                const descText = doc.createElementNS('http://www.w3.org/2000/svg', 'text');
+                descText.setAttribute('x', n.x);
+                descText.setAttribute('y', textCenterY + nodeFontSize * 0.7 + 2);
+                descText.setAttribute('text-anchor', 'middle');
+                descText.setAttribute('dominant-baseline', 'central');
+                descText.setAttribute('font-size', descFontSize);
+                descText.setAttribute('fill', 'rgba(255,255,255,0.65)');
+                descText.setAttribute('font-weight', '400');
+                descText.setAttribute('pointer-events', 'none');
+                const descMaxChars = Math.max(3, Math.floor(n.width / (charSvgPx * 0.75)));
+                let descDisplay = nodeDesc.replace(/\n.*$/, ''); // 只取第一行
+                if (descDisplay.length > descMaxChars) descDisplay = descDisplay.slice(0, descMaxChars - 1) + '…';
+                descText.textContent = descDisplay;
+                g.appendChild(descText);
             }
 
             // 点击命中层（整个节点区域）—— 必须在手柄之前，这样手柄在上层能接收事件
@@ -1878,6 +1996,7 @@ function buildNodeGraphToolbarHTML(statusId) {
             ${iconBtn('save', t('ui.save') || '保存', ICON.save)}
             <div class="ng-toolbar-divider"></div>
             <button class="ng-btn" data-action="history" title="${t('ui.ng_history') || '历史记录 (Ctrl+H)'}"><svg viewBox="0 0 24 24" width="15" height="15" ${S}><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg></button>
+            ${iconBtn('export', t('ui.ng_export_html') || '导出为HTML', '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>')}
             <div class="ng-toolbar-spacer"></div>
             <span class="ng-status"${statusId ? ` id="${statusId}"` : ''}></span>
         </div>
@@ -1895,11 +2014,31 @@ function setupNodeGraphContextMenu(engine, markDirty) {
         menu.style.display = 'none';
         document.body.appendChild(menu);
     }
-    menu.innerHTML = `<div class="ng-ctx-item" data-action="delete">${t('ui.ng_delete') || '删除'}</div>`;
+    function buildMenuHTML(targetType) {
+        if (targetType === 'node') {
+            return `
+                <div class="ng-ctx-item" data-action="delete">${t('ui.ng_delete') || '删除'}</div>
+                <div class="ng-ctx-item" data-action="duplicate">${t('ui.ng_duplicate') || '复制节点'}</div>
+                <div class="ng-ctx-sep"></div>
+                <div class="ng-ctx-item" data-action="layer_top">${t('ui.ng_layer_top') || '移到最顶'}</div>
+                <div class="ng-ctx-item" data-action="layer_up">${t('ui.ng_layer_up') || '上移一层'}</div>
+                <div class="ng-ctx-item" data-action="layer_down">${t('ui.ng_layer_down') || '下移一层'}</div>
+                <div class="ng-ctx-item" data-action="layer_bottom">${t('ui.ng_layer_bottom') || '移到最底'}</div>
+            `;
+        }
+        // canvas
+        return `
+            <div class="ng-ctx-item" data-action="select_all">${t('ui.ng_select_all') || '全选'}</div>
+            <div class="ng-ctx-sep"></div>
+            <div class="ng-ctx-item" data-action="undo">${t('ui.ng_undo') || '撤销'}</div>
+            <div class="ng-ctx-item" data-action="redo">${t('ui.ng_redo') || '重做'}</div>
+        `;
+    }
 
     function show(x, y, targetType, targetId) {
         menu.dataset.targetType = targetType;
         menu.dataset.targetId = targetId;
+        menu.innerHTML = buildMenuHTML(targetType);
         menu.style.display = 'block';
         const r = menu.getBoundingClientRect();
         menu.style.left = Math.min(x, window.innerWidth - r.width - 4) + 'px';
@@ -1931,9 +2070,36 @@ function setupNodeGraphContextMenu(engine, markDirty) {
     menu.addEventListener('click', (e) => {
         const item = e.target.closest('.ng-ctx-item');
         if (!item) return;
-        if (item.dataset.action === 'delete') {
+        const action = item.dataset.action;
+        if (action === 'delete') {
             engine.deleteSelected();
             if (markDirty) markDirty();
+        } else if (action === 'duplicate') {
+            engine.duplicateSelected();
+            if (markDirty) markDirty();
+        } else if (action === 'layer_top') {
+            const nid = engine.getSelectedNodeId();
+            if (nid) { engine.moveLayerTop(nid); if (markDirty) markDirty(); }
+        } else if (action === 'layer_up') {
+            const nid = engine.getSelectedNodeId();
+            if (nid) { engine.moveLayerUp(nid); if (markDirty) markDirty(); }
+        } else if (action === 'layer_down') {
+            const nid = engine.getSelectedNodeId();
+            if (nid) { engine.moveLayerDown(nid); if (markDirty) markDirty(); }
+        } else if (action === 'layer_bottom') {
+            const nid = engine.getSelectedNodeId();
+            if (nid) { engine.moveLayerBottom(nid); if (markDirty) markDirty(); }
+        } else if (action === 'select_all') {
+            engine.selectedNodeIds.clear();
+            engine.selectedEdgeIds.clear();
+            engine.data.nodes.forEach(n => engine.selectedNodeIds.add(n.id));
+            engine.data.edges.forEach(e => engine.selectedEdgeIds.add(e.id));
+            engine._renderAll();
+            engine._emitSelection();
+        } else if (action === 'undo') {
+            engine.undo();
+        } else if (action === 'redo') {
+            engine.redo();
         }
         hide();
     });
@@ -1984,6 +2150,13 @@ function buildNodeGraphPropertyPanelHTML() {
                         </div>
                     </div>
                     <div class="ng-panel-row"><label>${t('ui.ng_desc') || '描述'}</label><textarea class="ng-prop-desc" rows="3" placeholder="${t('ui.ng_desc_ph') || '描述...'}"></textarea></div>
+                    <div class="ng-panel-row"><label>${t('ui.ng_image') || '图片'}</label>
+                        <div style="display:flex;gap:4px;align-items:center">
+                            <input type="text" class="ng-prop-image" placeholder="${t('ui.ng_image_ph') || '图片URL或Data URL'}" style="flex:1;min-width:0">
+                            <button class="ng-btn ng-prop-image-btn" title="${t('ui.ng_image_upload') || '上传图片'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></button>
+                            <button class="ng-btn ng-prop-image-clear" title="${t('ui.ng_image_clear') || '清除图片'}"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                        </div>
+                    </div>
                     <div class="ng-panel-row"><label>${t('ui.ng_color') || '颜色'}</label>
                         <div class="ng-prop-color-wrap"><input type="color" class="ng-prop-color"><button class="ng-prop-color-reset" title="${t('ui.ng_reset_color') || '重置为类型默认色'}">↺</button></div>
                     </div>
@@ -1994,8 +2167,14 @@ function buildNodeGraphPropertyPanelHTML() {
                 <div class="ng-prop-section" data-ng-prop-section="edge" style="display:none">
                     <div class="ng-prop-section-title">${t('ui.ng_edge_properties') || '连线属性'}</div>
                     <div class="ng-panel-row ng-prop-id-row"><label>${t('ui.ng_id') || 'ID'}</label><span class="ng-prop-id ng-prop-edge-id" title="${t('ui.ng_id_copy') || '点击复制'}"></span></div>
-                    <div class="ng-panel-row ng-prop-id-row"><label>${t('ui.ng_source_port') || '源端口'}</label><span class="ng-prop-id ng-prop-source-port-id" title="${t('ui.ng_id_copy') || '点击复制'}"></span></div>
-                    <div class="ng-panel-row ng-prop-id-row"><label>${t('ui.ng_target_port') || '目标端口'}</label><span class="ng-prop-id ng-prop-target-port-id" title="${t('ui.ng_id_copy') || '点击复制'}"></span></div>
+                    <div class="ng-panel-row ng-prop-id-row">
+                        <label class="ng-prop-port-label">${t('ui.ng_source_port') || '源端口'}<span class="ng-prop-port-badge ng-prop-source-port-id" title="${t('ui.ng_id_copy') || '点击复制'}"></span></label>
+                        <span class="ng-prop-node-name ng-prop-source-node-name"></span>
+                    </div>
+                    <div class="ng-panel-row ng-prop-id-row">
+                        <label class="ng-prop-port-label">${t('ui.ng_target_port') || '目标端口'}<span class="ng-prop-port-badge ng-prop-target-port-id" title="${t('ui.ng_id_copy') || '点击复制'}"></span></label>
+                        <span class="ng-prop-node-name ng-prop-target-node-name"></span>
+                    </div>
                     <div class="ng-panel-row"><label>${t('ui.ng_edge_label') || '连线标签'}</label><input type="text" class="ng-prop-edge-label" placeholder="${t('ui.ng_edge_label_ph') || '连线标签文字'}"></div>
                     <div class="ng-panel-row"><label>${t('ui.ng_edge_type') || '连线类型'}</label>
                         <select class="ng-prop-edge-type">
@@ -2094,6 +2273,7 @@ function updateNodeGraphPropertyPanel(panelEl, engine, nodeId, edgeId) {
             const widthInput = panelEl.querySelector('.ng-prop-width'); if (widthInput) widthInput.value = Math.round(node.width);
             const heightInput = panelEl.querySelector('.ng-prop-height'); if (heightInput) heightInput.value = Math.round(node.height);
             const desc = panelEl.querySelector('.ng-prop-desc'); if (desc) desc.value = (node.properties && node.properties.description) || '';
+            const imageInput = panelEl.querySelector('.ng-prop-image'); if (imageInput) imageInput.value = (node.properties && node.properties.image) || '';
             const colorInput = panelEl.querySelector('.ng-prop-color');
             const nodeDef = NG_NODE_TYPES[node.type] || NG_NODE_TYPES.character;
             const nodeColor = (node.properties && node.properties.color) || nodeDef.color;
@@ -2131,6 +2311,13 @@ function updateNodeGraphPropertyPanel(panelEl, engine, nodeId, edgeId) {
             if (srcSpan) { srcSpan.textContent = sourcePortIdText; srcSpan.title = (t('ui.ng_id_copy') || '点击复制') + '：' + sourcePortIdText; }
             const tgtSpan = panelEl.querySelector('.ng-prop-target-port-id');
             if (tgtSpan) { tgtSpan.textContent = targetPortIdText; tgtSpan.title = (t('ui.ng_id_copy') || '点击复制') + '：' + targetPortIdText; }
+            // 显示源/目标节点名称
+            const srcNode = srcP ? engine.getNode(srcP.nodeId) : null;
+            const tgtNode = tgtP ? engine.getNode(tgtP.nodeId) : null;
+            const srcNameSpan = panelEl.querySelector('.ng-prop-source-node-name');
+            if (srcNameSpan) { srcNameSpan.textContent = srcNode ? (srcNode.text || srcNode.id || '-') : '-'; srcNameSpan.title = srcNode ? srcNode.id || '' : ''; }
+            const tgtNameSpan = panelEl.querySelector('.ng-prop-target-node-name');
+            if (tgtNameSpan) { tgtNameSpan.textContent = tgtNode ? (tgtNode.text || tgtNode.id || '-') : '-'; tgtNameSpan.title = tgtNode ? tgtNode.id || '' : ''; }
             const labelInput = panelEl.querySelector('.ng-prop-edge-label');
             if (labelInput) labelInput.value = edge.text || '';
             const typeSelect = panelEl.querySelector('.ng-prop-edge-type');
@@ -2208,6 +2395,7 @@ function bindNodeGraphPropertyPanel(panelEl, engine, markDirty) {
     bindIdCopy(panelEl.querySelector('.ng-prop-edge-id'));
     bindIdCopy(panelEl.querySelector('.ng-prop-source-port-id'));
     bindIdCopy(panelEl.querySelector('.ng-prop-target-port-id'));
+    // 端口ID现在使用 ng-prop-port-badge 样式，设置 cursor:copy 由 CSS 负责
 
     // 输入类控件：focus 时快照，input 时跳过快照（避免每按键产生撤销记录）
     function bindTextInput(inputEl, patchFn) {
@@ -2222,6 +2410,84 @@ function bindNodeGraphPropertyPanel(panelEl, engine, markDirty) {
 
     bindTextInput(panelEl.querySelector('.ng-prop-name'), v => ({ text: v }));
     bindTextInput(panelEl.querySelector('.ng-prop-desc'), v => ({ properties: { description: v } }));
+    bindTextInput(panelEl.querySelector('.ng-prop-image'), v => ({ properties: { image: v } }));
+
+    // 图片上传按钮（压缩大图片，防止卡顿）
+    const imageBtn = panelEl.querySelector('.ng-prop-image-btn');
+    if (imageBtn) {
+        imageBtn.addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = function (e) {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                // 小文件直接读取，大文件用 canvas 压缩
+                var maxUncompressed = 50 * 1024; // 50KB 以下不压缩
+                if (file.size <= maxUncompressed) {
+                    var r = new FileReader();
+                    r.onload = function (ev) { applyImageDataUrl(ev.target.result); };
+                    r.readAsDataURL(file);
+                } else {
+                    var img = new Image();
+                    img.onload = function () {
+                        try {
+                            var canvas = document.createElement('canvas');
+                            var MAX = 400; // 最大边长 400px（节点通常 160~180px）
+                            var w = img.width, h = img.height;
+                            if (w > MAX || h > MAX) {
+                                if (w > h) { h = h * MAX / w; w = MAX; }
+                                else { w = w * MAX / h; h = MAX; }
+                            }
+                            canvas.width = Math.round(w);
+                            canvas.height = Math.round(h);
+                            var ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                            applyImageDataUrl(dataUrl);
+                        } catch (ex) {
+                            // 压缩失败时回退原始读取
+                            var r2 = new FileReader();
+                            r2.onload = function (ev) { applyImageDataUrl(ev.target.result); };
+                            r2.readAsDataURL(file);
+                        }
+                    };
+                    img.onerror = function () {
+                        var r3 = new FileReader();
+                        r3.onload = function (ev) { applyImageDataUrl(ev.target.result); };
+                        r3.readAsDataURL(file);
+                    };
+                    img.src = URL.createObjectURL(file);
+                }
+            };
+            input.click();
+        });
+    }
+
+    function applyImageDataUrl(dataUrl) {
+        var imgInput = panelEl.querySelector('.ng-prop-image');
+        if (!imgInput) return;
+        engine._snapshot();
+        imgInput.value = dataUrl;
+        var n = getNode(); if (!n) return;
+        engine.updateNode(n.id, { properties: { image: dataUrl } }, { skipSnapshot: true });
+        if (markDirty) markDirty();
+    }
+
+    // 图片清除按钮
+    const imageClear = panelEl.querySelector('.ng-prop-image-clear');
+    if (imageClear) {
+        imageClear.addEventListener('click', () => {
+            const imgInput = panelEl.querySelector('.ng-prop-image');
+            if (imgInput) {
+                engine._snapshot();
+                imgInput.value = '';
+                const n = getNode(); if (!n) return;
+                engine.updateNode(n.id, { properties: { image: '' } });
+                if (markDirty) markDirty();
+            }
+        });
+    }
 
     const wI = panelEl.querySelector('.ng-prop-width');
     const hI = panelEl.querySelector('.ng-prop-height');
@@ -2537,6 +2803,8 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             engine.zoomReset();
         } else if (action === 'save') {
             await saveNodeGraph(tabId);
+        } else if (action === 'export') {
+            exportNodeGraphHTML(engine, tabId);
         }
     });
 
@@ -2573,6 +2841,8 @@ async function saveNodeGraph(tabId) {
     const inst = nodeGraphInstances[tabId];
     if (!inst) return;
     const filename = inst.graphId + '.node.json';
+    // 保存前确保 ID 唯一，防止因多次保存累积重复 ID
+    inst.engine._dedupeIds();
     const json = JSON.stringify(inst.engine.getData(), null, 2);
     try {
         const r = await weAPI.saveFile(inst.projectFolder, filename, json);
@@ -2582,6 +2852,14 @@ async function saveNodeGraph(tabId) {
             const status = document.getElementById(`ng-canvas-${tabId}`)?.closest('.node-graph-layout')?.querySelector('.ng-status');
             if (status) status.textContent = '';
             showNotification(t('ui.saved') || '已保存');
+            // 刷新所有关联项目中的节点图卡片缩略图
+            if (typeof refreshNodeGraphThumbnails === 'function' && inst.projectFolder) {
+                for (var sid in tabs) {
+                    if (tabs[sid] && tabs[sid].projectPath === inst.projectFolder) {
+                        refreshNodeGraphThumbnails(sid);
+                    }
+                }
+            }
             weLog.info('node-graph', '← saveNodeGraph 完成');
         } else {
             showNotification((t('ui.save_failed') || '保存失败') + ': ' + r.error);
@@ -2589,6 +2867,398 @@ async function saveNodeGraph(tabId) {
     } catch (e) {
         weLog.error('node-graph', 'saveNodeGraph 异常', e && e.stack ? e.stack : String(e));
         showNotification((t('ui.save_failed') || '保存失败') + ': ' + e.message);
+    }
+}
+
+// ========== 共享的 SVG 生成（导出 + 缩略图共用） ==========
+function generateNodeGraphSVG(data, options) {
+    options = options || {};
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    const vb = options.viewBox || { l: 0, t: 0, w: 100, h: 100 };
+    const bgColor = options.bgColor || 'transparent';
+    const showGrid = options.showGrid || false;
+    const nodeOpacity = options.nodeOpacity != null ? options.nodeOpacity : 1;
+    const edgeStrokeWidth = options.edgeStrokeWidth || 2;
+    const includeNodeData = options.includeNodeData || false;
+    const nonScalingStroke = options.nonScalingStroke || false;
+    const gridSize = 40;
+
+    if (!nodes.length) {
+        return '<svg viewBox="' + vb.l + ' ' + vb.t + ' ' + vb.w + ' ' + vb.h + '" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">' +
+            '<rect x="' + vb.l + '" y="' + vb.t + '" width="' + vb.w + '" height="' + vb.h + '" fill="' + bgColor + '"/>' +
+            '</svg>';
+    }
+
+    function escapeHtml(s) {
+        if (typeof s !== 'string') return '';
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // 节点类型定义（与 NGEngine 保持一致）
+    const NG_NODE_TYPES_LOCAL = {
+        character: { label: '角色', shape: 'rect', color: '#ff6b6b', stroke: '#ff4d4f', radius: 8 },
+        scene:     { label: '场景', shape: 'rect', color: '#4a90d9', stroke: '#2f7dd6', radius: 4 },
+        event:     { label: '事件', shape: 'ellipse', color: '#52c41a', stroke: '#389e0d', radius: 0 },
+        setting:   { label: '设定', shape: 'diamond', color: '#722ed1', stroke: '#531dab', radius: 0 },
+        chapter:   { label: '章节', shape: 'rect', color: '#fa8c16', stroke: '#d46b08', radius: 4 },
+    };
+    const NG_EDGE_TYPES_LOCAL = {
+        relation:  { label: '关系', color: '#4a90d9', dash: null,    arrow: true },
+        timeline:  { label: '时序', color: '#52c41a', dash: null,    arrow: true },
+        causality: { label: '因果', color: '#fa8c16', dash: '6,4',   arrow: true },
+        contain:   { label: '所属', color: '#722ed1', dash: null,    arrow: false },
+    };
+
+    // 端口解析
+    function parsePortId(portId) {
+        if (!portId || typeof portId !== 'string') return null;
+        const idx = portId.lastIndexOf('_');
+        if (idx <= 0) return null;
+        const nodeId = portId.slice(0, idx);
+        const key = portId.slice(idx + 1);
+        const map = { '1': 'top', 't': 'top', '2': 'left', 'l': 'left', '3': 'bottom', 'b': 'bottom', '4': 'right', 'r': 'right' };
+        const side = map[key];
+        if (!side) return null;
+        return { nodeId, side };
+    }
+
+    function getPortPos(node, side) {
+        const hw = (node.width || 80) / 2, hh = (node.height || 40) / 2;
+        const l = node.x - hw, r = node.x + hw, t = node.y - hh, b = node.y + hh;
+        if (side === 'left') return { x: l, y: node.y, side: 'left' };
+        if (side === 'right') return { x: r, y: node.y, side: 'right' };
+        if (side === 'top') return { x: node.x, y: t, side: 'top' };
+        if (side === 'bottom') return { x: node.x, y: b, side: 'bottom' };
+        return { x: node.x, y: node.y, side: 'right' };
+    }
+
+    function normalizeColor(c, fallback) {
+        if (typeof c === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(c)) return c;
+        return fallback || '#4a90d9';
+    }
+
+    let svg = '<svg viewBox="' + vb.l + ' ' + vb.t + ' ' + vb.w + ' ' + vb.h + '" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">';
+
+    // 背景
+    svg += '<rect x="' + vb.l + '" y="' + vb.t + '" width="' + vb.w + '" height="' + vb.h + '" fill="' + bgColor + '"/>';
+
+    // 网格
+    if (showGrid) {
+        svg += '<defs><pattern id="ng-shared-grid" width="' + gridSize + '" height="' + gridSize + '" patternUnits="userSpaceOnUse">' +
+            '<path d="M ' + gridSize + ' 0 L 0 0 0 ' + gridSize + '" fill="none" stroke="#e0e0e0" stroke-width="0.5" opacity="0.5"/>' +
+            '</pattern></defs><rect width="100%" height="100%" fill="url(#ng-shared-grid)"/>';
+    }
+
+    // 边
+    const defEdgeColor = '#999';
+    for (const e of edges) {
+        try {
+            const sp = parsePortId(e.sourcePortId);
+            const tp = parsePortId(e.targetPortId);
+            const srcNode = nodes.find(n => n.id === (sp ? sp.nodeId : e.sourceNodeId));
+            const tgtNode = nodes.find(n => n.id === (tp ? tp.nodeId : e.targetNodeId));
+            if (!srcNode || !tgtNode) continue;
+            const p1 = getPortPos(srcNode, sp ? sp.side : 'right');
+            const p2 = getPortPos(tgtNode, tp ? tp.side : 'left');
+            const eTypeDef = NG_EDGE_TYPES_LOCAL[e.type] || null;
+            const edgeColor = normalizeColor((e.properties && e.properties.color) || (eTypeDef ? eTypeDef.color : null), defEdgeColor);
+            const dash = (e.properties && e.properties.dash != null) ? e.properties.dash : (eTypeDef ? eTypeDef.dash : null);
+            const showArrow = (e.properties && e.properties.showArrow != null) ? !!e.properties.showArrow : (eTypeDef ? !!eTypeDef.arrow : false);
+
+            // 贝塞尔控制点
+            const dx = Math.abs(p2.x - p1.x) * 0.5 + 40;
+            let c1x, c1y, c2x, c2y;
+            if (p1.side === 'left') { c1x = p1.x - dx; c1y = p1.y; }
+            else if (p1.side === 'right') { c1x = p1.x + dx; c1y = p1.y; }
+            else if (p1.side === 'top') { c1x = p1.x; c1y = p1.y - dx; }
+            else { c1x = p1.x; c1y = p1.y + dx; }
+            if (p2.side === 'left') { c2x = p2.x - dx; c2y = p2.y; }
+            else if (p2.side === 'right') { c2x = p2.x + dx; c2y = p2.y; }
+            else if (p2.side === 'top') { c2x = p2.x; c2y = p2.y - dx; }
+            else { c2x = p2.x; c2y = p2.y + dx; }
+
+            const d = 'M' + p1.x + ',' + p1.y + ' C' + c1x + ',' + c1y + ' ' + c2x + ',' + c2y + ' ' + p2.x + ',' + p2.y;
+            const dashStr = dash ? ' stroke-dasharray="' + dash + '"' : '';
+            const nsStr = nonScalingStroke ? ' vector-effect="non-scaling-stroke"' : '';
+
+            if (showArrow) {
+                const markerId = 'ng_arr_' + (e.id || Math.random().toString(36).slice(2, 8)).replace(/[^a-zA-Z0-9_-]/g, '_');
+                svg += '<defs><marker id="' + markerId + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + edgeColor + '"/></marker></defs>';
+                svg += '<path d="' + d + '" fill="none" stroke="' + edgeColor + '" stroke-width="' + edgeStrokeWidth + '"' + dashStr + ' marker-end="url(#' + markerId + ')" stroke-linecap="round" opacity="0.8"' + nsStr + '/>';
+            } else {
+                svg += '<path d="' + d + '" fill="none" stroke="' + edgeColor + '" stroke-width="' + edgeStrokeWidth + '"' + dashStr + ' stroke-linecap="round" opacity="0.8"' + nsStr + '/>';
+            }
+
+            // 连线标签
+            if (e.text) {
+                svg += '<text x="' + ((p1.x + p2.x) / 2) + '" y="' + ((p1.y + p2.y) / 2 - 6) + '" text-anchor="middle" font-size="12" fill="#333" stroke="#fff" stroke-width="2" paint-order="stroke" pointer-events="none">' + escapeHtml(e.text) + '</text>';
+            }
+        } catch (err) { /* skip */ }
+    }
+
+    // 节点
+    for (const n of nodes) {
+        try {
+            const def = NG_NODE_TYPES_LOCAL[n.type] || NG_NODE_TYPES_LOCAL.character;
+            const color = (n.properties && n.properties.color) || def.color;
+            const stroke = (n.properties && n.properties.color) || def.stroke;
+            const hw = (n.width || 80) / 2, hh = (n.height || 40) / 2;
+            const l = n.x - hw, r = n.x + hw, t = n.y - hh, b = n.y + hh;
+            const nodeImage = (n.properties && n.properties.image) || '';
+            const nodeDesc = (n.properties && n.properties.description) || '';
+
+            // 数据属性（用于导出 HTML 悬停提示）
+            if (includeNodeData) {
+                svg += '<g data-node-id="' + escapeHtml(n.id) + '" data-node-name="' + escapeHtml(n.text || '') + '" data-node-desc="' + escapeHtml(nodeDesc) + '" style="cursor:pointer">';
+            }
+
+            // 形状
+            if (def.shape === 'rect') {
+                svg += '<rect x="' + l + '" y="' + t + '" width="' + (n.width || 80) + '" height="' + (n.height || 40) + '" rx="' + def.radius + '" ry="' + def.radius + '" fill="' + color + '" stroke="' + stroke + '" stroke-width="1.5" opacity="' + nodeOpacity + '"/>';
+            } else if (def.shape === 'ellipse') {
+                svg += '<ellipse cx="' + n.x + '" cy="' + n.y + '" rx="' + hw + '" ry="' + hh + '" fill="' + color + '" stroke="' + stroke + '" stroke-width="1.5" opacity="' + nodeOpacity + '"/>';
+            } else {
+                svg += '<polygon points="' + n.x + ',' + t + ' ' + r + ',' + n.y + ' ' + n.x + ',' + b + ' ' + l + ',' + n.y + '" fill="' + color + '" stroke="' + stroke + '" stroke-width="1.5" opacity="' + nodeOpacity + '"/>';
+            }
+
+            // 图片
+            if (nodeImage) {
+                let clipShape = '';
+                if (def.shape === 'rect') {
+                    clipShape = '<rect x="' + l + '" y="' + t + '" width="' + (n.width || 80) + '" height="' + (n.height || 40) + '" rx="' + def.radius + '" ry="' + def.radius + '"/>';
+                } else if (def.shape === 'ellipse') {
+                    clipShape = '<ellipse cx="' + n.x + '" cy="' + n.y + '" rx="' + hw + '" ry="' + hh + '"/>';
+                } else {
+                    clipShape = '<polygon points="' + n.x + ',' + t + ' ' + r + ',' + n.y + ' ' + n.x + ',' + b + ' ' + l + ',' + n.y + '"/>';
+                }
+                const clipId = 'ng_img_' + (n.id || Math.random().toString(36).slice(2, 8)).replace(/[^a-zA-Z0-9_-]/g, '_');
+                svg += '<clipPath id="' + clipId + '">' + clipShape + '</clipPath>';
+                svg += '<image x="' + l + '" y="' + t + '" width="' + (n.width || 80) + '" height="' + (n.height || 40) + '" href="' + escapeHtml(nodeImage) + '" preserveAspectRatio="xMidYMid slice" clip-path="url(#' + clipId + ')" opacity="' + nodeOpacity + '"/>';
+
+                // 底部半透明文字区
+                svg += '<rect x="' + l + '" y="' + (t + (n.height || 40) * 0.60) + '" width="' + (n.width || 80) + '" height="' + (n.height || 40) * 0.40 + '" fill="rgba(0,0,0,0.5)" clip-path="url(#' + clipId + ')" opacity="' + nodeOpacity + '"/>';
+            }
+
+            // 文字
+            const textAreaTop = nodeImage ? t + (n.height || 40) * 0.62 : t;
+            const textAreaHeight = nodeImage ? (n.height || 40) * 0.38 : (n.height || 40);
+            const textCenterY = textAreaTop + textAreaHeight / 2 - (nodeDesc ? 7 : 0);
+            if (n.text) {
+                svg += '<text x="' + n.x + '" y="' + textCenterY + '" text-anchor="middle" dominant-baseline="central" font-size="14" fill="#ffffff" font-weight="500" pointer-events="none">' + escapeHtml(n.text) + '</text>';
+            }
+            if (nodeDesc) {
+                const descDisplay = nodeDesc.replace(/\n.*$/, '');
+                if (descDisplay) {
+                    svg += '<text x="' + n.x + '" y="' + (textCenterY + 12) + '" text-anchor="middle" dominant-baseline="central" font-size="10" fill="rgba(255,255,255,0.65)" font-weight="400" pointer-events="none">' + escapeHtml(descDisplay) + '</text>';
+                }
+            }
+
+            if (includeNodeData) {
+                svg += '</g>';
+            }
+        } catch (err) { /* skip */ }
+    }
+
+    svg += '</svg>';
+    return svg;
+}
+window.generateNodeGraphSVG = generateNodeGraphSVG;
+
+// ========== 导出为独立 HTML 展示页 ==========
+function exportNodeGraphHTML(engine, tabId) {
+    if (!engine || !engine.data) return;
+    const data = engine.data;
+    const nodes = data.nodes || [];
+    const edges = data.edges || [];
+    if (nodes.length === 0) {
+        weLog.warn('node-graph', '导出失败：没有节点');
+        return;
+    }
+
+    // 计算 AABB
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+        const hw = (n.width || 80) / 2, hh = (n.height || 40) / 2;
+        if (n.x - hw < minX) minX = n.x - hw;
+        if (n.x + hw > maxX) maxX = n.x + hw;
+        if (n.y - hh < minY) minY = n.y - hh;
+        if (n.y + hh > maxY) maxY = n.y + hh;
+    }
+    const pad = 100;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const svgW = maxX - minX, svgH = maxY - minY;
+
+    // 使用共享的 generateNodeGraphSVG 生成 SVG 内容
+    const svgContent = generateNodeGraphSVG(data, {
+        viewBox: { l: minX, t: minY, w: svgW, h: svgH },
+        bgColor: '#fafafa',
+        showGrid: true,
+        includeNodeData: true,
+    });
+
+    function escapeHtml(s) {
+        if (typeof s !== 'string') return '';
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // 生成完整 HTML
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(data.title || '节点图')} - 展示页</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+#container { width: 100%; height: 100%; position: relative; overflow: hidden; }
+#toolbar { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px 16px; background: rgba(255,255,255,0.95); border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); z-index: 100; }
+#toolbar button { padding: 6px 14px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; color: #333; transition: all 0.15s; }
+#toolbar button:hover { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+#zoom-label { display: inline-flex; align-items: center; min-width: 48px; justify-content: center; font-size: 13px; color: #666; font-weight: 500; }
+#tooltip { position: fixed; display: none; background: rgba(0,0,0,0.85); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; max-width: 280px; pointer-events: none; z-index: 200; line-height: 1.5; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+#tooltip .tip-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+#tooltip .tip-desc { color: rgba(255,255,255,0.7); font-size: 12px; }
+#info { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 6px 16px; border-radius: 6px; font-size: 13px; color: #666; box-shadow: 0 1px 4px rgba(0,0,0,0.1); z-index: 100; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="container">
+${svgContent}
+</div>
+<div id="tooltip"></div>
+<div id="info">${nodes.length} 个节点 · ${edges.length} 条连线 · 滚轮缩放 · 拖拽平移</div>
+<div id="toolbar">
+<button id="zoom-out">− 缩小</button>
+<span id="zoom-label">100%</span>
+<button id="zoom-in">+ 放大</button>
+<button id="zoom-reset">重置</button>
+</div>
+<script>
+(function() {
+    var container = document.getElementById('container');
+    var svg = container.querySelector('svg');
+    var tooltip = document.getElementById('tooltip');
+    var zoomLabel = document.getElementById('zoom-label');
+    var scale = 1, tx = 0, ty = 0;
+    var isPanning = false, startX, startY, startTx, startTy;
+
+    // 设置 SVG 的 cursor 样式
+    svg.style.cursor = 'grab';
+
+    function updateTransform() {
+        svg.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')';
+        svg.style.transformOrigin = '0 0';
+        zoomLabel.textContent = Math.round(scale * 100) + '%';
+    }
+
+    // 滚轮缩放（以鼠标位置为中心）
+    container.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = container.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var gx = (mx - tx) / scale, gy = (my - ty) / scale;
+        var factor = e.deltaY > 0 ? 0.9 : 1.1;
+        var newScale = Math.max(0.2, Math.min(4, scale * factor));
+        tx = mx - gx * newScale;
+        ty = my - gy * newScale;
+        scale = newScale;
+        updateTransform();
+    }, { passive: false });
+
+    // 拖拽平移
+    container.addEventListener('mousedown', function(e) {
+        if (e.target.closest && e.target.closest('#toolbar')) return;
+        if (e.target.tagName === 'BUTTON') return;
+        svg.style.cursor = 'grabbing';
+        isPanning = true;
+        startX = e.clientX; startY = e.clientY;
+        startTx = tx; startTy = ty;
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!isPanning) return;
+        tx = startTx + (e.clientX - startX);
+        ty = startTy + (e.clientY - startY);
+        updateTransform();
+    });
+    document.addEventListener('mouseup', function() {
+        if (isPanning) {
+            isPanning = false;
+            svg.style.cursor = 'grab';
+        }
+    });
+
+    // 缩放按钮
+    document.getElementById('zoom-in').addEventListener('click', function() {
+        scale = Math.min(4, scale * 1.2);
+        updateTransform();
+    });
+    document.getElementById('zoom-out').addEventListener('click', function() {
+        scale = Math.max(0.2, scale / 1.2);
+        updateTransform();
+    });
+    document.getElementById('zoom-reset').addEventListener('click', function() {
+        scale = 1; tx = 0; ty = 0;
+        updateTransform();
+    });
+
+    // 节点悬停提示
+    var hoverEls = svg.querySelectorAll('[data-node-id]');
+    for (var i = 0; i < hoverEls.length; i++) {
+        hoverEls[i].addEventListener('mouseenter', function(e) {
+            var el = e.currentTarget;
+            var name = el.getAttribute('data-node-name');
+            var desc = el.getAttribute('data-node-desc');
+            if (name || desc) {
+                var html = '';
+                if (name) html += '<div class="tip-name">' + name + '</div>';
+                if (desc) html += '<div class="tip-desc">' + desc + '</div>';
+                tooltip.innerHTML = html;
+                tooltip.style.display = 'block';
+            }
+        });
+        hoverEls[i].addEventListener('mousemove', function(e) {
+            tooltip.style.left = (e.clientX + 16) + 'px';
+            tooltip.style.top = (e.clientY + 16) + 'px';
+        });
+        hoverEls[i].addEventListener('mouseleave', function() {
+            tooltip.style.display = 'none';
+        });
+    }
+})();
+</script>
+</body>
+</html>`;
+
+    // 使用 Data URI 下载（避免 Blob CSP 问题）
+    try {
+        // 先尝试 Blob 方案（更快）
+        var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = (data.title || 'nodegraph') + '_export.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 10000);
+        weLog.info('node-graph', '导出HTML成功', { tabId, nodeCount: nodes.length, edgeCount: edges.length });
+    } catch (err) {
+        weLog.error('node-graph', '导出HTML失败(Blob)，尝试 Data URI 方案', err);
+        try {
+            // 回退到 Data URI 方案
+            var encoded = encodeURIComponent(html);
+            var a2 = document.createElement('a');
+            a2.href = 'data:text/html;charset=utf-8,' + encoded;
+            a2.download = (data.title || 'nodegraph') + '_export.html';
+            document.body.appendChild(a2);
+            a2.click();
+            document.body.removeChild(a2);
+            weLog.info('node-graph', '导出HTML成功(Data URI)', { tabId, nodeCount: nodes.length, edgeCount: edges.length });
+        } catch (err2) {
+            weLog.error('node-graph', '导出HTML完全失败', err2);
+        }
     }
 }
 

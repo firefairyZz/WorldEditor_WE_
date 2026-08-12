@@ -542,7 +542,9 @@ function renderTreeNodes(container, tree, basePath = '') {
 
         const isNodeGraph = file.endsWith('.node.json');
         const badgeHtml = isNodeGraph ? `<span class="file-type-badge">${t('ui.nodegraph') || '节点图'}</span>` : '';
-        fileDiv.innerHTML = `${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${tagsHtml}`;
+        const fileDesc = window.tagModule?.getDesc(filePath) || '';
+        const descHtml = fileDesc ? `<span class="file-desc">${escapeHtml(fileDesc)}</span>` : '';
+        fileDiv.innerHTML = `${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${descHtml}${tagsHtml}`;
         fileDiv.onclick = (e) => {
             e.stopPropagation();
             const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
@@ -691,6 +693,12 @@ function showFileContextMenu(e, filePath, container) {
     const displayName = stripExt(fileName);
     const dirPart = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
 
+    // "管理简介"：提示用户输入文件简介
+    const descItem = document.createElement('div');
+    descItem.className = 'context-item';
+    descItem.textContent = t('ui.manage_desc') || '管理简介';
+    descItem.onclick = () => { menu.remove(); openDescManager(filePath, container); };
+
     const tagItem = document.createElement('div');
     tagItem.className = 'context-item';
     tagItem.textContent = t('ui.manage_tags') || '管理标签';
@@ -762,6 +770,7 @@ function showFileContextMenu(e, filePath, container) {
         };
     }
 
+    menu.appendChild(descItem);
     menu.appendChild(tagItem);
     menu.appendChild(thumbItem);
     menu.appendChild(document.createElement('div')).className = 'context-sep';
@@ -773,6 +782,53 @@ function showFileContextMenu(e, filePath, container) {
     }
 
     positionContextMenu(menu, e);
+}
+
+function openDescManager(filePath, container) {
+    weLog.info('filetree', '→ openDescManager 开始', { filePath });
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    const displayName = stripExt(filePath.split('/').pop());
+    const currentDesc = window.tagModule?.getDesc(filePath) || '';
+
+    // 创建自定义简介编辑对话框（支持多行）
+    const overlay = document.createElement('div');
+    overlay.className = 'prompt-overlay';
+    overlay.innerHTML = `<div class="prompt-box" style="max-width:400px;">
+        <h3 class="prompt-title">${t('ui.manage_desc') || '管理简介'}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px 0;">${escapeHtml(displayName)}</p>
+        <textarea id="desc-input" class="prompt-input" style="min-height:80px;resize:vertical;font-family:inherit;padding:8px 12px;" placeholder="${t('ui.desc_placeholder') || '简短描述该文件...'}">${escapeHtml(currentDesc)}</textarea>
+        <div class="prompt-actions">
+            <button id="desc-cancel" class="prompt-btn prompt-btn-cancel">${t('ui.cancel')}</button>
+            <button id="desc-clear" class="prompt-btn prompt-btn-cancel" style="margin-right:auto;">${t('ui.clear') || '清除'}</button>
+            <button id="desc-save" class="prompt-btn prompt-btn-ok">${t('ui.save')}</button>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const textarea = overlay.querySelector('#desc-input');
+    textarea.focus();
+
+    overlay.querySelector('#desc-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('#desc-clear').onclick = async () => {
+        await window.tagModule.setDesc(filePath, '');
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        overlay.remove();
+        showNotification(t('ui.desc_cleared') || '简介已清除');
+    };
+    overlay.querySelector('#desc-save').onclick = async () => {
+        const newDesc = textarea.value.trim();
+        await window.tagModule.setDesc(filePath, newDesc);
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        overlay.remove();
+        showNotification(newDesc ? (t('ui.desc_updated') || '简介已更新') : (t('ui.desc_cleared') || '简介已清除'));
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') overlay.remove();
+        if (e.key === 'Enter' && e.ctrlKey) {
+            overlay.querySelector('#desc-save').click();
+        }
+    });
 }
 
 function showFolderContextMenu(e, folderPath, container) {

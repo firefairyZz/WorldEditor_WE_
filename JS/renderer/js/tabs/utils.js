@@ -82,3 +82,49 @@ function showPrompt(title, placeholder = '', options = {}) {
 function sanitizeId(path) {
     return path.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
+
+// 文本输入对话框（替代 prompt()，支持翻译）
+function showTextInputDialog(options) {
+    if (!options) return;
+    var title = options.title || '';
+    var value = options.value || '';
+    var placeholder = options.placeholder || '';
+    var onConfirm = options.onConfirm || function() {};
+    var onCancel = options.onCancel || function() {};
+
+    var overlay = document.createElement('div');
+    overlay.className = 'prompt-overlay';
+    overlay.innerHTML = '<div class="prompt-box">' +
+        '<h3 class="prompt-title">' + escapeHtml(title) + '</h3>' +
+        '<input id="text-input-dialog-input" type="text" placeholder="' + escapeHtml(placeholder) + '" class="prompt-input" value="' + escapeHtml(value) + '" />' +
+        '<div class="prompt-actions">' +
+            '<button id="text-input-dialog-cancel" class="prompt-btn prompt-btn-cancel">' + (t('ui.cancel') || '取消') + '</button>' +
+            '<button id="text-input-dialog-ok" class="prompt-btn prompt-btn-ok">' + (t('ui.ok') || '确定') + '</button>' +
+        '</div></div>';
+    document.body.appendChild(overlay);
+
+    var input = overlay.querySelector('#text-input-dialog-input');
+    input.focus();
+    input.select();
+
+    overlay.querySelector('#text-input-dialog-cancel').onclick = function() {
+        overlay.remove();
+        onCancel();
+    };
+    overlay.querySelector('#text-input-dialog-ok').onclick = function() {
+        var val = input.value;
+        overlay.remove();
+        onConfirm(val);
+    };
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            var val = input.value;
+            overlay.remove();
+            onConfirm(val);
+        }
+        if (e.key === 'Escape') {
+            overlay.remove();
+            onCancel();
+        }
+    });
+}

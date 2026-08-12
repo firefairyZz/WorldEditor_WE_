@@ -1,0 +1,147 @@
+/* ====== 全局重置与基础 ====== */
+* { margin:0; padding:0; box-sizing:border-box; }
+
+/* ╔══════════════════════════════════════════════════════════════════╗
+   ║  ⚠️  材质渲染 — html/body 必须保持以下配置                           ║
+   ║                                                                  ║
+   ║  background: transparent   → 让 OS 材质（Mica/Acrylic）透出来      ║
+   ║  禁止设置 border-radius    → 圆角由 Win11 OS 原生处理               ║
+   ║  禁止设置 overflow: hidden → 会裁切 OS 原生圆角                     ║
+   ║                                                                 ║
+   ║  常见错误（会导致 bug）：                                           ║
+   ║    ✗ 给 html/body 加 border-radius: 8px/12px 模拟圆角             ║
+   ║      → 与 OS 原生圆角冲突，出现缝隙/错位                             ║
+   ║    ✗ 设 background: 非透明色                                      ║
+   ║      → 挡住 Mica/Acrylic 材质                                     ║
+   ║    ✗ 用 transparent: true + CSS clip-path 模拟圆角                ║
+   ║      → 丢失 OS 阴影，DWM 拖影                                      ║
+   ║                                                                  ║
+   ║  材质视觉由三层 CSS 变量控制（见 settings.js）：                      ║
+   ║    --overlay-tint    → #main 遮罩层（间隙/边框）                    ║
+   ║    --content-tint    → 内容区背景                                  ║
+   ║    --title-bar-tint  → 标题栏背景                                  ║
+   ║  材质激活时三层半透明，材质=none 时三层实心                            ║
+   ╚══════════════════════════════════════════════════════════════════╝ */
+html {
+    height: 100vh;
+    background: transparent;
+}
+html, body {
+    color: var(--text);
+    font-family: var(--font-family, 'Microsoft YaHei'), sans-serif;
+    font-size: var(--font-size, 14px);
+    font-weight: var(--font-weight-normal, 400);
+    transition: color 0.3s;
+}
+body {
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ====== 全局滚动条美化 ====== */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, rgba(255,255,255,0.2));
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover, rgba(255,255,255,0.35));
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, rgba(255,255,255,0.2)) transparent;
+}
+
+/* 禁止文本选中（编辑器除外） */
+body {
+    user-select: none;
+    -webkit-user-select: none;
+    background: var(--gap-color, #2a2a2a);     /* 默认背景色，防止 JS 加载前闪白（fallback 暗色） */
+}
+input, textarea, .ql-editor, [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* ====== 主题变量 ====== */
+:root {
+    --font-family: 'Microsoft YaHei';
+    --font-size: 14px;
+    --font-weight-normal: 400;
+    --editor-font-size: 16px;
+
+    --bg-main: #1e1e1e;
+    --bg-sidebar: #252526;
+    --bg-toolbar: #252526;
+    --bg-card: #2a2a2a;
+    --bg-input: #3c3c3c;
+    --border: #3c3c3c;
+    --text: #cccccc;
+    --text-secondary: #999999;
+    --hover-bg: rgba(255,255,255,0.07);
+    --active-bg: #094771;
+    --active-text: #ffffff;
+    --accent: #0078d4;
+    --accent-hover: #1a8ad4;
+    --accent-alpha: rgba(0, 120, 212, 0.3);
+
+    --gap-color: #2a2a2a;
+
+    /* 三段式布局变量（对齐测试文件） */
+    --content-tint: var(--bg-sidebar);
+    /* 标题栏透明度（材质激活时由 JS 设为半透明） */
+    --title-bar-tint: var(--bg-sidebar);
+    /* 底层遮罩（覆盖边框+内容区，颜色跟随主题，透明度可调） */
+    --overlay-tint: transparent;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --shadow-sm: 0 2px 4px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.25);
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.25s ease;
+}
+
+body.theme-light {
+    --bg-main: #ffffff;
+    --bg-sidebar: #f5f5f5;
+    --bg-toolbar: #fafafa;
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --border: #e0e0e0;
+    --text: #1e1e1e;
+    --text-secondary: #666666;
+    --hover-bg: rgba(0,0,0,0.04);
+    --active-bg: #0078d4;
+    --active-text: #ffffff;
+    --accent: #0078d4;
+    --accent-hover: #106ebe;
+    --accent-alpha: rgba(0, 120, 212, 0.2);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+    --gap-color: #e8e8e8;
+    /* 三段式布局变量随主题更新 */
+    --content-tint: var(--bg-sidebar);
+    --title-bar-tint: var(--bg-sidebar);
+    --overlay-tint: transparent;
+}

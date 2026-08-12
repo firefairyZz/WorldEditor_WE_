@@ -2,14 +2,20 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:;">
-    <link rel="stylesheet" href="css/style.css">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: blob:;">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/node-graph.css">
+    <link rel="stylesheet" href="css/quill.css">
     <!-- 本地 Quill（defer：不阻塞首屏，执行顺序仍优先于依赖它的业务脚本） -->
     <link rel="stylesheet" href="lib/quill.snow.css">
     <link rel="stylesheet" href="lib/katex.min.css">
     <link rel="stylesheet" href="lib/logicflow-core.css">
     <script src="lib/quill.js" defer></script>
     <script src="lib/katex.min.js" defer></script>
+    <!-- 自定义卡片 Blot（图片卡片/文件链接卡片/节点图链接卡片，依赖 quill.js） -->
+    <script src="js/tabs/quill-blots.js" defer></script>
     <script src="lib/logicflow-core.js" defer></script>
     <script src="lib/g6.min.js" defer></script>
     <title>WE - World Editor</title>
@@ -77,7 +83,17 @@
     <script src="js/tabs/welcome.js" defer></script>
     <script src="js/tabs/project.js" defer></script>
     <script src="js/tabs/filetree.js" defer></script>
-    <script src="js/tabs/editor.js" defer></script>
+    <script src="js/tabs/editor/globals.js" defer></script>
+    <script src="js/tabs/editor/blots.js" defer></script>
+    <script src="js/tabs/editor/undo.js" defer></script>
+    <script src="js/tabs/editor/toolbar.js" defer></script>
+    <script src="js/tabs/editor/core.js" defer></script>
+    <script src="js/tabs/editor/export.js" defer></script>
+    <script src="js/tabs/editor/links.js" defer></script>
+    <script src="js/tabs/editor/markdown.js" defer></script>
+    <script src="js/tabs/editor/embed.js" defer></script>
+    <script src="js/tabs/editor/mode-switch.js" defer></script>
+    <script src="js/tabs/editor/smart-brackets.js" defer></script>
     <script src="js/tabs/settings.js" defer></script>
     <script src="js/tabs/shortcuts.js" defer></script>
     <script src="js/tabs/command-palette.js" defer></script>

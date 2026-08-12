@@ -531,6 +531,8 @@ function addTab(id, title, element, closable = true) {
 function switchTab(id) {
     weLog.info('tab-manager', `→ switchTab: id=${id}`);
     if (!tabs[id]) { weLog.warn('tab-manager', `switchTab: id=${id} 不存在`); return; }
+    // 切换标签时取消选中图片卡片
+    if (typeof _deselectImageCard === 'function') _deselectImageCard();
     // 保存当前编辑器内容
     if (quill && currentQuillProjectId && tabs[currentQuillProjectId]?.currentFile) {
         weLog.debug('tab-manager', `switchTab: 保存当前 Quill 内容, from=${currentQuillProjectId}`);
@@ -647,6 +649,8 @@ function showConfirmDialog(message, title) {
 function closeTab(id, skipConfirm) {
     weLog.info('tab-manager', `→ closeTab: id=${id} skipConfirm=${skipConfirm}`);
     if (!tabs[id] || !tabs[id].closable) { weLog.warn('tab-manager', `closeTab: id=${id} 不存在或不可关闭`); return; }
+    // 关闭标签时取消选中图片卡片
+    if (typeof _deselectImageCard === 'function') _deselectImageCard();
     // 异步关闭：需要先检查是否有未保存内容
     (async () => {
         if (!skipConfirm) {

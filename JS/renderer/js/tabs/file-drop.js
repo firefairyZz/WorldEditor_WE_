@@ -296,7 +296,7 @@ function showDragOverlay(targetArea) {
         dragOverlay.style.display = 'none';
         dragOverlay.innerHTML = `
             <div class="drag-overlay-content">
-                <div class="drag-overlay-icon">📥</div>
+                <div class="drag-overlay-icon"><svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                 <div class="drag-overlay-text">${t('ui.drop_files_here') || '释放以导入文件'}</div>
                 <div class="drag-overlay-subtext">${t('ui.drop_files_subtext') || '支持 .txt, .md, .png 等文件'}</div>
             </div>
@@ -346,7 +346,7 @@ function showDragOverlay(targetArea) {
         const icon = dragOverlay.querySelector('.drag-overlay-icon');
         if (text) text.textContent = t('ui.drop_to_save') || '释放以保存到项目';
         if (subtext) subtext.textContent = t('ui.drop_to_save_subtext') || '文件将保存到当前项目目录';
-        if (icon) icon.textContent = '📁';
+        if (icon) icon.innerHTML = '<svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="var(--accent, #4a90d9)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
     } else {
         const text = dragOverlay.querySelector('.drag-overlay-text');
         const subtext = dragOverlay.querySelector('.drag-overlay-subtext');
@@ -540,7 +540,7 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
     weLog.info('file-drop', '← handleDroppedFiles 完成', { inserted: totalInserted, imported: importedCount, failed: failedCount, skipped: skippedFiles.length });
 }
 
-// 插入图片到 Quill 编辑器（支持指定 index）
+// 插入图片到 Quill 编辑器（支持指定 index，使用卡片格式）
 function insertImageIntoEditor(dataUrl, index) {
     weLog.info('file-drop', '→ insertImageIntoEditor', { index });
     if (!quill) { weLog.warn('file-drop', 'insertImageIntoEditor: quill 不存在'); return; }
@@ -554,7 +554,7 @@ function insertImageIntoEditor(dataUrl, index) {
         index = range.index;
     }
 
-    quill.insertEmbed(index, 'image', dataUrl, Quill.sources.USER);
+    quill.insertEmbed(index, 'imageCard', dataUrl, Quill.sources.USER);
     quill.setSelection(index + 1, 0, Quill.sources.SILENT);
     weLog.info('file-drop', '← insertImageIntoEditor 完成');
 }

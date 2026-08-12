@@ -38,6 +38,9 @@ JS/User/settings.json
 JS/User/avatars/
 JS/User/recent.json
 JS/User/test/
+JS/User/bg-image.png
+JS/User/bg-image.jpg
+JS/User/bg-image.jpeg
 
 # User-created project folders (exclude all subdirs, keep only lang/)
 JS/User/*/
@@ -48,9 +51,15 @@ JS/User/*/
 
 # Recent projects list (contains file paths - privacy)
 JS/resources/recent.json
+Python_Vision/resources/recent.json
 
 # Electron test runtime data (cache, cookies, local storage - privacy)
 JS/test/.userData/
+
+# Local dev scripts and notes
+JS/start.bat
+NEED_Node_js.txt
+NEED_Node.txt
 
 #Design files
 Design/

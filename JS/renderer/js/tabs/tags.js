@@ -196,6 +196,19 @@ const tagModule = {
         }
     },
 
+    getDesc(filePath) {
+        weLog.debug('tags', '→ getDesc', { filePath });
+        return this.metadata.descriptions?.[filePath] || '';
+    },
+
+    async setDesc(filePath, desc) {
+        weLog.info('tags', '→ setDesc', { filePath, desc });
+        if (!this.metadata.descriptions) this.metadata.descriptions = {};
+        this.metadata.descriptions[filePath] = desc || '';
+        await this.saveMetadata();
+        weLog.info('tags', '← setDesc 完成');
+    },
+
     async storeImage(imageName, imageData) {
         weLog.info('tags', '→ storeImage', { imageName });
         if (!this.metadata.images) this.metadata.images = {};
