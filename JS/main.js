@@ -713,13 +713,29 @@ function writeProjectWep(folder, files) {
     });
 }
 function backupProject(folder) {
-    const backupDir = path.join(folder, 'Backups');
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
+    const backupDir = path.join(USER_DIR, 'Backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
     const name = path.basename(folder);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const timestamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
     const backupPath = path.join(backupDir, `${name}_${timestamp}.bwep`);
     const wepPath = path.join(folder, 'project.wep');
-    if (fs.existsSync(wepPath)) fs.copyFileSync(wepPath, backupPath);
+    if (fs.existsSync(wepPath)) {
+        fs.copyFileSync(wepPath, backupPath);
+        // 清理旧备份，只保留最近 10 份
+        try {
+            const files = fs.readdirSync(backupDir)
+                .filter(f => f.startsWith(name + '_') && f.endsWith('.bwep'))
+                .sort()
+                .reverse();
+            if (files.length > 10) {
+                files.slice(10).forEach(f => {
+                    try { fs.unlinkSync(path.join(backupDir, f)); } catch (e) {}
+                });
+            }
+        } catch (e) {}
+    }
 }
 
 function createSplash() {

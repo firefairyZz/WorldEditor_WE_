@@ -260,6 +260,9 @@ async function openEmbeddedNodeGraph(safeId, filename) {
             engine.zoomTo(engine.zoom / 1.2, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
         } else if (action === 'zoom-reset') {
             engine.zoomReset();
+        } else if (action === 'auto-layout') {
+            engine.autoLayout();
+            markDirty();
         } else if (action === 'save') {
             saveEmbeddedNodeGraph(safeId);
         } else if (action === 'history') {

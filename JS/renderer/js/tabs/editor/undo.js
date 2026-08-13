@@ -186,17 +186,12 @@ class GlobalUndoManager {
             }
             case 'quill': {
                 if (quill && (p.currentFile === op.file || !op.file) && op.prev != null) {
-                    // Quill 最稳妥：用 setContents(delta)；这里存的是 HTML 快照 → setContents(Quill.import('delta').importFromHTML)
                     try {
-                        const Delta = window.Quill && window.Quill.imports && window.Quill.imports.delta;
-                        // 兜底：如果拿不到 Delta，就先 setHTML，虽然会丢失一步精细历史，但内容对
-                        if (typeof quill.clipboard === 'object' && quill.clipboard.dangerouslyPasteHTML) {
-                            quill.clipboard.dangerouslyPasteHTML(0, String(op.prev));
-                        } else if (Delta) {
-                            const d = new Delta().insert('');
-                            // TODO: 升级时换成 HTML → Delta 的标准转换
-                            quill.setContents(d);
-                        }
+                        // 先清空编辑器内容，再插入 prev，避免 dangerouslyPasteHTML(0, ...) 叠加重复
+                        quill.deleteText(0, quill.getLength());
+                        quill.clipboard.dangerouslyPasteHTML(0, String(op.prev));
+                        // 更新快照，防止后续文本变更时 prev 错位
+                        p._quillLastHtml = quill.root.innerHTML;
                     } catch (e) { /* ignore */ }
                 }
                 break;
@@ -266,9 +261,9 @@ class GlobalUndoManager {
             case 'quill': {
                 if (quill && (p.currentFile === op.file || !op.file) && op.next != null) {
                     try {
-                        if (typeof quill.clipboard === 'object' && quill.clipboard.dangerouslyPasteHTML) {
-                            quill.clipboard.dangerouslyPasteHTML(0, String(op.next));
-                        }
+                        quill.deleteText(0, quill.getLength());
+                        quill.clipboard.dangerouslyPasteHTML(0, String(op.next));
+                        p._quillLastHtml = quill.root.innerHTML;
                     } catch (e) { /* ignore */ }
                 }
                 break;

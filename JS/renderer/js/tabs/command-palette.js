@@ -105,7 +105,8 @@ const commandPalette = {
         this.input.value = initialQuery || '';
         this.selectedIndex = 0;
         this.filter(this.input.value);
-        this.element.style.display = 'block';
+        this.element.style.display = 'flex';
+        document.body.classList.add('command-palette-open');
         setTimeout(() => { this.input.focus(); this.input.select(); }, 50);
     },
 
@@ -113,6 +114,7 @@ const commandPalette = {
         weLog.info('command-palette', '→ hide');
         this.isVisible = false;
         if (this.element) this.element.style.display = 'none';
+        document.body.classList.remove('command-palette-open');
     },
 
     toggle(initialQuery) {

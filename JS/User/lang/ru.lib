@@ -197,6 +197,7 @@ ui.ng_expand = Развернуть панель свойств
 ui.ng_zoom_in = Увеличить
 ui.ng_zoom_out = Уменьшить
 ui.ng_zoom_reset = Сбросить зум
+ui.ng_auto_layout = Автомат. раскладка
 ui.node_graph_group = Граф узлов
 ui.ng_hide_arrow_default = Создавать соединения со скрытыми стрелками по умолчанию
 ui.ng_node_properties = Свойства узла

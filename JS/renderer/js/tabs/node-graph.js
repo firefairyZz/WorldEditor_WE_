@@ -185,6 +185,10 @@ class NGEngine {
         this.continuousDraw = false; // 连续绘制模式：创建后不自动返回选择
         this.onToolChange = null; // 工具/线型变化时的回调（供工具栏同步 UI）
 
+        // Hover 高亮状态
+        this._hoveredNodeId = null; // 当前悬停的节点 ID
+        this._hoveredEdgeIds = new Set(); // 与悬停节点相连的连线 ID
+
         // 内部状态（交互时使用）
         this._creatingEdge = null; // { fromNodeId, fromPort, tempPathEl }
 
@@ -465,6 +469,114 @@ class NGEngine {
         if (patch.properties) edge.properties = { ...edge.properties, ...patch.properties };
         this._renderAll();
         this._emitChange();
+    }
+
+    // ========== 力导向自动排版 ==========
+    autoLayout() {
+        const nodes = this.data.nodes;
+        const edges = this.data.edges;
+        if (nodes.length === 0) return;
+        this._snapshot();
+        // 初始化：如果节点位置重合，在中心附近随机散布
+        const cx = nodes.reduce((s, n) => s + n.x, 0) / nodes.length || 0;
+        const cy = nodes.reduce((s, n) => s + n.y, 0) / nodes.length || 0;
+        const hasOverlap = nodes.some(n => {
+            return nodes.some(m => m !== n && Math.abs(m.x - n.x) < 5 && Math.abs(m.y - n.y) < 5);
+        });
+        if (hasOverlap) {
+            const spread = Math.max(200, nodes.length * 40);
+            nodes.forEach((n, i) => {
+                const angle = (2 * Math.PI * i) / nodes.length;
+                n.x = cx + spread * Math.cos(angle);
+                n.y = cy + spread * Math.sin(angle);
+            });
+        }
+        // 力导向参数
+        const repulsion = 8000;    // 节点间斥力
+        const attraction = 0.005;  // 边的弹簧引力
+        const gravity = 0.002;     // 引力（向中心聚拢）
+        const damping = 0.85;      // 速度衰减
+        const minDist = 30;        // 最小距离防止爆炸
+        const iterations = 120;
+        // 初始化速度
+        const vel = nodes.map(() => ({ vx: 0, vy: 0 }));
+        for (let iter = 0; iter < iterations; iter++) {
+            const temp = 1 - iter / iterations; // 温度：随迭代递减
+            // 斥力：所有节点对
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    const a = nodes[i], b = nodes[j];
+                    let dx = b.x - a.x, dy = b.y - a.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDist) { dist = minDist; dx = (dx || 1) * minDist; dy = (dy || 1) * minDist; }
+                    const force = repulsion / (dist * dist);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+                    vel[i].vx -= fx; vel[i].vy -= fy;
+                    vel[j].vx += fx; vel[j].vy += fy;
+                }
+            }
+            // 引力：沿边的弹簧
+            for (const e of edges) {
+                const src = nodes.find(n => n.id === e.sourceNodeId);
+                const tgt = nodes.find(n => n.id === e.targetNodeId);
+                if (!src || !tgt) continue;
+                const dx = tgt.x - src.x, dy = tgt.y - src.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const force = attraction * (dist - 200); // 理想长度 200px
+                const fx = (dx / dist) * force;
+                const fy = (dy / dist) * force;
+                vel[src.id] = vel[src.id] || vel[nodes.findIndex(n => n.id === src.id)];
+                vel[tgt.id] = vel[tgt.id] || vel[nodes.findIndex(n => n.id === tgt.id)];
+                const si = nodes.indexOf(src), ti = nodes.indexOf(tgt);
+                if (si >= 0) { vel[si].vx += fx; vel[si].vy += fy; }
+                if (ti >= 0) { vel[ti].vx -= fx; vel[ti].vy -= fy; }
+            }
+            // 中心引力
+            const centerX = cx, centerY = cy;
+            for (let i = 0; i < nodes.length; i++) {
+                const dx = centerX - nodes[i].x, dy = centerY - nodes[i].y;
+                vel[i].vx += dx * gravity * temp;
+                vel[i].vy += dy * gravity * temp;
+            }
+            // 更新位置
+            for (let i = 0; i < nodes.length; i++) {
+                vel[i].vx *= damping;
+                vel[i].vy *= damping;
+                // 速度限制
+                const maxSpeed = 50 * temp;
+                const speed = Math.sqrt(vel[i].vx * vel[i].vx + vel[i].vy * vel[i].vy);
+                if (speed > maxSpeed) {
+                    vel[i].vx = (vel[i].vx / speed) * maxSpeed;
+                    vel[i].vy = (vel[i].vy / speed) * maxSpeed;
+                }
+                nodes[i].x += vel[i].vx;
+                nodes[i].y += vel[i].vy;
+            }
+        }
+        // 自动缩放适配全部节点
+        this._zoomToFit();
+        this._renderAll();
+        this._emitChange();
+    }
+
+    // 自动缩放以适配所有节点
+    _zoomToFit() {
+        const nodes = this.data.nodes;
+        if (nodes.length === 0) return;
+        const bbox = this._getContentBBox();
+        if (!bbox) return;
+        const cw = this.container.clientWidth;
+        const ch = this.container.clientHeight;
+        if (cw <= 0 || ch <= 0) return;
+        const contentW = bbox.maxX - bbox.minX + 100;
+        const contentH = bbox.maxY - bbox.minY + 100;
+        const scale = Math.min(cw / contentW, ch / contentH, 2);
+        const clampedScale = Math.max(0.2, Math.min(4, scale));
+        this.data.viewport.scale = clampedScale;
+        this.data.viewport.tx = (cw - (bbox.minX + bbox.maxX) / 2 * clampedScale) / 2;
+        this.data.viewport.ty = (ch - (bbox.minY + bbox.maxY) / 2 * clampedScale) / 2;
+        this._applyViewport();
     }
 
     // ========== Internal: DOM Build ==========
@@ -905,10 +1017,17 @@ class NGEngine {
             if (!result) continue;
             const def = NG_EDGE_TYPES[e.type] || NG_EDGE_TYPES.relation;
             const isSel = this.selectedEdgeIds.has(e.id);
+            const hasHover = this._hoveredNodeId !== null;
+            const isConnected = hasHover ? this._hoveredEdgeIds.has(e.id) : true;
             // ========== 视觉层：颜色、高亮、标签；全部 pointer-events:none（不拦截交互，不盖住节点） ==========
             const visG = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
             visG.setAttribute('data-edge-id', e.id);
             visG.style.pointerEvents = 'none'; // 整层视觉不拦截事件
+            // Hover 高亮：非关联连线半透明
+            if (hasHover && !isConnected) {
+                visG.style.opacity = '0.15';
+                visG.style.transition = 'opacity 0.15s ease';
+            }
             // 连线颜色：优先自定义颜色 → 类型默认色 → 兜底蓝
             const rawColor = (e.properties && e.properties.color) || def.color;
             const color = this._normalizeColor(rawColor, def.color || '#4a90d9');
@@ -1033,10 +1152,17 @@ class NGEngine {
             const color = (n.properties && n.properties.color) || def.color;
             const stroke = (n.properties && n.properties.color) || def.stroke;
             const isSel = this.selectedNodeIds.has(n.id);
+            const isHovered = this._hoveredNodeId === n.id;
+            const hasHover = this._hoveredNodeId !== null;
             const b = this._nodeBBox(n);
             const g = doc.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('data-node-id', n.id);
             g.style.cursor = 'move';
+            // Hover 高亮：非悬停节点半透明
+            if (hasHover && !isHovered) {
+                g.style.opacity = '0.3';
+                g.style.transition = 'opacity 0.15s ease';
+            }
 
             let shape;
             if (def.shape === 'rect') {
@@ -1162,6 +1288,9 @@ class NGEngine {
             hit.style.cursor = 'move';
             hit.addEventListener('mousedown', (ev) => this._onNodeMouseDown(ev, n.id));
             hit.addEventListener('click', (ev) => this._onNodeClick(ev, n.id));
+            // Hover 高亮
+            hit.addEventListener('mouseenter', (ev) => this._onNodeMouseEnter(ev, n.id));
+            hit.addEventListener('mouseleave', (ev) => this._onNodeMouseLeave(ev));
             g.appendChild(hit);
 
             // 选中：画 4 个角缩放手柄
@@ -1335,12 +1464,19 @@ class NGEngine {
             // Shift+拖拽 = 框选
             this._interactState = { type: 'marquee', startClient: { x: clientX, y: clientY }, additive: true };
             this._showSelectionRect(startLocal, { x: 0, y: 0 });
+            // 框选时也取消 hover 高亮
+            this._hoveredNodeId = null;
+            this._hoveredEdgeIds.clear();
+            this._renderAll();
         } else {
             // 普通拖拽 = 平移画布
             this._interactState = { type: 'pan', startClient: { x: clientX, y: clientY }, startTx: this.tx, startTy: this.ty };
             // 点击空白取消选择
             this.selectedNodeIds.clear();
             this.selectedEdgeIds.clear();
+            // 点击空白取消 hover 高亮
+            this._hoveredNodeId = null;
+            this._hoveredEdgeIds.clear();
             this._renderAll();
             this._emitSelection();
         }
@@ -1379,6 +1515,11 @@ class NGEngine {
         e.preventDefault(); e.stopPropagation();
         e.cancelBubble = true; // SVG 事件兼容性后备，防止冒泡到 canvas 清空选择
         const node = this.getNode(nodeId); if (!node) return;
+        // 点击节点时取消 hover 高亮
+        if (this._hoveredNodeId !== null) {
+            this._hoveredNodeId = null;
+            this._hoveredEdgeIds.clear();
+        }
         const shift = e.shiftKey;
         const g = this.clientToGraph(e.clientX, e.clientY);
         const offset = { x: g.x - node.x, y: g.y - node.y };
@@ -1413,6 +1554,28 @@ class NGEngine {
         } else if (this._interactState && this._interactState.type === 'move-nodes' && !this._interactState.didMove) {
             this._emitSelection(); // 重新触发显示
         }
+    }
+
+    // ========== Hover 高亮 ==========
+    _onNodeMouseEnter(e, nodeId) {
+        if (this.activeTool || this.activeEdgeType) return; // 创建/连线模式下不启用 hover 高亮
+        if (this._interactState) return; // 拖拽中不处理 hover
+        this._hoveredNodeId = nodeId;
+        // 计算与悬停节点相连的所有边
+        this._hoveredEdgeIds.clear();
+        for (const edge of this.data.edges) {
+            if (edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId) {
+                this._hoveredEdgeIds.add(edge.id);
+            }
+        }
+        this._renderAll();
+    }
+
+    _onNodeMouseLeave(e) {
+        if (this._hoveredNodeId === null) return;
+        this._hoveredNodeId = null;
+        this._hoveredEdgeIds.clear();
+        this._renderAll();
     }
 
     _onEdgeClick(e, edgeId) {
@@ -1953,6 +2116,7 @@ function buildNodeGraphToolbarHTML(statusId) {
         zoomReset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
         save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
         continuous: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+        autoLayout: '<path d="M4 20h4v-4H4v4z"/><path d="M16 4h4v4h-4V4z"/><path d="M4 8h4V4H4v4z"/><path d="M16 16h4v-4h-4v4z"/><path d="M8 10l4-4 4 4"/><path d="M8 14l4 4 4-4"/>',
     };
     const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -1992,6 +2156,8 @@ function buildNodeGraphToolbarHTML(statusId) {
             <span class="ng-zoom-label" id="ng-zoom-label">100%</span>
             ${iconBtn('zoom-in', t('ui.ng_zoom_in') || '放大', ICON.zoomIn)}
             ${iconBtn('zoom-reset', t('ui.ng_zoom_reset') || '重置缩放', ICON.zoomReset)}
+            <div class="ng-toolbar-divider"></div>
+            ${iconBtn('auto-layout', t('ui.ng_auto_layout') || '自动排版', ICON.autoLayout)}
             <div class="ng-toolbar-divider"></div>
             ${iconBtn('save', t('ui.save') || '保存', ICON.save)}
             <div class="ng-toolbar-divider"></div>
@@ -2048,6 +2214,12 @@ function setupNodeGraphContextMenu(engine, markDirty) {
 
     engine.container.addEventListener('contextmenu', (e) => {
         e.preventDefault();
+        // 右键时取消 hover 高亮
+        if (engine._hoveredNodeId !== null) {
+            engine._hoveredNodeId = null;
+            engine._hoveredEdgeIds.clear();
+            engine._renderAll();
+        }
         const p = engine.clientToGraph(e.clientX, e.clientY);
         // 节点命中
         for (const n of engine.data.nodes) {
@@ -2801,6 +2973,9 @@ function createNodeGraphTab(graphId, title, projectFolder) {
             engine.zoomTo(engine.zoom / 1.2, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
         } else if (action === 'zoom-reset') {
             engine.zoomReset();
+        } else if (action === 'auto-layout') {
+            engine.autoLayout();
+            markDirty();
         } else if (action === 'save') {
             await saveNodeGraph(tabId);
         } else if (action === 'export') {

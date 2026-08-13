@@ -31,6 +31,11 @@ body.win-maximized #title-bar,
 body.win-maximized .title-drag {
     -webkit-app-region: no-drag;
 }
+/* 命令面板打开时临时禁用标题栏 drag region，使覆盖层可点击 */
+body.command-palette-open #title-bar,
+body.command-palette-open .title-drag {
+    -webkit-app-region: no-drag;
+}
 /* 最大化时：OA/TA 模板 area-wrap 圆角清零，内部容器本来 border-radius:0 无需单独处理 */
 body.win-maximized,
 body.win-maximized .area-wrap { border-radius: 0 !important; }
@@ -137,6 +142,34 @@ body.win-maximized .area-wrap { border-radius: 0 !important; }
 
 .title-icon { width: 18px; height: 18px; margin-left: 6px; object-fit: contain; }
 .title-separator { width: 1px; height: 18px; background: var(--text); opacity: 0.2; margin: 0 10px; }
+
+/* 搜索命令面板按钮 */
+.search-icon-btn {
+    -webkit-app-region: no-drag;
+    width: 36px !important;
+    height: 36px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+    border: none;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+.search-icon-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text);
+}
+.search-icon-btn svg {
+    pointer-events: none;
+    width: 16px;
+    height: 16px;
+}
 
 /* 标题栏更新指示器 */
 .update-indicator-btn {
@@ -2085,4 +2118,93 @@ body.material-active .multi-select-toolbar {
 #status-bar .status-value {
     color: var(--text, #ccc);
     font-weight: 500;
+}
+
+/* ====== 快捷键设置 ====== */
+.shortcut-hint-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+}
+.shortcut-settings-group {
+    margin-bottom: 20px;
+}
+.shortcut-settings-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+.shortcut-setting-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    gap: 12px;
+}
+.shortcut-setting-row > span:first-child {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 14px;
+    color: var(--text);
+}
+.shortcut-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.shortcut-input {
+    width: 160px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input, var(--bg-sidebar));
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.15s;
+    user-select: none;
+}
+.shortcut-input:focus {
+    border-color: var(--accent);
+}
+.shortcut-input.recording {
+    border-color: var(--accent);
+    background: rgba(255,193,7,0.08);
+    color: var(--accent);
+    animation: shortcut-pulse 1s ease-in-out infinite;
+}
+@keyframes shortcut-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,120,212,0.3); }
+    50% { box-shadow: 0 0 0 4px rgba(0,120,212,0.1); }
+}
+.shortcut-reset-btn {
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+}
+.shortcut-reset-btn:hover {
+    background: var(--hover-bg);
+    color: var(--text);
 }

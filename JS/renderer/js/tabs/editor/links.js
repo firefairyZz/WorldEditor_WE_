@@ -310,7 +310,14 @@ function handleJumpLinkClick(data) {
                             if (canvasEl) {
                                 inst.engine.data.viewport.tx = canvasEl.clientWidth / 2 - cx * inst.engine.zoom;
                                 inst.engine.data.viewport.ty = canvasEl.clientHeight / 2 - cy * inst.engine.zoom;
+                                // 选中并高亮目标节点
+                                inst.engine.selectedNodeIds.clear();
+                                inst.engine.selectedEdgeIds.clear();
+                                inst.engine.selectedNodeIds.add(data.targetNode);
                                 inst.engine._renderAll();
+                                if (typeof inst.engine._emitSelection === 'function') {
+                                    try { inst.engine._emitSelection(); } catch (_) {}
+                                }
                             }
                         } catch (e) {
                             weLog && weLog.warn('editor', 'handleJumpLinkClick: 居中节点失败', { targetNode: data.targetNode, error: e.message });

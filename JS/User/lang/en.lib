@@ -195,6 +195,7 @@ ui.ng_expand = Expand property panel
 ui.ng_zoom_in = Zoom In
 ui.ng_zoom_out = Zoom Out
 ui.ng_zoom_reset = Reset Zoom
+ui.ng_auto_layout = Auto Layout
 ui.node_graph_group = Node Graph
 ui.ng_hide_arrow_default = Create connections with hidden arrows by default
 ui.ng_node_properties = Node Properties

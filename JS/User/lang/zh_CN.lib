@@ -198,6 +198,7 @@ ui.ng_expand = 展开属性面板
 ui.ng_zoom_in = 放大
 ui.ng_zoom_out = 缩小
 ui.ng_zoom_reset = 重置缩放
+ui.ng_auto_layout = 自动排版
 ui.node_graph_group = 节点图
 ui.ng_hide_arrow_default = 默认创建隐藏箭头连线
 ui.ng_node_properties = 节点属性

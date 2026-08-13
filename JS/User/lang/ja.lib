@@ -196,6 +196,7 @@ ui.ng_expand = 属性パネルを展開
 ui.ng_zoom_in = 拡大
 ui.ng_zoom_out = 縮小
 ui.ng_zoom_reset = ズームリセット
+ui.ng_auto_layout = 自動レイアウト
 ui.node_graph_group = ノードグラフ
 ui.ng_hide_arrow_default = デフォルトで矢印を非表示にして接続線を作成
 ui.ng_node_properties = ノードプロパティ
