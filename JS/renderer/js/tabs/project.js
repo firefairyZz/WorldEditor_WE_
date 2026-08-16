@@ -433,8 +433,8 @@ async function openProjectDirectly({ folder, name, fileList, projectMode, owner 
     setupSearch(safeId);
     setupSortToggle(safeId);
     // 状态 1：项目打开后默认进入目录独占模式（文件树 100%），用户点击具体文件后再切完整 TA
-    // 若 defaultOpenFirst 开启，则直接进入 TA 模式
-    if (!defaultOpenFirst) {
+    // 若 defaultOpenFirst 开启，则直接进入 TA 模式（手机端始终 only-left）
+    if (!defaultOpenFirst || !document.body.classList.contains('is-desktop')) {
         layout.classList.add('only-left');
     }
     weLog.info('project', '← openProjectDirectly 完成', { safeId });

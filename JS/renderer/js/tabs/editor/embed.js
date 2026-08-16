@@ -229,11 +229,30 @@ async function openEmbeddedNodeGraph(safeId, filename) {
     engine.zoomReset = () => { origZoomReset(); updateZoomLabel(); };
 
     toolbar.addEventListener('click', async e => {
-        const btn = e.target.closest('.ng-btn');
-        if (!btn) return;
+        console.log('[NG] 工具栏点击', e.target.tagName, e.target.className, e.target.nodeType);
+        if (!e || !e.target) return;
+        // SVG 元素在旧版 Electron 中可能没有 closest 方法，用安全调用
+        var target = e.target;
+        var closestBtn = (typeof target.closest === 'function') ? target.closest('.ng-btn') : null;
+        // 兜底：通过 parentElement 回溯查找
+        if (!closestBtn) {
+            var el = target;
+            while (el && el !== toolbar) {
+                if (el.nodeType === 1 && el.classList && el.classList.contains('ng-btn')) { closestBtn = el; break; }
+                el = el.parentElement || (el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null);
+            }
+        }
+        if (!closestBtn) { console.log('[NG] 未找到 .ng-btn 父元素', e.target); return; }
+        const btn = closestBtn;
         const tool = btn.dataset.tool;
         const edge = btn.dataset.edge;
         const action = btn.dataset.action;
+        // 观察模式：只允许缩放和模式切换
+        if (engine._isReadonly && engine._isReadonly()) {
+            if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
+                // 放行
+            } else { return; }
+        }
         if (tool) {
             setActiveTool(tool);
             if (tool !== 'select') setActiveEdge(null);
@@ -267,10 +286,157 @@ async function openEmbeddedNodeGraph(safeId, filename) {
             saveEmbeddedNodeGraph(safeId);
         } else if (action === 'history') {
             toggleHistoryPanel(safeId);
+        } else if (action === 'layout-selector') {
+            // 切换排版下拉菜单
+            let menu = document.querySelector('.ng-layout-menu');
+            // 如果菜单还在 toolbar 内部，移到 body 并使用 fixed 定位（避免被 toolbar 的 overflow 裁剪）
+            if (menu && menu.parentNode !== document.body) {
+                document.body.appendChild(menu);
+            }
+            if (menu) {
+                const isVisible = menu.style.display !== 'none';
+                // 关闭所有排版菜单
+                document.querySelectorAll('.ng-layout-menu').forEach(m => m.style.display = 'none');
+                if (!isVisible) {
+                    // 根据按钮位置计算 fixed 定位坐标
+                    var br = btn.getBoundingClientRect();
+                    menu.style.position = 'fixed';
+                    menu.style.top = (br.bottom + 4) + 'px';
+                    menu.style.left = br.left + 'px';
+                    menu.style.display = 'block';
+                }
+            }
         } else if (action === 'export') {
             if (typeof exportNodeGraphHTML === 'function') exportNodeGraphHTML(engine, safeId);
+        } else if (action === 'export-archive') {
+            console.log('→ 导出角色档案被触发');
+            try {
+                if (typeof exportNodeGraphArchive === 'function') exportNodeGraphArchive(engine);
+            } catch (e) {
+                console.error('导出角色档案失败:', e);
+                showNotification('导出失败: ' + (e.message || String(e)));
+            }
+        } else if (action === 'sim-start') {
+            engine.startSimulation();
+            updateSimLabel();
+            if (window._ngSimTimer) { clearInterval(window._ngSimTimer); window._ngSimTimer = null; }
+            const autoBtn = toolbar.querySelector('[data-action="sim-auto"]');
+            if (autoBtn) autoBtn.classList.remove('active');
+        } else if (action === 'sim-step') {
+            if (engine.simState === 'waiting') return;
+            engine.stepSimulation();
+            updateSimLabel();
+            if (engine.simState === 'finished' && window._ngSimTimer) {
+                clearInterval(window._ngSimTimer); window._ngSimTimer = null;
+                const autoBtn = toolbar.querySelector('[data-action="sim-auto"]');
+                if (autoBtn) autoBtn.classList.remove('active');
+            }
+        } else if (action === 'sim-auto') {
+            if (window._ngSimTimer) {
+                clearInterval(window._ngSimTimer); window._ngSimTimer = null;
+                btn.classList.remove('active');
+            } else {
+                if (engine.simState !== 'running') {
+                    engine.startSimulation();
+                    updateSimLabel();
+                }
+                btn.classList.add('active');
+                window._ngSimTimer = setInterval(() => {
+                    if (engine.simState === 'finished' || engine.simState === 'waiting') {
+                        clearInterval(window._ngSimTimer); window._ngSimTimer = null;
+                        const ab = toolbar.querySelector('[data-action="sim-auto"]');
+                        if (ab) ab.classList.remove('active');
+                        return;
+                    }
+                    engine.stepSimulation();
+                    updateSimLabel();
+                }, 800);
+            }
+        } else if (action === 'sim-reset') {
+            engine.resetSimulation();
+            updateSimLabel();
+            if (window._ngSimTimer) { clearInterval(window._ngSimTimer); window._ngSimTimer = null; }
+            const autoBtn = toolbar.querySelector('[data-action="sim-auto"]');
+            if (autoBtn) autoBtn.classList.remove('active');
         }
     });
+
+    // 排版下拉菜单选项
+    toolbar.addEventListener('click', (e) => {
+        if (!e || !e.target) return;
+        var target = e.target;
+        var opt = (typeof target.closest === 'function') ? target.closest('.ng-layout-option') : null;
+        if (!opt) return;
+        const layout = opt.dataset.layout;
+        if (!layout) return;
+        // 关闭菜单
+        const menu = document.querySelector('.ng-layout-menu');
+        if (menu) menu.style.display = 'none';
+        // 执行排版
+        engine.autoLayout(layout);
+        markDirty();
+    });
+    // 点击其他区域关闭排版菜单
+    document.addEventListener('click', (e) => {
+        var menu = document.querySelector('.ng-layout-menu');
+        if (!menu || menu.style.display === 'none') return;
+        // 点击菜单内部不关闭
+        if (menu.contains(e.target)) return;
+        // 点击排版按钮本身不关闭（由 toolbar 处理切换）
+        if (e.target && (typeof e.target.closest === 'function') && e.target.closest('[data-action="layout-selector"]')) return;
+        // 点击排版按钮的 SVG 子元素（兼容性回溯）
+        if (e.target) {
+            var el = e.target;
+            while (el && el !== document.body) {
+                if (el.nodeType === 1 && el.getAttribute && el.getAttribute('data-action') === 'layout-selector') return;
+                el = el.parentElement || (el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null);
+            }
+        }
+        menu.style.display = 'none';
+    });
+
+    // 模拟标签更新
+    function updateSimLabel() {
+        const label = toolbar.querySelector('.ng-sim-label');
+        if (label) {
+            if (engine.simState === 'idle') label.textContent = t('ui.ng_sim_idle') || '待模拟';
+            else if (engine.simState === 'finished') label.textContent = t('ui.ng_sim_finished') || '模拟完成';
+            else label.textContent = engine.getSimStepLabel();
+        }
+    }
+    // 注册模拟回调
+    engine.onSimUpdate = (state, step, total, stepLabel) => {
+        const label = toolbar.querySelector('.ng-sim-label');
+        if (label) {
+            if (state === 'idle') label.textContent = t('ui.ng_sim_idle') || '待模拟';
+            else if (state === 'finished') label.textContent = t('ui.ng_sim_finished') || '模拟完成';
+            else label.textContent = stepLabel;
+        }
+    };
+
+    // 模式切换
+    const modeSelect = toolbar.querySelector('.ng-mode-select');
+    if (modeSelect) {
+        modeSelect.value = engine.mode;
+        engine._modeSelectEl = modeSelect; // 存储引用，供 _syncModeUI 更新
+        modeSelect.addEventListener('change', (e) => {
+            engine.setMode(e.target.value);
+            // 重建节点按钮组
+            rebuildToolbarNodeButtons(toolbar, engine.mode);
+            if (engine.mode === 'flow') {
+                setActiveEdge(null);
+                if (engine.activeTool) setActiveTool('select');
+            }
+            // 切换模式时显示/隐藏模拟按钮
+            const simBtns = toolbar.querySelector('.ng-sim-buttons');
+            if (simBtns) {
+                simBtns.style.display = engine.mode === 'flow' ? '' : 'none';
+            }
+            // 离开流程模式时重置模拟
+            if (engine.mode !== 'flow') engine.resetSimulation();
+            markDirty();
+        });
+    }
 
     // 读取数据（【修复切回内容消失 #4】缓存优先，同时尝试 filename 和 basename(filename) 两个 key）
     // 【终极修复 #类型包裹】用 _fcUnwrap('ngjson') 解开，类型不匹配（比如是 Quill HTML）直接当作没缓存，

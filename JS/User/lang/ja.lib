@@ -1,4 +1,4 @@
-ui.file = ファイル
+﻿ui.file = ファイル
 ui.new_project = 新規プロジェクト
 ui.open_folder = プロジェクトを開く
 ui.new_file = 新規ファイル
@@ -197,6 +197,10 @@ ui.ng_zoom_in = 拡大
 ui.ng_zoom_out = 縮小
 ui.ng_zoom_reset = ズームリセット
 ui.ng_auto_layout = 自動レイアウト
+ui.ng_mode = グラフモード
+ui.ng_mode_relation = 関係図モード
+ui.ng_mode_flow = フローモード
+ui.ng_mode_view = 観察モード
 ui.node_graph_group = ノードグラフ
 ui.ng_hide_arrow_default = デフォルトで矢印を非表示にして接続線を作成
 ui.ng_node_properties = ノードプロパティ
@@ -373,6 +377,9 @@ ui.group_dark = ダークテーマ
 
 
 ui.account = アカウント
+ui.next = 次へ
+ui.back = 戻る
+ui.define_world = 世界を定義
 ui.account_register = アカウント登録
 ui.account_settings = アカウント設定
 ui.upload_avatar = アバターをアップロード
@@ -508,3 +515,61 @@ ui.desc_updated = 説明が更新されました
 ui.desc_cleared = 説明がクリアされました
 ui.click_add_desc = クリックしてコメントを追加
 ui.edit_image_desc = 画像コメントを編集
+
+ui.ng_sim_start = シミュレーション開始
+ui.ng_sim_step = 次のステップ
+ui.ng_sim_reset = リセット
+ui.ng_sim_idle = 待機中
+ui.ng_sim_finished = 完了
+ui.ng_condition_expr = 条件式
+ui.ng_condition_expr_ph = 例: count > 10
+ui.ng_condition_branches = 分岐
+ui.ng_condition_branch_hint = エッジラベルを編集して分岐条件を設定
+ui.ng_condition_no_out = 分岐が接続されていません
+ui.ng_process_duration = 実行時間
+ui.ng_process_duration_ph = 例: 5s / 30min
+ui.ng_sim_auto = 自動実行
+
+
+ui.ng_node_type_start = スタート
+ui.ng_node_type_end = エンド
+ui.ng_node_type_condition = 条件判断
+ui.ng_node_type_process = 処理
+ui.ng_node_type_subprocess = サブプロセス
+ui.ng_node_type_merge = マージ
+
+ui.ng_edge_type_relation = 関係線
+ui.ng_edge_type_relation_desc = キャラ↔キャラ：友人/敵/親族
+ui.ng_edge_type_timeline = 時系列線
+ui.ng_edge_type_timeline_desc = イベント→イベント：前/後/並行
+ui.ng_edge_type_causality = 因果線
+ui.ng_edge_type_causality_desc = 原因→結果
+ui.ng_edge_type_contain = 所属線
+ui.ng_edge_type_contain_desc = シーンがキャラを含む
+
+ui.ng_node_type_character = キャラクター
+ui.ng_node_type_scene = シーン
+ui.ng_node_type_event = イベント
+ui.ng_node_type_setting = 設定
+ui.ng_node_type_chapter = 章
+
+# ====== ノードグラフ新機能 i18n（レイアウトドロップダウン、タイムライン、アーカイブエクスポート、リンクファイル）======
+ui.ng_mode_timeline = タイムラインモード
+ui.ng_layout = レイアウト
+ui.ng_layout_auto = 自動レイアウト
+ui.ng_layout_manual = デフォルト（手動ドラッグ）
+ui.ng_layout_force = フォースグラフ
+ui.ng_layout_chapter = 章順
+ui.ng_layout_timestamp = タイムスタンプ順
+ui.ng_export_archive = キャラクターアーカイブをエクスポート
+ui.ng_export_archive_done = キャラクターアーカイブをエクスポートしました
+ui.ng_add_file_link = リンクファイルを追加
+ui.ng_add_file_ph = ファイルの章名または外部リンクを入力（例: 第三章 または https://...）
+ui.ng_timeline_order = 順序番号
+ui.ng_timeline_order_ph = 0
+ui.ng_timestamp = タイムスタンプ
+ui.ng_timestamp_ph = 例: 2024-01-01 または 紀元元年
+ui.ng_chapter_ref = 章参照
+ui.ng_chapter_ref_ph = 例: 第三章
+ui.ng_is_head = 先頭ノードに設定
+ui.ng_is_tail = 末尾ノードに設定

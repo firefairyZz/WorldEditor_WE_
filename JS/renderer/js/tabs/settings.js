@@ -437,10 +437,14 @@ function refreshSettingsI18n() {
         if (optgroups[1]) optgroups[1].label = t('ui.group_dark') || optgroups[1].label;
 
         // Color preset options
-        const options = appearanceSection.querySelectorAll('#color-preset-select > option');
-        if (options[1]) { const v = t('ui.theme_default_light'); if (v) options[1].textContent = v; }
-        if (options[5]) { const v = t('ui.theme_default_dark'); if (v) options[5].textContent = v; }
-        if (options[12]) { const v = t('ui.theme_custom'); if (v) options[12].textContent = v; }
+        const autoOpt = appearanceSection.querySelector('#color-preset-select option[value="auto"]');
+        if (autoOpt) { const v = t('ui.theme_auto'); if (v) autoOpt.textContent = v; }
+        const lightOpt = appearanceSection.querySelector('#color-preset-select option[value="default-light"]');
+        if (lightOpt) { const v = t('ui.theme_default_light'); if (v) lightOpt.textContent = v; }
+        const darkOpt = appearanceSection.querySelector('#color-preset-select option[value="default-dark"]');
+        if (darkOpt) { const v = t('ui.theme_default_dark'); if (v) darkOpt.textContent = v; }
+        const customOpt = appearanceSection.querySelector('#color-preset-select option[value="custom"]');
+        if (customOpt) { const v = t('ui.theme_custom'); if (v) customOpt.textContent = v; }
 
         // Reset button
         const resetBtn = appearanceSection.querySelector('#btn-reset-colors');
@@ -594,19 +598,36 @@ function createSettingsTab() {
         shortcuts: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M6 16h.01M18 16h.01M10 16h4"/></svg>',
         about: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>'
     };
+    const isDesktop = document.body.classList.contains('is-desktop');
     navItemsWrap.innerHTML = `
         <div class="nav-item" data-section="general">${navIcons.general}${t('ui.general')}</div>
         <div class="nav-item" data-section="tags">${navIcons.tags}${t('ui.tags_settings') || '标签'}</div>
         <div class="nav-item" data-section="account">${navIcons.account}${t('ui.account') || '账户'}</div>
         <div class="nav-item" data-section="appearance">${navIcons.appearance}${t('ui.appearance') || '外观'}</div>
         <div class="nav-item" data-section="editor">${navIcons.editor}${t('ui.editor')}</div>
-        <div class="nav-item" data-section="shortcuts">${navIcons.shortcuts}${t('ui.shortcuts') || '快捷键'}</div>
+        ${isDesktop ? `<div class="nav-item" data-section="shortcuts">${navIcons.shortcuts}${t('ui.shortcuts') || '快捷键'}</div>` : ''}
         <div class="nav-item" data-section="about">${navIcons.about}${t('ui.about')}</div>
     `;
     nav.appendChild(navItemsWrap);
     const panel = document.createElement('div');
     panel.className = 'settings-panel area-card is-right';
     settingsPanelRef = panel;
+
+    // 手机端设置页返回按钮
+    const settingsBackBtn = document.createElement('button');
+    settingsBackBtn.id = 'btn-settings-back';
+    settingsBackBtn.className = 'settings-back-btn';
+    settingsBackBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>';
+    settingsBackBtn.setAttribute('aria-label', '返回');
+    settingsBackBtn.addEventListener('click', () => {
+        const layout = panel.closest('.settings-layout');
+        if (layout) {
+            layout.classList.remove('only-right');
+            layout.classList.add('only-left');
+        }
+    });
+    panel.appendChild(settingsBackBtn);
+
     const contentArea = document.createElement('div');
     contentArea.className = 'settings-content';
 
@@ -743,6 +764,7 @@ function createSettingsTab() {
             <div class="setting-row">
                 <span>${t('ui.color_scheme') || '配色方案'}</span>
                 <select id="color-preset-select">
+                    <option value="auto">${t('ui.theme_auto') || '自动'}</option>
                     <optgroup label="${t('ui.group_light') || '亮色主题'}">
                         <option value="we-light">WE Exclusive</option>
                         <option value="default-light">${t('ui.theme_default_light') || '默认亮色'}</option>
@@ -922,12 +944,54 @@ function createSettingsTab() {
     aboutSection.className = 'settings-section';
     aboutSection.id = 'section-about';
     aboutSection.innerHTML = `
-        <h3>${t('ui.about')}</h3>
-        <div class="about-header">
-            <div class="about-info">
-                <p style="color:var(--text-secondary)">World Editor <span id="about-version">v${APP_VERSION}</span></p>
-                <p style="color:var(--text-secondary); margin-top:4px;">${t('ui.about_desc')}</p>
-                <div class="about-links">
+        <!-- 桌面端：全部显示 -->
+        <div class="about-desktop-only">
+            <h3>${t('ui.about')}</h3>
+            <div class="about-header">
+                <div class="about-info">
+                    <p style="color:var(--text-secondary)">World Editor <span id="about-version">v${APP_VERSION}</span></p>
+                    <p style="color:var(--text-secondary); margin-top:4px;">${t('ui.about_desc')}</p>
+                    <div class="about-links">
+                        <a href="https://github.com/firefairyZz" class="about-link" data-external="true">
+                            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38C13.71 14.53 16 11.53 16 8c0-4.42-3.58-8-8-8z"/></svg>
+                            <span>firefairyZz</span>
+                        </a>
+                        <a href="https://github.com/firefairyZz/WorldEditor_WE_" class="about-link" data-external="true">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></svg>
+                            <span>${t('ui.open_source_repo') || '开放源代码库'}</span>
+                        </a>
+                    </div>
+                </div>
+                <div class="about-icon">
+                    <img src="../resources/White.png" alt="World Editor" id="about-app-icon" />
+                </div>
+            </div>
+            <div class="update-notes-section">
+                <div class="update-notes-header">
+                    <h4>${t('ui.update_notes') || '更新日志'}</h4>
+                </div>
+                <div class="update-notes-body">
+                    <aside class="update-notes-toc" id="update-notes-toc">
+                        <div class="toc-title">${t('ui.table_of_contents')}</div>
+                        <ul class="toc-list" id="update-notes-toc-list"></ul>
+                    </aside>
+                    <div class="update-notes-content" id="update-notes-container"></div>
+                </div>
+            </div>
+            <div class="oss-licenses-section">
+                <div class="oss-licenses-header">
+                    <h4>${t('ui.oss_licenses') || '开放源代码库'}</h4>
+                </div>
+                <div class="oss-licenses-body" id="oss-licenses-list"></div>
+            </div>
+        </div>
+
+        <!-- 手机端：导航式布局 -->
+        <div class="about-mobile-only">
+            <!-- 目录页 -->
+            <div class="about-mobile-dir" id="about-mobile-dir">
+                <h3>${t('ui.about')}</h3>
+                <div class="about-mobile-info">
                     <a href="https://github.com/firefairyZz" class="about-link" data-external="true">
                         <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38C13.71 14.53 16 11.53 16 8c0-4.42-3.58-8-8-8z"/></svg>
                         <span>firefairyZz</span>
@@ -937,28 +1001,42 @@ function createSettingsTab() {
                         <span>${t('ui.open_source_repo') || '开放源代码库'}</span>
                     </a>
                 </div>
+                <hr>
+                <div class="about-mobile-nav">
+                    <div class="about-mobile-nav-item" data-about-page="log">
+                        <span>${t('ui.update_notes') || '日志'}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                    <div class="about-mobile-nav-item" data-about-page="source">
+                        <span>${t('ui.oss_licenses') || '源代码库'}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>
+                </div>
             </div>
-            <div class="about-icon">
-                <img src="../resources/White.png" alt="World Editor" id="about-app-icon" />
+            <!-- 内容页（日志/源代码库） -->
+            <div class="about-mobile-pages" id="about-mobile-pages" style="display:none">
+                <div class="about-mobile-page" id="about-page-log">
+                    <button class="about-mobile-back" id="about-mobile-log-back-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                        <span>${t('ui.back') || '返回'}</span>
+                    </button>
+                    <!-- 日志：版本列表 -->
+                    <div class="about-mobile-log-dir" id="about-mobile-log-dir">
+                        <div class="about-mobile-log-list" id="update-notes-toc-list-mobile"></div>
+                    </div>
+                    <!-- 日志：版本内容 -->
+                    <div class="about-mobile-log-content" id="about-mobile-log-content" style="display:none">
+                        <div class="about-mobile-log-body" id="update-notes-container-mobile"></div>
+                    </div>
+                </div>
+                <div class="about-mobile-page" id="about-page-source">
+                    <button class="about-mobile-back" data-about-back="source">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                        <span>${t('ui.back') || '返回'}</span>
+                    </button>
+                    <div class="oss-licenses-body" id="oss-licenses-list-mobile"></div>
+                </div>
             </div>
-        </div>
-        <div class="update-notes-section">
-            <div class="update-notes-header">
-                <h4>${t('ui.update_notes') || '更新日志'}</h4>
-            </div>
-            <div class="update-notes-body">
-                <aside class="update-notes-toc" id="update-notes-toc">
-                    <div class="toc-title">${t('ui.table_of_contents')}</div>
-                    <ul class="toc-list" id="update-notes-toc-list"></ul>
-                </aside>
-                <div class="update-notes-content" id="update-notes-container"></div>
-            </div>
-        </div>
-        <div class="oss-licenses-section">
-            <div class="oss-licenses-header">
-                <h4>${t('ui.oss_licenses') || '开放源代码库'}</h4>
-            </div>
-            <div class="oss-licenses-body" id="oss-licenses-list"></div>
         </div>
     `;
 
@@ -971,6 +1049,37 @@ function createSettingsTab() {
             if (url) weAPI.openExternalLink(url);
         }
     });
+
+    // 手机端 about 页面导航
+    const aboutDir = aboutSection.querySelector('#about-mobile-dir');
+    const aboutPages = aboutSection.querySelector('#about-mobile-pages');
+    if (aboutDir && aboutPages) {
+        // 点击导航项 → 切换到对应内容页
+        aboutDir.addEventListener('click', (e) => {
+            const navItem = e.target.closest('.about-mobile-nav-item');
+            if (!navItem) return;
+            const page = navItem.dataset.aboutPage;
+            // 隐藏所有内容页，显示目标页
+            aboutPages.querySelectorAll('.about-mobile-page').forEach(p => p.style.display = 'none');
+            const target = aboutPages.querySelector(`#about-page-${page}`);
+            if (target) {
+                target.style.display = 'flex';
+                aboutDir.style.display = 'none';
+                aboutPages.style.display = 'flex';
+            }
+        });
+
+        // 点击返回按钮 → 回到目录页
+        aboutPages.addEventListener('click', (e) => {
+            const backBtn = e.target.closest('.about-mobile-back');
+            if (!backBtn) return;
+            // 日志内容页的返回按钮由独立事件处理，不触发全局返回
+            if (backBtn.dataset.aboutLogBack === 'true') return;
+            aboutPages.style.display = 'none';
+            aboutPages.querySelectorAll('.about-mobile-page').forEach(p => p.style.display = 'none');
+            aboutDir.style.display = '';
+        });
+    }
 
     // 彩蛋：双击图标切换为 icon.png / 恢复默认
     let iconEggMode = false;
@@ -1006,12 +1115,14 @@ function createSettingsTab() {
     contentArea.appendChild(appearanceSection);
     contentArea.appendChild(editorSection);
 
-    // 快捷键设置区域
-    const shortcutsSection = document.createElement('div');
-    shortcutsSection.className = 'settings-section';
-    shortcutsSection.id = 'section-shortcuts';
-    shortcutsSection.innerHTML = buildShortcutsSettingsHTML();
-    contentArea.appendChild(shortcutsSection);
+    // 快捷键设置区域（手机端不显示）
+    if (isDesktop) {
+        const shortcutsSection = document.createElement('div');
+        shortcutsSection.className = 'settings-section';
+        shortcutsSection.id = 'section-shortcuts';
+        shortcutsSection.innerHTML = buildShortcutsSettingsHTML();
+        contentArea.appendChild(shortcutsSection);
+    }
 
     contentArea.appendChild(aboutSection);
 
@@ -1042,8 +1153,13 @@ function createSettingsTab() {
 
     nav.querySelectorAll('.nav-item').forEach(item => {
         item.addEventListener('click', () => {
-            // 点击栏目即切完整 TA（去掉目录独占）
-            content.classList.remove('only-left');
+            // 点击栏目即切完整 TA（去掉目录独占），手机端切 only-right 显示详情面板
+            if (document.body.classList.contains('is-desktop')) {
+                content.classList.remove('only-left');
+            } else {
+                content.classList.remove('only-left');
+                content.classList.add('only-right');
+            }
             nav.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             item.classList.add('active');
             const section = item.dataset.section;
@@ -1118,8 +1234,8 @@ function createSettingsTab() {
         if (typeof ngDefaultSettings !== 'undefined') {
             ngDefaultSettings.hideArrowByDefault = s.ngHideArrowByDefault === true;
         }
-        // 默认打开第一项：移除 only-left 并自动点击第一个导航项
-        if (s.defaultOpenFirst === true) {
+        // 默认打开第一项：移除 only-left 并自动点击第一个导航项（手机端保持 only-left）
+        if (s.defaultOpenFirst === true && document.body.classList.contains('is-desktop')) {
             content.classList.remove('only-left');
             const firstNav = content.querySelector('.nav-item');
             if (firstNav) firstNav.click();
@@ -1652,7 +1768,8 @@ function createSettingsTab() {
         const customShortcuts = collectCustomShortcuts(content);
 
         // 根据配色方案决定主题
-        const isLightPreset = colorPreset.includes('light') || colorPreset === 'we-light';
+        const resolvedPreset = resolveColorPreset(colorPreset);
+        const isLightPreset = resolvedPreset.includes('light') || resolvedPreset === 'we-light';
         const theme = isLightPreset ? 'light' : 'dark';
 
         await weAPI.setSettings({
@@ -1739,8 +1856,8 @@ function createSettingsTab() {
         }
 
         showNotification(t('ui.settings_saved'));
-        // 立即应用「默认打开第一项」设置
-        if (dofVal) {
+        // 立即应用「默认打开第一项」设置（手机端保持 only-left）
+        if (dofVal && document.body.classList.contains('is-desktop')) {
             content.classList.remove('only-left');
             const firstNav = content.querySelector('.nav-item');
             if (firstNav) firstNav.click();
@@ -1845,6 +1962,22 @@ function createSettingsTab() {
     }
 
     addTab(id, t('ui.settings'), content, true);
+
+    // 监听系统主题变化，自动切换"自动"模式
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    const onSystemThemeChange = () => {
+        const presetSelect = document.getElementById('color-preset-select');
+        if (presetSelect && presetSelect.value === 'auto') {
+            weLog.info('settings', '系统主题变化，自动重新应用配色');
+            applyColorPreset('auto', null);
+            if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
+        }
+    };
+    prefersDark.addEventListener('change', onSystemThemeChange);
+    // 也监听主进程推送的主题变化
+    if (typeof weAPI !== 'undefined' && weAPI.onSystemThemeChanged) {
+        weAPI.onSystemThemeChanged(onSystemThemeChange);
+    }
 }
 
 function applyTheme(theme) {
@@ -2010,9 +2143,19 @@ function hexToRgba(color, alpha) {
 }
 
 // 应用主题配色预设
+// 解析"自动"主题为实际预设名（仅支持默认暗色/亮色）
+function resolveColorPreset(presetName) {
+    if (presetName !== 'auto') return presetName;
+    // 优先使用 matchMedia 检测系统主题
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    return prefersDark.matches ? 'default-dark' : 'default-light';
+}
+
 function applyColorPreset(presetName, customColors) {
     weLog.info('settings', '→ applyColorPreset 开始（只读日志）', { presetName, hasCustomColors: !!customColors });
-    currentColorPreset = presetName;
+    // 如果是"自动"，先解析为实际预设
+    const resolved = resolveColorPreset(presetName);
+    currentColorPreset = presetName; // 保存原始值（可能是 'auto'）
     const target = document.body;  // 设到 body 以覆盖 body.theme-light 的硬编码
 
     // 清除之前的预设（在 body 和 root 上都清除）
@@ -2032,10 +2175,10 @@ function applyColorPreset(presetName, customColors) {
         for (const [cssVar, color] of Object.entries(customColors)) {
             target.style.setProperty(cssVar, color);
         }
-    } else if (THEME_PRESETS[presetName]) {
-        const preset = THEME_PRESETS[presetName];
+    } else if (THEME_PRESETS[resolved]) {
+        const preset = THEME_PRESETS[resolved];
         // 同步亮/暗主题
-        const isLight = presetName.includes('light') || presetName === 'we-light';
+        const isLight = resolved.includes('light') || resolved === 'we-light';
         if (isLight) target.classList.add('theme-light');
         else target.classList.remove('theme-light');
         // 在 body 上设置变量 —— 内联样式优先级高于 stylesheet 中的 body.theme-light
@@ -2066,6 +2209,10 @@ function applyColorPreset(presetName, customColors) {
     // applyColorPreset 的职责是应用配色预设（CSS），不应覆盖材质设置。
     // body 上无 data-bg-material 属性，旧代码会用 'none' 覆盖已保存的材质值，导致重启后丢失。
     // 材质的 OS 层面应用由窗口构造时和"应用"按钮的 setBackgroundMaterial 调用负责。
+
+    // 同步 currentTheme 和 applyTheme（用于 auto 模式实时切换）
+    currentTheme = isLightTheme ? 'light' : 'dark';
+    applyTheme(currentTheme);
 
     // 主题切换后刷新节点图样式
     if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
@@ -2137,10 +2284,14 @@ const ARROW_EXPANDED_SVG = '<svg class="toc-arrow-svg" viewBox="0 0 16 16" width
 
 async function loadUpdateNotes() {
     weLog.info('settings', '→ loadUpdateNotes 开始');
+    // 桌面端
     const container = document.getElementById('update-notes-container');
     const tocList = document.getElementById('update-notes-toc-list');
+    // 手机端
+    const containerMobile = document.getElementById('update-notes-container-mobile');
+    const tocListMobile = document.getElementById('update-notes-toc-list-mobile');
     if (!container || !tocList) {
-        weLog.warn('settings', 'loadUpdateNotes: container 或 tocList 元素不存在');
+        weLog.warn('settings', 'loadUpdateNotes: 桌面端 container 或 tocList 元素不存在');
         return;
     }
     if (container.dataset.loaded) {
@@ -2229,11 +2380,26 @@ async function loadUpdateNotes() {
             });
             tocList.innerHTML = tocHtml;
 
+            // 手机端：简化版本列表（只显示版本号，无小标题）
+            if (tocListMobile) {
+                let tocMobileHtml = '';
+                sortedNotes.forEach((note) => {
+                    const ver = note.version;
+                    tocMobileHtml += `<div class="mobile-log-version-item" data-version="${ver}">
+                        <span class="mobile-log-version-label">v${escapeHtml(ver)}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </div>`;
+                });
+                tocListMobile.innerHTML = tocMobileHtml;
+            }
+
             // 初始空状态：不默认展开任何版本，显示提示
-            container.innerHTML = `<div class="update-notes-placeholder">
+            const placeholderHtml = `<div class="update-notes-placeholder">
                 <div class="placeholder-icon">📋</div>
                 <div class="placeholder-text">${t('ui.update_notes_placeholder') || '← 点击左侧版本号查看日志'}</div>
             </div>`;
+            container.innerHTML = placeholderHtml;
+            if (containerMobile) containerMobile.innerHTML = placeholderHtml;
 
             // 版本目录项点击：展开/折叠子标题 + 切换显示
             tocList.querySelectorAll('.toc-version').forEach(li => {
@@ -2315,6 +2481,48 @@ async function loadUpdateNotes() {
                     weAPI.openExternalLink(url);
                 }
             });
+
+            // ===== 手机端：版本项点击 → 切换到内容页 =====
+            if (tocListMobile) {
+                tocListMobile.querySelectorAll('.mobile-log-version-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const ver = item.dataset.version;
+                        const card = versionCards[ver];
+                        if (!card) return;
+
+                        // 隐藏目录区，显示内容区
+                        const logDir = document.getElementById('about-mobile-log-dir');
+                        const logContent = document.getElementById('about-mobile-log-content');
+                        if (logDir) logDir.style.display = 'none';
+                        if (logContent) {
+                            logContent.style.display = 'flex';
+                            const body = logContent.querySelector('#update-notes-container-mobile');
+                            if (body) {
+                                body.innerHTML = `<div class="update-note-card active-version" data-version="${ver}">
+                                    <div class="version-body">${card.html}</div>
+                                </div>`;
+                            }
+                        }
+                    });
+                });
+
+                // 手机端：返回按钮（统一后退一页）
+                const logBackBtn = document.getElementById('about-mobile-log-back-btn');
+                if (logBackBtn) {
+                    logBackBtn.addEventListener('click', (e) => {
+                        const logContent = document.getElementById('about-mobile-log-content');
+                        const logDir = document.getElementById('about-mobile-log-dir');
+                        // 如果内容区显示 → 回到版本列表（阻止冒泡避免全局返回）
+                        if (logContent && logContent.style.display !== 'none') {
+                            e.stopPropagation();
+                            if (logDir) logDir.style.display = '';
+                            logContent.style.display = 'none';
+                        }
+                        // 如果版本列表显示 → 不阻止冒泡，由全局处理回到关于目录
+                    });
+                }
+            }
         } else {
             container.innerHTML = '<div class="update-notes-empty">暂无更新日志</div>';
             tocList.innerHTML = '';
@@ -2531,6 +2739,7 @@ SOFTWARE.`
 function loadOssLicenses() {
     weLog.info('settings', '→ loadOssLicenses 开始');
     const container = document.getElementById('oss-licenses-list');
+    const containerMobile = document.getElementById('oss-licenses-list-mobile');
     if (!container) {
         weLog.warn('settings', 'loadOssLicenses: container 元素不存在');
         return;
@@ -2565,49 +2774,54 @@ function loadOssLicenses() {
         </div>`;
     });
     container.innerHTML = html;
+    if (containerMobile) containerMobile.innerHTML = html;
 
-    // 绑定展开/折叠事件
-    container.querySelectorAll('.oss-license-toggle').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const targetId = btn.dataset.target;
-            const target = document.getElementById(targetId);
-            if (target) {
-                const isHidden = target.style.display === 'none';
-                target.style.display = isHidden ? 'block' : 'none';
-                btn.textContent = isHidden ? closeText : viewText;
+    // 绑定展开/折叠事件（桌面端 + 移动端）
+    function bindLicenseEvents(ctn) {
+        if (!ctn) return;
+        ctn.querySelectorAll('.oss-license-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = btn.dataset.target;
+                const target = document.getElementById(targetId);
+                if (target) {
+                    const isHidden = target.style.display === 'none';
+                    target.style.display = isHidden ? 'block' : 'none';
+                    btn.textContent = isHidden ? closeText : viewText;
+                }
+            });
+        });
+
+        ctn.addEventListener('click', (e) => {
+            const link = e.target.closest('.oss-license-name, .oss-license-version');
+            if (link) {
+                e.preventDefault();
+                const lib = OSS_LICENSES[parseInt(link.closest('.oss-license-item').dataset.idx || '0')];
+                if (lib && lib.url) weAPI.openExternalLink(lib.url);
             }
         });
-    });
 
-    // 绑定外部链接点击
-    container.addEventListener('click', (e) => {
-        const link = e.target.closest('.oss-license-name, .oss-license-version');
-        if (link) {
-            e.preventDefault();
-            const lib = OSS_LICENSES[parseInt(link.closest('.oss-license-item').dataset.idx || '0')];
-            if (lib && lib.url) weAPI.openExternalLink(lib.url);
-        }
-    });
+        ctn.querySelectorAll('.oss-license-item').forEach((item, idx) => {
+            item.dataset.idx = idx;
+            const nameEl = item.querySelector('.oss-license-name');
+            const versionEl = item.querySelector('.oss-license-version');
+            nameEl.style.cursor = 'pointer';
+            versionEl.style.cursor = 'pointer';
+            nameEl.title = t('ui.oss_view_repo') || '查看仓库';
+            versionEl.title = t('ui.oss_view_repo') || '查看仓库';
+            nameEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                weAPI.openExternalLink(OSS_LICENSES[idx].url);
+            });
+            versionEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                weAPI.openExternalLink(OSS_LICENSES[idx].url);
+            });
+        });
+    }
 
-    // 点击库名/版本号跳转仓库
-    container.querySelectorAll('.oss-license-item').forEach((item, idx) => {
-        item.dataset.idx = idx;
-        const nameEl = item.querySelector('.oss-license-name');
-        const versionEl = item.querySelector('.oss-license-version');
-        nameEl.style.cursor = 'pointer';
-        versionEl.style.cursor = 'pointer';
-        nameEl.title = t('ui.oss_view_repo') || '查看仓库';
-        versionEl.title = t('ui.oss_view_repo') || '查看仓库';
-        nameEl.addEventListener('click', (e) => {
-            e.preventDefault();
-            weAPI.openExternalLink(OSS_LICENSES[idx].url);
-        });
-        versionEl.addEventListener('click', (e) => {
-            e.preventDefault();
-            weAPI.openExternalLink(OSS_LICENSES[idx].url);
-        });
-    });
+    bindLicenseEvents(container);
+    bindLicenseEvents(containerMobile);
 }
 
 function applyToolbarVisibility(show) {

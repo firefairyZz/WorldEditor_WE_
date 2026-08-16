@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
@@ -7,7 +7,33 @@ const unzipper = require('unzipper');
 // 并在 restore/resize 事件里自动重新 applyEffect()，解决最大化/还原后材质丢失问题。
 // 库在 Electron 27-40 下强制 transparent:true（构造时覆盖），圆角改由 setRoundedCorner() 提供。
 // 非 Win11 或 native 模块缺失时，材质方法 no-op（executeDwm 为 undefined，方法内有 if 保护）。
-const { MicaBrowserWindow, IS_WINDOWS_11: IS_WIN11_MICA } = require('mica-electron');
+// 手机模式下禁用 mica-electron（--mobile 启动参数），避免库强制最小宽度。
+const IS_MOBILE_MODE = process.argv.includes('--mobile');
+console.log(`[startup] process.argv=${JSON.stringify(process.argv)}  IS_MOBILE_MODE=${IS_MOBILE_MODE}`);
+let MicaBrowserWindow = null;
+let IS_WIN11_MICA = false;
+if (!IS_MOBILE_MODE) {
+    try {
+        const mica = require('mica-electron');
+        MicaBrowserWindow = mica.MicaBrowserWindow;
+        IS_WIN11_MICA = mica.IS_WINDOWS_11;
+        console.log('[startup] mica-electron 加载成功');
+    } catch (e) {
+        console.log(`[startup] mica-electron 加载失败: ${e.message}，使用原生 BrowserWindow`);
+    }
+}
+
+// 手机模式 IPC
+console.log('[startup] 注册手机模式 IPC...');
+ipcMain.handle('is-mobile-mode', () => IS_MOBILE_MODE);
+// 使用 on 而非 handle（ipcRenderer.send 比 invoke 更可靠）
+ipcMain.on('enter-mobile-mode', () => {
+    console.log('[ipc] enter-mobile-mode 被调用, IS_MOBILE_MODE=', IS_MOBILE_MODE);
+    if (IS_MOBILE_MODE) return;
+    console.log('[mobile-mode] 正在重启进入手机模式...');
+    app.relaunch({ args: process.argv.filter(a => a !== '--mobile').concat('--mobile') });
+    app.exit(0);
+});
 
 // ═══════════════════════════════════════════════════════════════════
 //  标题栏拖动方案说明
@@ -55,7 +81,7 @@ let mainWin = null;
 
 const DEFAULT_SETTINGS = {
     language: 'zh_CN',
-    theme: 'dark',
+    theme: 'auto',
     fontFamily: 'Microsoft YaHei',
     fontSize: '16',
     autoSave: '0',
@@ -64,7 +90,7 @@ const DEFAULT_SETTINGS = {
     materialTint: 78,
     materialOverlay: 30,
     materialBarTint: 100,
-    colorPreset: 'default-dark',
+    colorPreset: 'auto',
     customColors: null,
     customShortcuts: null
 };
@@ -181,6 +207,7 @@ ui.bg_material_hint = 仅 Windows 11 支持。当前版本为预览版，需窗�
 ui.appearance = 外观
 ui.color_preset = 主题配色
 ui.color_scheme = 配色方案
+ui.theme_auto = 自动
 ui.theme_default_dark = 默认暗色
 ui.theme_default_light = 默认亮色
 ui.theme_custom = 自定义
@@ -234,9 +261,38 @@ ui.account_name_hint = 仅支持英文、数字、下划线、连字符
 `;
     fs.writeFileSync(defaultLangPath, defaultContent, 'utf-8');
 }
-
+// 加载设置
 if (fs.existsSync(SETTINGS_PATH)) {
     try { appSettings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')); } catch {}
+} else {
+    // 首次启动：检测系统语言并设为默认
+    const detectedLang = detectSystemLanguage();
+    appSettings.language = detectedLang;
+    saveSettings();
+}
+
+// 系统语言 → 应用语言代码映射
+function detectSystemLanguage() {
+    const locale = app.getLocale(); // e.g. 'zh-CN', 'en-US', 'ja-JP'
+    const langMap = {
+        'zh': 'zh_CN',
+        'zh-CN': 'zh_CN',
+        'zh-Hans': 'zh_CN',
+        'zh-SG': 'zh_CN',
+        'zh-TW': 'zh_CN',
+        'zh-HK': 'zh_CN',
+        'zh-MO': 'zh_CN',
+        'zh-Hant': 'zh_CN',
+        'ja': 'ja',
+        'ja-JP': 'ja',
+    };
+    const mapped = langMap[locale];
+    if (mapped) {
+        const langPath = path.join(LANG_DIR, `${mapped}.lib`);
+        if (fs.existsSync(langPath)) return mapped;
+    }
+    // 系统语言对应的语言包不存在，默认使用英语（显示原始 key）
+    return 'en';
 }
 function saveSettings() {
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(appSettings, null, 2));
@@ -324,6 +380,18 @@ app.on('before-quit', () => { _flushLogBuffer(); });
 
 // 全局 IPC 处理器
 ipcMain.handle('get-version', () => APP_VERSION);
+
+ipcMain.handle('get-system-theme', () => {
+    return { isDark: nativeTheme.shouldUseDarkColors };
+});
+
+// 监听系统主题变化，推送给渲染进程
+nativeTheme.on('updated', () => {
+    const isDark = nativeTheme.shouldUseDarkColors;
+    if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('system-theme-changed', { isDark });
+    }
+});
 
 // ========== 检查更新 ==========
 const { net } = require('electron');
@@ -534,11 +602,62 @@ ipcMain.handle('get-update-notes', async (event, lang) => {
 });
 
 // ========== 导出功能 ==========
+// 使用独立窗口弹出保存对话框，避免 Mica 透明窗口导致的权限问题
+async function showExportDialog(options) {
+    // 直接创建隐藏的标准窗口作为对话框父窗口，绕过 Mica 透明窗口的权限限制
+    let tempDialog = null;
+    try {
+        tempDialog = new BrowserWindow({
+            show: false, frame: true, width: 1, height: 1,
+            backgroundColor: '#ffffff',
+            webPreferences: { contextIsolation: true, nodeIntegration: false }
+        });
+        const result = await dialog.showSaveDialog(tempDialog, options);
+        return result;
+    } catch (e) {
+        _logBuffer.push(`[showExportDialog] 对话框错误: ${e.message}`);
+        _flushLogBuffer();
+        return { canceled: true, filePath: null };
+    } finally {
+        if (tempDialog) {
+            try { tempDialog.destroy(); } catch (_) {}
+        }
+    }
+}
+
+/**
+ * 写入文件，失败时自动尝试 PowerShell Copy-Item 绕过权限限制
+ */
+function writeFileWithFallback(filePath, content, encoding = 'utf-8') {
+    try {
+        fs.writeFileSync(filePath, content, encoding);
+        return true;
+    } catch (writeErr) {
+        _logBuffer.push(`[writeFile] 直接写入失败: ${writeErr.message}`);
+        _flushLogBuffer();
+        try {
+            const { execFileSync } = require('child_process');
+            const tmpFile = path.join(app.getPath('temp'), 'we_export_' + Date.now() + '_' + path.basename(filePath));
+            fs.writeFileSync(tmpFile, content, encoding);
+            execFileSync('powershell.exe', ['-NoProfile', '-Command',
+                `Copy-Item -Path '${tmpFile.replace(/'/g, "''")}' -Destination '${filePath.replace(/'/g, "''")}' -Force`],
+                { timeout: 30000, shell: false });
+            try { fs.unlinkSync(tmpFile); } catch (_) {}
+            return true;
+        } catch (psErr) {
+            _logBuffer.push(`[writeFile] PowerShell 回退也失败: ${psErr.message}`);
+            _flushLogBuffer();
+            return false;
+        }
+    }
+}
+
 ipcMain.handle('export-pdf', async (event, html, suggestedName) => {
     try {
-        const { canceled, filePath } = await dialog.showSaveDialog(mainWin, {
+        const defaultDir = app.getPath('temp');
+        const { canceled, filePath } = await showExportDialog({
             title: 'Export PDF',
-            defaultPath: (suggestedName || 'document') + '.pdf',
+            defaultPath: path.join(defaultDir, (suggestedName || 'document') + '.pdf'),
             filters: [{ name: 'PDF', extensions: ['pdf'] }]
         });
         if (canceled) return { success: false, canceled: true };
@@ -549,15 +668,15 @@ ipcMain.handle('export-pdf', async (event, html, suggestedName) => {
             webPreferences: { contextIsolation: true, nodeIntegration: false }
         });
         await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-        // 等待渲染完成
         await new Promise(r => setTimeout(r, 300));
         const pdfData = await win.webContents.printToPDF({
             printBackground: true,
             pageSize: 'A4',
             margins: { top: 0, bottom: 0, left: 0, right: 0 }
         });
-        fs.writeFileSync(filePath, pdfData);
+        const pdfOk = writeFileWithFallback(filePath, pdfData);
         win.destroy();
+        if (!pdfOk) return { success: false, error: '写入PDF文件失败' };
         return { success: true };
     } catch (e) {
         return { success: false, error: e.message };
@@ -566,17 +685,81 @@ ipcMain.handle('export-pdf', async (event, html, suggestedName) => {
 
 ipcMain.handle('export-zip', async (event, folder, suggestedName) => {
     try {
-        const { canceled, filePath } = await dialog.showSaveDialog(mainWin, {
+        const defaultDir = app.getPath('temp');
+        const { canceled, filePath } = await showExportDialog({
             title: 'Export ZIP',
-            defaultPath: (suggestedName || 'project') + '.zip',
+            defaultPath: path.join(defaultDir, (suggestedName || 'project') + '.zip'),
             filters: [{ name: 'ZIP', extensions: ['zip'] }]
         });
         if (canceled) return { success: false, canceled: true };
         const wepPath = path.join(folder, 'project.wep');
         if (!fs.existsSync(wepPath)) return { success: false, error: 'project.wep not found' };
-        fs.copyFileSync(wepPath, filePath);
+        const zipData = fs.readFileSync(wepPath);
+        const zipOk = writeFileWithFallback(filePath, zipData);
+        if (!zipOk) return { success: false, error: '写入ZIP文件失败' };
         return { success: true };
     } catch (e) {
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('export-html', async (event, html, suggestedName) => {
+    try {
+        const defaultDir = app.getPath('temp');
+        const { canceled, filePath } = await showExportDialog({
+            title: 'Export HTML',
+            defaultPath: path.join(defaultDir, (suggestedName || 'nodegraph') + '.html'),
+            filters: [{ name: 'HTML', extensions: ['html'] }]
+        });
+        _logBuffer.push(`[export-html] 结果: canceled=${canceled} filePath=${filePath}`);
+        _flushLogBuffer();
+        if (canceled) return { success: false, canceled: true };
+        if (!filePath) return { success: false, error: '未获取到文件路径' };
+        const ok = writeFileWithFallback(filePath, html, 'utf-8');
+        if (!ok) return { success: false, error: '写入文件失败' };
+        return { success: true };
+    } catch (e) {
+        _logBuffer.push(`[export-html] 错误: ${e.message}`);
+        _flushLogBuffer();
+        return { success: false, error: e.message };
+    }
+});
+ipcMain.handle('export-archive', async (event, content, suggestedName) => {
+    try {
+        // 优先弹出系统保存对话框
+        const defaultDir = app.getPath('desktop');
+        const { canceled, filePath } = await showExportDialog({
+            title: '导出角色档案',
+            defaultPath: path.join(defaultDir, (suggestedName || '角色档案') + '.md'),
+            filters: [{ name: 'Markdown', extensions: ['md'] }]
+        });
+        if (canceled) return { success: false, canceled: true };
+
+        if (filePath) {
+            // 用户选择了路径，尝试写入
+            const ok = writeFileWithFallback(filePath, content, 'utf-8');
+            if (ok) {
+                shell.showItemInFolder(filePath);
+                _logBuffer.push(`[export-archive] 成功: ${filePath}`);
+                _flushLogBuffer();
+                return { success: true, filePath };
+            }
+        }
+
+        // 对话框无返回路径 或 写入失败 → 自动保存到 JS/Input 备用
+        const inputDir = path.join(__dirname, 'Input');
+        if (!fs.existsSync(inputDir)) {
+            fs.mkdirSync(inputDir, { recursive: true });
+        }
+        const fileName = (suggestedName || '角色档案') + '.md';
+        const fallbackPath = path.join(inputDir, fileName);
+        fs.writeFileSync(fallbackPath, content, 'utf-8');
+        shell.showItemInFolder(fallbackPath);
+        _logBuffer.push(`[export-archive] 备用保存成功: ${fallbackPath}`);
+        _flushLogBuffer();
+        return { success: true, filePath: fallbackPath };
+    } catch (e) {
+        _logBuffer.push(`[export-archive] 错误: ${e.message}`);
+        _flushLogBuffer();
         return { success: false, error: e.message };
     }
 });
@@ -739,7 +922,10 @@ function backupProject(folder) {
 }
 
 function createSplash() {
-    const preset = appSettings.colorPreset || 'default-dark';
+    let preset = appSettings.colorPreset || 'default-dark';
+    if (preset === 'auto') {
+        preset = nativeTheme.shouldUseDarkColors ? 'default-dark' : 'default-light';
+    }
     const isLight = preset.includes('light') || preset === 'we-light';
     const bgColor = isLight ? '#e8e8e8' : '#2a2a2a';
     splash = new BrowserWindow({
@@ -815,16 +1001,35 @@ function createMainWindow() {
     console.log(`  appSettings.backgroundMaterial=${material}`);
     console.log(`  validMaterial=${validMaterial}`);
     console.log(`  IS_WIN11_MICA=${IS_WIN11_MICA}`);
-    console.log(`  构造参数: MicaBrowserWindow frame:false（库强制 transparent:true + backgroundColor:'#00ffffff'）`);
-    mainWin = new MicaBrowserWindow({
-        width: 1000, height: 700, minWidth: 800, minHeight: 500, frame: false,
-        show: false,
-        backgroundColor: '#00000000',  // 库会强制覆盖为 '#00ffffff'，保留仅为记录意图
-        icon: path.join(__dirname, 'resources', 'icon.png'),
-        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
-    });
-    console.log(`[createMainWindow] 窗口已创建 | id=${mainWin.id} | useDWM=${mainWin.useDWM}`);
+    console.log(`  IS_MOBILE_MODE=${IS_MOBILE_MODE}  micaBrowserWindow=${!!MicaBrowserWindow}`);
+
+    if (IS_MOBILE_MODE || !MicaBrowserWindow) {
+        // 手机模式或 mica-electron 不可用：使用原生 BrowserWindow
+        console.log(`  使用原生 BrowserWindow`);
+        mainWin = new BrowserWindow({
+            width: 1000, height: 700, minWidth: 240, minHeight: 300, frame: false,
+            show: false,
+            transparent: true,
+            backgroundColor: '#00000000',
+            icon: path.join(__dirname, 'resources', 'icon.png'),
+            webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+        });
+    } else {
+        // 桌面模式：使用 MicaBrowserWindow（材质效果）
+        console.log(`  构造参数: MicaBrowserWindow frame:false`);
+        mainWin = new MicaBrowserWindow({
+            width: 1000, height: 700, minWidth: 240, minHeight: 300, frame: false,
+            show: false,
+            backgroundColor: '#00000000',
+            icon: path.join(__dirname, 'resources', 'icon.png'),
+            webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+        });
+    }
+    console.log(`[createMainWindow] 窗口已创建 | id=${mainWin.id}`);
     mainWin.loadFile('renderer/main.html');
+
+    // 强制设置最小窗口尺寸
+    mainWin.setMinimumSize(240, 300);
 
     // 外部链接统一用系统浏览器打开，阻止 target="_blank" 创建新 Electron 窗口
     mainWin.webContents.setWindowOpenHandler(({ url }) => {
@@ -1084,6 +1289,16 @@ function createMainWindow() {
     });
 
     ipcMain.handle('get-default-project-path', (event, name) => path.join(USER_DIR, name));
+
+    ipcMain.handle('delete-user-config', () => {
+        try {
+            if (fs.existsSync(ACCOUNT_PATH)) fs.unlinkSync(ACCOUNT_PATH);
+            if (fs.existsSync(ACCOUNT_AVATAR_DIR)) fs.rmSync(ACCOUNT_AVATAR_DIR, { recursive: true, force: true });
+            appSettings = { ...DEFAULT_SETTINGS };
+            saveSettings();
+            return { success: true };
+        } catch (e) { return { success: false, error: e.message }; }
+    });
 
     ipcMain.handle('create-project', async (event, folder, name, desc, template, projectMode) => {
         try {

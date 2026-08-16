@@ -915,8 +915,91 @@ function refreshNodeGraphThumbnails(safeId) {
     }
 
     // ================================================================
-    // 辅助：从 Quill 内容中扫描并替换现有 <img> 为 ImageCard（兼容旧内容）
+    // 卡片悬浮预览（使用 mouseover/mouseout 支持事件委托，mouseenter/mouseleave 不冒泡）
     // ================================================================
+    var _hoverCard = null;
+    var _hoverTimer = null;
+
+    document.addEventListener('mouseover', function (e) {
+        if (!e || !e.target || typeof e.target.closest !== 'function') return;
+        var card = e.target.closest('.ql-node-card, .ql-file-card');
+        if (!card) return;
+        if (e.target.closest('.ql-card-box-icon, .ql-card-icon')) return;
+        // 同一卡片内移动（子元素触发）忽略
+        if (card === _hoverCard) return;
+        _hoverCard = card;
+
+        if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; }
+
+        _hoverTimer = setTimeout(function () {
+            _hoverTimer = null;
+            document.querySelectorAll('.ng-hover-preview').forEach(function (el) { el.remove(); });
+
+            var isNode = card.classList.contains('ql-node-card');
+            var desc = card.getAttribute('data-desc') || '';
+            var titleEl = card.querySelector('.ql-card-title');
+            var title = titleEl ? titleEl.textContent : '';
+
+            var html = '<div class="ng-hover-preview-title">' + escapeHtml(title || '未命名') + '</div>';
+            if (desc) {
+                html += '<div class="ng-hover-preview-desc">' + escapeHtml(desc) + '</div>';
+            }
+            if (isNode) {
+                var targetNode = card.getAttribute('data-target-node-text') || '';
+                if (targetNode) {
+                    html += '<div class="ng-hover-preview-row"><span class="ng-hover-preview-label">目标节点：</span>' + escapeHtml(targetNode) + '</div>';
+                }
+            }
+            var file = card.getAttribute('data-file') || '';
+            if (file) {
+                html += '<div class="ng-hover-preview-row"><span class="ng-hover-preview-label">' + (isNode ? '关联文件' : '文件') + '：</span>' + escapeHtml(file.split('/').pop()) + '</div>';
+            }
+            html += '<div class="ng-hover-preview-footer">' + (isNode ? '节点卡片' : '文件卡片') + '</div>';
+
+            var popup = document.createElement('div');
+            popup.className = 'ng-hover-preview';
+            popup.innerHTML = html;
+            document.body.appendChild(popup);
+
+            var rect = card.getBoundingClientRect();
+            var left = rect.right + 8;
+            var top = rect.top + (rect.height / 2) - 10;
+            var popupRect = popup.getBoundingClientRect();
+            if (left + popupRect.width > window.innerWidth - 10) {
+                left = rect.left - popupRect.width - 8;
+            }
+            if (top + popupRect.height > window.innerHeight - 10) {
+                top = window.innerHeight - popupRect.height - 10;
+            }
+            if (top < 10) top = 10;
+            if (left < 10) left = 10;
+            popup.style.left = left + 'px';
+            popup.style.top = top + 'px';
+        }, 500);
+    });
+
+    document.addEventListener('mouseout', function (e) {
+        if (!e || !e.target || typeof e.target.closest !== 'function') return;
+        var card = e.target.closest('.ql-node-card, .ql-file-card');
+        if (!card) return;
+        // 检查是否真的离开了卡片（relatedTarget 不在卡片内）
+        var related = e.relatedTarget;
+        if (related && typeof related.closest === 'function' && related.closest('.ql-node-card, .ql-file-card') === card) {
+            return; // 仍在卡片内
+        }
+        if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; }
+        _hoverCard = null;
+        document.querySelectorAll('.ng-hover-preview').forEach(function (el) { el.remove(); });
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e || !e.target || typeof e.target.closest !== 'function') return;
+        if (e.target.closest('.ql-node-card, .ql-file-card')) {
+            if (_hoverTimer) { clearTimeout(_hoverTimer); _hoverTimer = null; }
+            _hoverCard = null;
+            document.querySelectorAll('.ng-hover-preview').forEach(function (el) { el.remove(); });
+        }
+    });
     function upgradeExistingImages(quill) {
         if (!quill || !quill.root) return;
         try {

@@ -14,6 +14,39 @@ let markdownRender = true;
 let smartBracketsEnabled = false;
 let tabCloseConfirm = true;
 
+// 锁定桌面端布局（is-desktop 类移除后激活手机端 UI）
+// 如果启动时带 --mobile 参数，则默认进入手机模式
+if (document.body) {
+    document.body.classList.add('is-desktop');
+} else {
+    document.addEventListener('DOMContentLoaded', () => document.body.classList.add('is-desktop'));
+}
+// 检查是否以手机模式启动
+(async function checkMobileStartup() {
+    try {
+        const isMobile = await weAPI.isMobileMode();
+        if (isMobile) {
+            document.body.classList.remove('is-desktop');
+            if (typeof checkMobileLayout === 'function') setTimeout(checkMobileLayout, 100);
+        }
+    } catch (e) {
+        // 忽略
+    }
+})();
+// 当 DevTools 打开时自动解锁手机布局（Ctrl+Shift+I 触发）
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.code === 'KeyI')) {
+        // 触发 IPC 重启进入手机模式（禁用 mica-electron）
+        if (typeof weAPI.enterMobileMode === 'function') {
+            weAPI.enterMobileMode();
+        } else {
+            // 降级：直接切换（无 IPC 时）
+            document.body.classList.remove('is-desktop');
+            if (typeof checkMobileLayout === 'function') setTimeout(checkMobileLayout, 100);
+        }
+    }
+});
+
 // 编辑器主题颜色预设
 const THEME_PRESETS = {
     // === 亮色主题 ===

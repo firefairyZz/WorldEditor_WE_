@@ -17,7 +17,12 @@
     flex-shrink: 0;
     min-height: 44px;
     box-sizing: border-box;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
 }
+.node-graph-toolbar::-webkit-scrollbar { height: 3px; }
+.node-graph-toolbar::-webkit-scrollbar-thumb { background: var(--border, #ccc); border-radius: 2px; }
 .ng-btn {
     width: 32px;
     height: 32px;
@@ -37,6 +42,31 @@
 }
 .ng-btn:active {
     background: var(--active-bg, rgba(0,0,0,0.12));
+}
+/* 模式切换下拉菜单 */
+.ng-mode-select {
+    appearance: auto;
+    -webkit-appearance: auto;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, var(--bg-sidebar, #fff));
+    color: var(--text, #333);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    outline: none;
+    margin-right: 4px;
+    flex-shrink: 0;
+    min-width: 100px;
+}
+.ng-mode-select:hover {
+    border-color: var(--active-text, #4a9eff);
+}
+.ng-mode-select:focus {
+    border-color: var(--active-text, #4a9eff);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.2);
 }
 .ng-toolbar-divider {
     width: 1px;
@@ -98,19 +128,19 @@
 .ng-property-panel {
     width: 260px;
     flex-shrink: 0;
-    border-left: 1px solid var(--border, #ccc);
     background: var(--bg-sidebar, #fff);
     display: flex;
     flex-direction: column;
     overflow-y: auto;
     transition: width 0.2s ease;
+    font-size: 12px;
 }
 .ng-property-panel.collapsed {
     overflow: hidden;
 }
 .ng-panel-header {
-    padding: 10px 12px;
-    font-size: 12px;
+    padding: 8px 10px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-secondary, #888);
     border-bottom: 1px solid var(--border, #ccc);
@@ -121,6 +151,7 @@
     justify-content: space-between;
     gap: 6px;
     background: var(--bg-secondary, rgba(0,0,0,0.02));
+    flex-shrink: 0;
 }
 .ng-panel-title {
     flex: 1;
@@ -129,20 +160,21 @@
     text-overflow: ellipsis;
 }
 .ng-panel-toggle {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border: none;
     background: transparent;
     color: var(--text-secondary, #888);
     cursor: pointer;
-    font-size: 16px;
+    font-size: 14px;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: 3px;
     flex-shrink: 0;
     padding: 0;
+    transition: all 0.15s;
 }
 .ng-panel-toggle:hover {
     background: var(--hover-bg, rgba(0,0,0,0.06));
@@ -166,49 +198,81 @@
     display: none !important;
 }
 .ng-property-panel.collapsed .ng-panel-header {
-    padding: 10px 4px;
+    padding: 8px 4px;
     justify-content: center;
 }
 .ng-panel-empty {
-    padding: 32px 16px;
+    padding: 40px 16px;
     text-align: center;
     color: var(--text-secondary, #888);
     font-size: 13px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    flex: 1;
+    justify-content: center;
 }
 .ng-panel-empty-icon {
     color: var(--text-secondary, #666);
-    opacity: 0.5;
+    opacity: 0.4;
 }
 .ng-panel-content {
-    padding: 12px;
+    padding: 8px;
 }
 .ng-prop-section {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+    background: var(--bg-main, #fafafa);
+    border: 1px solid var(--border, #eee);
+    overflow: hidden;
 }
 .ng-prop-section-title {
     font-size: 11px;
     font-weight: 600;
     color: var(--text, #333);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    padding-bottom: 6px;
-    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: var(--bg-secondary, rgba(0,0,0,0.05));
     border-bottom: 1px solid var(--border, #ddd);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ng-prop-section-title svg {
+    opacity: 0.6;
 }
 .ng-panel-row {
-    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    min-height: 28px;
+}
+.ng-panel-row + .ng-panel-row {
+    border-top: 1px solid var(--border, #f0f0f0);
 }
 .ng-panel-row > label {
-    display: block;
     font-size: 11px;
     color: var(--text-secondary, #888);
-    margin-bottom: 4px;
+    flex-shrink: 0;
+    min-width: 52px;
+    max-width: 52px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.ng-prop-name, .ng-prop-desc, .ng-prop-tag-input, .ng-prop-edge-label {
+.ng-panel-row > .ng-prop-name,
+.ng-panel-row > .ng-prop-desc,
+.ng-panel-row > .ng-prop-tag-input,
+.ng-panel-row > .ng-prop-edge-label,
+.ng-panel-row > input[type="text"],
+.ng-panel-row > input[type="number"],
+.ng-panel-row > select,
+.ng-panel-row > textarea {
+    flex: 1;
+    min-width: 0;
+}
+.ng-prop-name, .ng-prop-desc, .ng-prop-tag-input, .ng-prop-edge-label, .ng-prop-image, .ng-prop-condition-expr, .ng-prop-process-duration {
     width: 100%;
     padding: 5px 8px;
     border: 1px solid var(--border, #ccc);
@@ -332,6 +396,17 @@
     align-items: center;
     gap: 6px;
 }
+.ng-prop-image-wrap {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+}
+.ng-prop-image-wrap .ng-prop-image {
+    flex: 1;
+    min-width: 0;
+}
 .ng-prop-width, .ng-prop-height {
     width: 60px;
     padding: 4px 6px;
@@ -422,20 +497,39 @@
     background: var(--hover-bg, rgba(0,0,0,0.04));
     border-radius: 4px;
     word-break: break-all;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.ng-file:hover {
+    background: var(--accent-bg, rgba(74,144,217,0.1));
+    color: var(--accent, #4a90d9);
 }
 .ng-file-empty {
     font-size: 12px;
     color: var(--text-secondary, #888);
     font-style: italic;
 }
+.ng-add-file-btn {
+    margin-top: 4px;
+    font-size: 11px;
+}
 /* Toggle switch for edge properties */
 .ng-prop-row-toggle {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    flex-direction: row;
+    gap: 8px;
+    padding: 5px 10px;
+    min-height: 28px;
+}
+.ng-prop-row-toggle + .ng-prop-row-toggle {
+    border-top: 1px solid var(--border, #f0f0f0);
 }
 .ng-prop-row-toggle > label {
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+    flex-shrink: 0;
+    min-width: 52px;
+    max-width: 52px;
     margin-bottom: 0;
 }
 .ng-prop-row-toggle .toggle-switch {
@@ -673,4 +767,205 @@ body.material-active .ng-history-panel {
     display: flex;
     overflow: hidden;
     min-height: 0;
+}
+/* 执行模拟按钮组 */
+.ng-sim-buttons {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+.ng-sim-label {
+    display: inline-block;
+    min-width: 60px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary, #888);
+    padding: 2px 6px;
+    margin-left: 2px;
+    border-radius: 3px;
+    background: var(--hover-bg, rgba(0,0,0,0.04));
+    cursor: default;
+    user-select: none;
+    white-space: nowrap;
+}
+/* 流程节点特殊属性面板 */
+.ng-prop-flow-section {
+    border-top: 1px dashed var(--border, #ccc);
+    padding-top: 8px;
+    margin-top: 8px;
+}
+.ng-prop-condition-expr, .ng-prop-process-duration {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    font-size: 13px;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+.ng-prop-condition-expr:focus, .ng-prop-process-duration:focus {
+    border-color: var(--accent, #4a90d9);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74,144,217,0.15);
+}
+.ng-prop-condition-branches {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+/* 模拟高亮脉冲动画 */
+.ng-sim-glow-current {
+    animation: ng-sim-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ng-sim-pulse {
+    0%, 100% { opacity: 0.9; }
+    50% { opacity: 0.5; }
+}
+/* 模拟连线流动动画 */
+.ng-sim-edge-flow {
+    animation: ng-sim-flow 0.8s linear infinite;
+}
+@keyframes ng-sim-flow {
+    to { stroke-dashoffset: -24; }
+}
+/* 模拟分支选择：橙色脉冲 */
+.ng-sim-edge-choice {
+    animation: ng-sim-choice 0.6s ease-in-out infinite;
+}
+@keyframes ng-sim-choice {
+    0%, 100% { opacity: 1; stroke-width: 4; }
+    50% { opacity: 0.5; stroke-width: 5; }
+}
+
+/* ========== 悬浮预览 ========== */
+.ng-hover-preview {
+    position: fixed;
+    z-index: 100000;
+    min-width: 200px;
+    max-width: 320px;
+    background: var(--bg-sidebar-solid, var(--bg-sidebar, #fff));
+    border: 1px solid var(--border-solid, var(--border, #ccc));
+    border-radius: 8px;
+    padding: 12px 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    pointer-events: none;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text, #333);
+}
+.ng-hover-preview-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    color: var(--text, #333);
+}
+.ng-hover-preview-type {
+    font-size: 11px;
+    font-weight: 500;
+    margin-bottom: 6px;
+}
+.ng-hover-preview-desc {
+    font-size: 12px;
+    color: var(--text-secondary, #666);
+    margin-bottom: 6px;
+    padding: 4px 6px;
+    background: var(--hover-bg, rgba(0,0,0,0.03));
+    border-radius: 4px;
+    max-height: 60px;
+    overflow: hidden;
+}
+.ng-hover-preview-row {
+    font-size: 11px;
+    color: var(--text-secondary, #666);
+    margin-bottom: 3px;
+}
+.ng-hover-preview-label {
+    color: var(--text-secondary, #888);
+    font-weight: 500;
+}
+.ng-hover-preview-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 5px;
+    background: var(--hover-bg, rgba(0,0,0,0.06));
+    border-radius: 3px;
+    margin-right: 2px;
+    color: var(--text, #555);
+}
+.ng-hover-preview-footer {
+    font-size: 10px;
+    color: var(--text-secondary, #aaa);
+    margin-top: 6px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border, #f0f0f0);
+    font-family: monospace;
+}
+
+/* ========== 时间线模式属性面板 ========== */
+.ng-prop-timeline-section {
+    border-top: 1px solid var(--border, #f0f0f0);
+    padding-top: 8px;
+    margin-top: 4px;
+}
+.ng-prop-timeline-section .ng-panel-row label {
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+    flex-shrink: 0;
+    min-width: 52px;
+    max-width: 52px;
+}
+.ng-prop-timeline-section input[type="number"],
+.ng-prop-timeline-section input[type="text"] {
+    width: 100%;
+    flex: 1;
+    padding: 4px 6px;
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text, #333);
+    font-size: 12px;
+    box-sizing: border-box;
+}
+
+.ng-add-file-btn {
+    margin-top: 4px;
+    font-size: 11px;
+}
+
+/* ========== 排版下拉菜单 ========== */
+.ng-layout-selector-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.ng-layout-selector-wrap .ng-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.ng-layout-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    min-width: 150px;
+    background: var(--bg-sidebar, #fff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    padding: 4px 0;
+    margin-top: 4px;
+}
+.ng-layout-option {
+    padding: 6px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text, #333);
+    transition: background 0.1s;
+}
+.ng-layout-option:hover {
+    background: var(--hover-bg, rgba(0,0,0,0.06));
 }

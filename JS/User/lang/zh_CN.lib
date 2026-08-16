@@ -1,4 +1,4 @@
-ui.file = 文件
+﻿ui.file = 文件
 ui.new_project = 新建项目
 ui.open_folder = 打开项目
 ui.new_file = 新建文件
@@ -199,6 +199,10 @@ ui.ng_zoom_in = 放大
 ui.ng_zoom_out = 缩小
 ui.ng_zoom_reset = 重置缩放
 ui.ng_auto_layout = 自动排版
+ui.ng_mode = 图模式
+ui.ng_mode_relation = 关系图模式
+ui.ng_mode_flow = 流程模式
+ui.ng_mode_view = 观察模式
 ui.node_graph_group = 节点图
 ui.ng_hide_arrow_default = 默认创建隐藏箭头连线
 ui.ng_node_properties = 节点属性
@@ -382,6 +386,9 @@ ui.group_dark = 暗色主题
 
 
 ui.account = 账户
+ui.next = 下一步
+ui.back = 上一步
+ui.define_world = 定义世界
 ui.account_register = 注册账户
 ui.account_settings = 账户设置
 ui.upload_avatar = 上传头像
@@ -527,3 +534,63 @@ ui.desc_updated = 简介已更新
 ui.desc_cleared = 简介已清除
 ui.click_add_desc = 点击添加注释
 ui.edit_image_desc = 修改图片注释
+
+ui.ng_sim_start = 开始模拟
+ui.ng_sim_step = 下一步
+ui.ng_sim_reset = 重置
+ui.ng_sim_idle = 待模拟
+ui.ng_sim_finished = 模拟完成
+ui.ng_condition_expr = 条件表达式
+ui.ng_condition_expr_ph = 例如: count > 10
+ui.ng_condition_branches = 分支连接
+ui.ng_condition_branch_hint = 编辑连线标签设置分支条件
+ui.ng_condition_no_out = 未连接任何分支
+ui.ng_process_duration = 执行耗时
+ui.ng_process_duration_ph = 例如: 5s / 30min
+ui.ng_sim_auto = 自动执行
+
+ui.ng_sim_choose = 选择分支
+
+
+ui.ng_node_type_start = 起点
+ui.ng_node_type_end = 终点
+ui.ng_node_type_condition = 条件判断
+ui.ng_node_type_process = 处理
+ui.ng_node_type_subprocess = 子流程
+ui.ng_node_type_merge = 合并
+
+ui.ng_edge_type_relation = 关系线
+ui.ng_edge_type_relation_desc = 角色↔角色：朋友/敌人/亲属
+ui.ng_edge_type_timeline = 时序线
+ui.ng_edge_type_timeline_desc = 事件→事件：之前/之后/并行
+ui.ng_edge_type_causality = 因果线
+ui.ng_edge_type_causality_desc = 原因→结果
+ui.ng_edge_type_contain = 所属线
+ui.ng_edge_type_contain_desc = 场景包含角色
+
+ui.ng_node_type_character = 角色
+ui.ng_node_type_scene = 场景
+ui.ng_node_type_event = 事件
+ui.ng_node_type_setting = 设定
+ui.ng_node_type_chapter = 章节
+
+# ====== 节点图新功能 i18n（排序下拉菜单、时间线、导出档案、关联文件等）======
+ui.ng_mode_timeline = 时间线模式
+ui.ng_layout = 排版
+ui.ng_layout_auto = 自动排版
+ui.ng_layout_manual = 默认（手动拖拽）
+ui.ng_layout_force = 力度图
+ui.ng_layout_chapter = 按章节顺序
+ui.ng_layout_timestamp = 按时间戳顺序
+ui.ng_export_archive = 导出角色档案
+ui.ng_export_archive_done = 角色档案已导出
+ui.ng_add_file_link = 添加关联文件
+ui.ng_add_file_ph = 输入文件章节名或外部链接（如: 第三章 或 https://...）
+ui.ng_timeline_order = 排序序号
+ui.ng_timeline_order_ph = 0
+ui.ng_timestamp = 时间戳
+ui.ng_timestamp_ph = 例如: 2024-01-01 或 纪元元年
+ui.ng_chapter_ref = 章节引用
+ui.ng_chapter_ref_ph = 例如: 第三章
+ui.ng_is_head = 设为头节点
+ui.ng_is_tail = 设为尾节点

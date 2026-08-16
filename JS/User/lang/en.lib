@@ -1,4 +1,4 @@
-ui.file = File
+﻿ui.file = File
 ui.new_project = New Project
 ui.open_folder = Open Project
 ui.new_file = New File
@@ -196,6 +196,10 @@ ui.ng_zoom_in = Zoom In
 ui.ng_zoom_out = Zoom Out
 ui.ng_zoom_reset = Reset Zoom
 ui.ng_auto_layout = Auto Layout
+ui.ng_mode = Graph Mode
+ui.ng_mode_relation = Relation Graph
+ui.ng_mode_flow = Flow Chart
+ui.ng_mode_view = View Mode
 ui.node_graph_group = Node Graph
 ui.ng_hide_arrow_default = Create connections with hidden arrows by default
 ui.ng_node_properties = Node Properties
@@ -306,7 +310,7 @@ ui.mode_switch_meta_failed = Metadata update failed
 
 ui.open_project_first = Please open a project first
 ui.update_notes = Update Notes
-ui.update_notes_placeholder = �� Click a version on the left to view notes
+ui.update_notes_placeholder = ← Click a version on the left to view notes
 ui.no_valid_files = No valid files to import
 ui.importing = Importing
 ui.files = files
@@ -428,6 +432,9 @@ ui.group_dark = Dark Themes
 
 
 ui.account = Account
+ui.next = Next
+ui.back = Back
+ui.define_world = Define World
 ui.account_register = Register Account
 ui.account_settings = Account Settings
 ui.upload_avatar = Upload Avatar
@@ -535,7 +542,7 @@ ui.ng_continuous_draw = Continuous Draw (Tab)
 ui.bio_edit_hint = Edit your bio in Account tab
 ui.default_open_first = Default open first item
 ui.bio = Bio
-ui.bio_placeholder = Write a personal signature��
+ui.bio_placeholder = Write a personal signature...
 ui.bio_empty = No bio yet
 ui.history = History
 
@@ -565,3 +572,61 @@ ui.desc_updated = Description updated
 ui.desc_cleared = Description cleared
 ui.click_add_desc = Click to add description
 ui.edit_image_desc = Edit image description
+
+ui.ng_sim_start = Start Simulation
+ui.ng_sim_step = Next Step
+ui.ng_sim_reset = Reset
+ui.ng_sim_idle = Idle
+ui.ng_sim_finished = Finished
+ui.ng_condition_expr = Condition Expression
+ui.ng_condition_expr_ph = e.g. count > 10
+ui.ng_condition_branches = Branches
+ui.ng_condition_branch_hint = Edit edge labels to set branch conditions
+ui.ng_condition_no_out = No branches connected
+ui.ng_process_duration = Duration
+ui.ng_process_duration_ph = e.g. 5s / 30min
+ui.ng_sim_auto = Auto Play
+
+
+ui.ng_node_type_start = Start
+ui.ng_node_type_end = End
+ui.ng_node_type_condition = Condition
+ui.ng_node_type_process = Process
+ui.ng_node_type_subprocess = Subprocess
+ui.ng_node_type_merge = Merge
+
+ui.ng_edge_type_relation = Relation
+ui.ng_edge_type_relation_desc = Character↔Character: friend/enemy/relative
+ui.ng_edge_type_timeline = Timeline
+ui.ng_edge_type_timeline_desc = Event→Event: before/after/parallel
+ui.ng_edge_type_causality = Causality
+ui.ng_edge_type_causality_desc = Cause→Effect
+ui.ng_edge_type_contain = Containment
+ui.ng_edge_type_contain_desc = Scene contains character
+
+ui.ng_node_type_character = Character
+ui.ng_node_type_scene = Scene
+ui.ng_node_type_event = Event
+ui.ng_node_type_setting = Setting
+ui.ng_node_type_chapter = Chapter
+
+# ====== Node Graph new feature i18n (layout dropdown, timeline, export archive, linked files) ======
+ui.ng_mode_timeline = Timeline Mode
+ui.ng_layout = Layout
+ui.ng_layout_auto = Auto Layout
+ui.ng_layout_manual = Manual (Drag)
+ui.ng_layout_force = Force Graph
+ui.ng_layout_chapter = By Chapter Order
+ui.ng_layout_timestamp = By Timestamp
+ui.ng_export_archive = Export Character Archive
+ui.ng_export_archive_done = Character archive exported
+ui.ng_add_file_link = Add Linked File
+ui.ng_add_file_ph = Enter chapter name or external link (e.g. Chapter 3 or https://...)
+ui.ng_timeline_order = Order
+ui.ng_timeline_order_ph = 0
+ui.ng_timestamp = Timestamp
+ui.ng_timestamp_ph = e.g. 2024-01-01 or Era Year 1
+ui.ng_chapter_ref = Chapter Reference
+ui.ng_chapter_ref_ph = e.g. Chapter 3
+ui.ng_is_head = Set as Head Node
+ui.ng_is_tail = Set as Tail Node

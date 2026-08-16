@@ -9,7 +9,10 @@ async function openProjectFile(safeId, filename) {
         return;
     }
     // 点击文件即切完整 TA（从目录独占进入正式编辑模式），即使后续加载失败也保留 TA
-    if (window.setTaState) window.setTaState(safeId, 'ta');
+    // 手机端保持 only-left，由 enterMobileEditor 切换 only-right
+    if (window.setTaState && document.body.classList.contains('is-desktop')) {
+        window.setTaState(safeId, 'ta');
+    }
     // 【全局撤回：文件切换 step】记录 oldFile，等两个分支（嵌入 or 富文本/md）成功后各调用 commit
     const oldFile = project.currentFile || null;
 

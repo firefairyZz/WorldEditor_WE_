@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('weAPI', {
     getAccount: () => ipcRenderer.invoke('get-account'),
     saveAccount: (account) => ipcRenderer.invoke('save-account', account),
     deleteAccount: () => ipcRenderer.invoke('delete-account'),
+    deleteUserConfig: () => ipcRenderer.invoke('delete-user-config'),
     getAccountAvatar: (account) => ipcRenderer.invoke('get-account-avatar', account),
     getSettings: () => ipcRenderer.invoke('get-settings'),
     setSettings: (settings) => ipcRenderer.invoke('set-settings', settings),
@@ -69,6 +70,8 @@ contextBridge.exposeInMainWorld('weAPI', {
     // 导出功能
     exportPdf: (html, filename) => ipcRenderer.invoke('export-pdf', html, filename),
     exportZip: (folder, filename) => ipcRenderer.invoke('export-zip', folder, filename),
+    exportHtml: (html, filename) => ipcRenderer.invoke('export-html', html, filename),
+    exportArchive: (content, filename) => ipcRenderer.invoke('export-archive', content, filename),
 
     // 背景图片
     selectBackgroundImage: () => ipcRenderer.invoke('select-background-image'),
@@ -78,6 +81,17 @@ contextBridge.exposeInMainWorld('weAPI', {
     // 检查更新
     checkUpdate: () => ipcRenderer.invoke('check-update'),
 
+    // 系统主题
+    getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
+    onSystemThemeChanged: (callback) => {
+        ipcRenderer.on('system-theme-changed', (event, data) => callback(data));
+    },
+
     // 渲染进程日志（写入 ./log/JS/renderer.log）
     writeLog: (level, module, message, dataStr) => ipcRenderer.send('renderer-log', level, module, message, dataStr),
+
+    // 手机模式
+    isMobileMode: () => ipcRenderer.invoke('is-mobile-mode'),
+    // 使用 send 方式（比 invoke 更可靠，避免 Electron 33 下 handle 注册问题）
+    enterMobileMode: () => ipcRenderer.send('enter-mobile-mode'),
 });

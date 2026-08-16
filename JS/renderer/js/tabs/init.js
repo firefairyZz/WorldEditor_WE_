@@ -98,10 +98,18 @@ window.onload = async () => {
         updateAccountUI();
         weLog.info('init', `← 账户加载完成, currentAccount=${currentAccount ? currentAccount.name || '(有)' : '无'}`);
 
-        // 首次启动时如果没有账户，创建账户注册标签页
+        // 首次启动时如果没有账户，创建两步向导标签页（语言选择→账户注册）
         if (!currentAccount) {
-            weLog.info('init', '无账户，300ms 后创建账户注册标签页');
-            setTimeout(() => createAccountTab(), 300);
+            weLog.info('init', '无账户，创建向导标签页');
+            // 默认语言设为英文
+            if ((settings.language || 'zh_CN') !== 'en') {
+                try {
+                    await loadLanguage('en');
+                } catch (e) {
+                    weLog.error('init', '首次启动加载英文失败', e && e.stack ? e.stack : String(e));
+                }
+            }
+            setTimeout(() => createAccountTab(true), 300);
         }
 
         // 账户按钮点击：有账户→跳转设置页账户区；无账户→创建账户标签页
@@ -167,6 +175,27 @@ window.onload = async () => {
                 showUpdateIndicator(result);
             }
         } catch (e) { weLog.error('init', '检查更新失败', e && e.stack ? e.stack : String(e)); }
+
+        // 监听系统主题变化，自动切换"自动"模式
+        if (typeof weAPI !== 'undefined' && weAPI.onSystemThemeChanged) {
+            weAPI.onSystemThemeChanged(() => {
+                const presetSelect = document.getElementById('color-preset-select');
+                if (presetSelect && presetSelect.value === 'auto') {
+                    weLog.info('init', '系统主题变化，自动重新应用配色');
+                    applyColorPreset('auto', null);
+                    if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
+                }
+            });
+        }
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+        prefersDark.addEventListener('change', () => {
+            const presetSelect = document.getElementById('color-preset-select');
+            if (presetSelect && presetSelect.value === 'auto') {
+                weLog.info('init', '系统主题变化（matchMedia），自动重新应用配色');
+                applyColorPreset('auto', null);
+                if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
+            }
+        });
 
         weLog.info('init', '=== window.onload 启动完成 ===');
     } catch (e) {

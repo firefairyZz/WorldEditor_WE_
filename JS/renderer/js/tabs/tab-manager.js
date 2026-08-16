@@ -40,7 +40,7 @@ document.getElementById('btn-close')?.addEventListener('click', () => weAPI.clos
     }).catch(() => {});
 
     function isInteractive(el) {
-        return !!el?.closest('button, input, textarea, select, [contenteditable="true"], .file-menu-btn, a, .tab-item');
+        return !!el?.closest('button, input, textarea, select, [contenteditable="true"], .file-menu-btn, a, .tab');
     }
 
     const DRAG_THRESHOLD = 5; // 拖动阈值（px），超过才触发还原，避免单击误触发
@@ -544,6 +544,9 @@ function switchTab(id) {
     tabs[id].tabElement.classList.add('active');
     activeTabId = id;
     weLog.debug('tab-manager', `switchTab: activeTabId=${id}`);
+
+    // 派发 tab-activated 事件，通知移动端导航等模块
+    window.dispatchEvent(new CustomEvent('tab-activated', { detail: { tabId: id } }));
 
     // 切换标签时关闭 TOC 面板（跨标签共享时避免混乱）
     if (tocPanel) {

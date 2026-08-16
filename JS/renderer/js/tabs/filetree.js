@@ -36,6 +36,14 @@ function stripExt(name) {
     return idx > 0 ? name.substring(0, idx) : name;
 }
 
+// Lucide 风格 SVG 图标
+const TREE_ICONS = {
+    folder: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    folderOpen: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2v-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    file: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M6 2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 2v4h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 13h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 17h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    gitBranch: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><line x1="6" y1="3" x2="6" y2="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M18 9a9 9 0 0 1-9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+};
+
 const ARROW_COLLAPSED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ARROW_EXPANDED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -426,7 +434,7 @@ function renderTreeNodes(container, tree, basePath = '') {
                 `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
               ).join('') + '</span>'
             : '';
-        header.innerHTML = `<span class="tree-arrow">${ARROW_COLLAPSED}</span><span class="folder-name">${folder}</span>${folderTagsHtml}`;
+        header.innerHTML = `<span class="tree-arrow">${ARROW_COLLAPSED}</span><span class="folder-name">${folder}</span>${folderTagsHtml ? '<span class="folder-tags-wrap">' + folderTagsHtml + '</span>' : ''}`;
         header.onclick = (e) => {
             // Ctrl+点击 = 切换多选
             if (e.ctrlKey || e.metaKey) {
@@ -448,10 +456,10 @@ function renderTreeNodes(container, tree, basePath = '') {
             const arrow = header.querySelector('.tree-arrow');
             if (content.style.display === 'none') {
                 content.style.display = 'block';
-                arrow.innerHTML = ARROW_EXPANDED;
+                if (arrow) arrow.innerHTML = ARROW_EXPANDED;
             } else {
                 content.style.display = 'none';
-                arrow.innerHTML = ARROW_COLLAPSED;
+                if (arrow) arrow.innerHTML = ARROW_COLLAPSED;
             }
         };
         const content = document.createElement('div');
@@ -533,18 +541,36 @@ function renderTreeNodes(container, tree, basePath = '') {
         if (thumb) {
             thumbHtml = `<span class="file-thumb"><img src="${thumb}" /></span>`;
         }
-        let tagsHtml = '';
-        if (tags.length > 0) {
-            tagsHtml = '<span class="file-tags">' + tags.map(tag =>
-                `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
-            ).join('') + '</span>';
-        }
 
         const isNodeGraph = file.endsWith('.node.json');
+        // 有缩略图时优先显示缩略图，不显示图标
+        const useIcon = !thumb;
+        const fileIconHtml = useIcon ? (isNodeGraph ? TREE_ICONS.gitBranch : TREE_ICONS.file) : '';
         const badgeHtml = isNodeGraph ? `<span class="file-type-badge">${t('ui.nodegraph') || '节点图'}</span>` : '';
         const fileDesc = window.tagModule?.getDesc(filePath) || '';
         const descHtml = fileDesc ? `<span class="file-desc">${escapeHtml(fileDesc)}</span>` : '';
-        fileDiv.innerHTML = `${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${descHtml}${tagsHtml}`;
+        // 标签限制在 1/2 宽度可滚动容器内
+        let tagsScrollerHtml = '';
+        if (tags.length > 0) {
+            const tagsContent = tags.map(tag =>
+                `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
+            ).join('');
+            tagsScrollerHtml = `<span class="file-tags-scroller" tabindex="-1"><span class="file-tags">${tagsContent}</span></span>`;
+        }
+        fileDiv.innerHTML = `${fileIconHtml ? '<span class="file-icon">' + fileIconHtml + '</span>' : ''}${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${descHtml}${tagsScrollerHtml}`;
+        // 鼠标滚轮滚动标签
+        if (tagsScrollerHtml) {
+            const scroller = fileDiv.querySelector('.file-tags-scroller');
+            if (scroller) {
+                scroller.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    scroller.scrollLeft += e.deltaY > 0 ? 20 : -20;
+                }, { passive: false });
+            }
+        }
+        // 文件选中时键盘左右键滚动标签
+        fileDiv._tagsScroller = tagsScrollerHtml ? fileDiv.querySelector('.file-tags-scroller') : null;
         fileDiv.onclick = (e) => {
             e.stopPropagation();
             const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
@@ -566,6 +592,8 @@ function renderTreeNodes(container, tree, basePath = '') {
                 clearSelection(safeId);
             }
             openProjectFile(safeId, filePath);
+            // 触发文件选中事件（移动端导航使用）
+            document.dispatchEvent(new CustomEvent('file-selected', { detail: { filename: filePath, safeId } }));
         };
 
         fileDiv.oncontextmenu = (e) => {
@@ -1006,6 +1034,15 @@ function refreshFileTree(safeId, files) {
         }
         if (e.key === 'Escape') {
             clearSelection(safeId);
+        }
+        // 左右箭头滚动选中文件的标签
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const sel = treeContainer.querySelector('.tree-file.selected, .tree-file.active');
+            if (sel && sel._tagsScroller) {
+                e.preventDefault();
+                const step = e.key === 'ArrowRight' ? 40 : -40;
+                sel._tagsScroller.scrollLeft += step;
+            }
         }
     });
 

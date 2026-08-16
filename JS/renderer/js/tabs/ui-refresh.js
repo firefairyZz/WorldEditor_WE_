@@ -20,8 +20,14 @@ function refreshAllUITexts() {
                 welcomePage.querySelectorAll('.action-label[data-label-key]').forEach(label => {
                     label.textContent = t(label.dataset.labelKey);
                 });
-                const recentTitle = welcomePage.querySelector('.recent-title');
-                if (recentTitle) recentTitle.textContent = t('ui.recent_projects');
+                // 刷新所有 .recent-title（固定项目和最近项目）
+                const recentTitles = welcomePage.querySelectorAll('.recent-title');
+                if (recentTitles.length > 0) recentTitles[0].textContent = t('ui.pinned_projects');
+                if (recentTitles.length > 1) recentTitles[1].textContent = t('ui.recent_projects');
+                // 刷新项目列表中的时间文本（重新加载项目列表）
+                if (typeof window.refreshRecentProjects === 'function') {
+                    window.refreshRecentProjects();
+                }
             } else {
                 weLog.warn('ui-refresh', 'refreshAllUITexts: welcome 页面元素不存在');
             }
@@ -34,6 +40,7 @@ function refreshAllUITexts() {
             if (id === 'welcome') newTitle = t('ui.welcome_tab');
             else if (id === 'settings') newTitle = t('ui.settings');
             else if (id === 'new-project') newTitle = t('ui.new_project_tab');
+            else if (id === 'account') newTitle = t('ui.define_world') || '定义世界';
             if (newTitle) {
                 const closeBtn = tab.querySelector('.close-tab');
                 if (closeBtn) {
@@ -45,10 +52,69 @@ function refreshAllUITexts() {
                 }
             }
         }
+        // 刷新状态栏
+        refreshStatusBarTexts();
+        // 刷新工具栏
+        refreshToolbarTexts();
+        // 刷新所有已打开项目的侧边栏文本
+        refreshProjectTexts();
         weLog.info('ui-refresh', '← refreshAllUITexts 完成');
     } catch (e) {
         weLog.error('ui-refresh', 'refreshAllUITexts 失败', e && e.stack ? e.stack : String(e));
         throw e;
+    }
+}
+
+function refreshStatusBarTexts() {
+    const statusBar = document.getElementById('status-bar');
+    if (!statusBar) return;
+    const welcomeLabel = statusBar.querySelector('.status-left .status-label');
+    if (welcomeLabel) welcomeLabel.textContent = t('status.welcome') || '欢迎';
+    const statusLabels = {
+        'status-words': 'ui.words',
+        'status-chars': 'ui.chars',
+        'status-paragraphs': 'ui.paragraphs',
+        'status-reading-time': 'ui.reading_time'
+    };
+    for (const [id, key] of Object.entries(statusLabels)) {
+        const el = statusBar.querySelector(`#${id} .status-label`);
+        if (el) el.textContent = t(key);
+    }
+}
+
+function refreshToolbarTexts() {
+    const toolbar = document.getElementById('quill-toolbar');
+    if (!toolbar) return;
+    // 标题下拉
+    const header = toolbar.querySelector('.ql-header');
+    if (header) {
+        const opts = header.querySelectorAll('option');
+        const keys = ['ui.normal', 'ui.heading1', 'ui.heading2', 'ui.heading3'];
+        opts.forEach((opt, i) => { if (i < keys.length) opt.textContent = t(keys[i]); });
+    }
+    // 按钮 titles
+    const titleMap = {
+        'ql-bold': 'ui.bold',
+        'ql-italic': 'ui.italic',
+        'ql-underline': 'ui.underline',
+        'ql-strike': 'ui.strike',
+        'ql-color': 'ui.text_color',
+        'ql-background': 'ui.background_color',
+        'ql-list[value="ordered"]': 'ui.ordered_list',
+        'ql-list[value="bullet"]': 'ui.bullet_list',
+        'ql-list[value="check"]': 'ui.check_list',
+        'ql-blockquote': 'ui.quote',
+        'ql-code-block': 'ui.code_block',
+        'ql-align': 'ui.align',
+        'ql-link': 'ui.link',
+        'btn-insert-card': 'ui.insert_card',
+        'btn-history': 'ui.ng_history',
+        'btn-export-md': 'ui.export',
+        'btn-toggle-toc': 'ui.toggle_toc'
+    };
+    for (const [sel, key] of Object.entries(titleMap)) {
+        const el = toolbar.querySelector('.' + sel);
+        if (el) el.title = t(key);
     }
 }
 
@@ -158,6 +224,8 @@ function refreshSettingsTexts(container) {
         if (optgroups[1]) optgroups[1].label = t('ui.group_dark') || '暗色主题';
         const presetSelect = appearanceSection.querySelector('#color-preset-select');
         if (presetSelect) {
+            const autoOpt = presetSelect.querySelector('option[value="auto"]');
+            if (autoOpt) autoOpt.textContent = t('ui.theme_auto') || '自动';
             const lightOpt = presetSelect.querySelector('option[value="default-light"]');
             if (lightOpt) lightOpt.textContent = t('ui.theme_default_light') || '默认亮色';
             const darkOpt = presetSelect.querySelector('option[value="default-dark"]');
@@ -240,5 +308,67 @@ function refreshSettingsTexts(container) {
     } catch (e) {
         weLog.error('ui-refresh', 'refreshSettingsTexts 失败', e && e.stack ? e.stack : String(e));
         throw e;
+    }
+}
+
+function refreshProjectTexts() {
+    weLog.info('ui-refresh', '→ refreshProjectTexts 开始');
+    try {
+        for (const id in tabs) {
+            const tab = tabs[id];
+            if (!tab || !tab.projectPath) continue;
+            const root = tab.element;
+            if (!root) continue;
+
+            // 项目名称 title
+            const nameEl = root.querySelector('.project-name-editable');
+            if (nameEl) nameEl.title = t('ui.double_click_rename') || '双击重命名';
+
+            // 搜索栏
+            const searchToggle = root.querySelector('.search-toggle-btn');
+            if (searchToggle) searchToggle.title = t('ui.search_placeholder') || 'Search...';
+
+            const sortToggle = root.querySelector('.sort-toggle-btn');
+            if (sortToggle) sortToggle.title = t('ui.sort_asc') || '升序';
+
+            const searchInput = root.querySelector('.search-input');
+            if (searchInput) searchInput.placeholder = t('ui.search_placeholder') || 'Search...';
+
+            // 搜索筛选按钮
+            const filterToggles = root.querySelectorAll('.search-filter-toggle');
+            const filterKeys = ['ui.search_file', 'ui.search_folder', 'ui.search_tag', 'ui.search_content'];
+            const filterDefaults = ['File', 'Folder', 'Tag', 'Content'];
+            filterToggles.forEach((btn, i) => {
+                if (i < filterKeys.length) btn.textContent = t(filterKeys[i]) || filterDefaults[i];
+            });
+
+            // 添加文件按钮
+            const addFileBtn = root.querySelector('[id^="btn-add-file-"]');
+            if (addFileBtn) addFileBtn.textContent = '+ ' + (t('ui.new_file') || '新建文件');
+
+            // 固定/删除项目按钮
+            const pinBtn = root.querySelector('.btn-pin-project');
+            if (pinBtn) {
+                const isActive = pinBtn.classList.contains('active');
+                pinBtn.title = t(isActive ? 'ui.unpin_project' : 'ui.pin_project') || (isActive ? '取消固定' : '固定项目');
+            }
+
+            const deleteBtn = root.querySelector('.btn-delete-project');
+            if (deleteBtn) deleteBtn.title = t('ui.delete_project') || '删除项目';
+
+            // 账户信息标签
+            const infoLabels = root.querySelectorAll('.account-info-label');
+            infoLabels.forEach(label => {
+                const text = label.textContent.trim();
+                if (text === '创作者:' || text === 'Creator:' || text.match(/^创作者/) || text.match(/^Creator/)) {
+                    label.textContent = t('ui.creator') || '创作者' + ':';
+                } else if (text === '当前用户:' || text === 'Current user:' || text.match(/^当前用户/) || text.match(/^Current user/)) {
+                    label.textContent = t('ui.current_user') || '当前用户' + ':';
+                }
+            });
+        }
+        weLog.info('ui-refresh', '← refreshProjectTexts 完成');
+    } catch (e) {
+        weLog.error('ui-refresh', 'refreshProjectTexts 失败', e && e.stack ? e.stack : String(e));
     }
 }

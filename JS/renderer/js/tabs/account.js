@@ -167,12 +167,11 @@ function generateInitialAvatar(name, color) {
     return canvas.toDataURL('image/png');
 }
 
-// ========== 账户标签页 ==========
-function createAccountTab() {
-    weLog.info('account', '→ createAccountTab 开始');
+// ========== 账户标签页（两步向导：语言选择→账户注册） ==========
+function createAccountTab(wizard) {
+    weLog.info('account', '→ createAccountTab 开始', { wizard: !!wizard });
     const id = 'account';
     if (tabs[id]) { weLog.info('account', 'createAccountTab: 已存在 account 标签，切换过去'); switchTab(id); return; }
-    // OA 模板：area-root.oa > 单个 area-card > account-page
     const root = document.createElement('div');
     root.className = 'area-root oa';
     const block = document.createElement('div');
@@ -185,164 +184,362 @@ function createAccountTab() {
     const accountDisplayName = currentAccount?.displayName || '';
     const accountBio = currentAccount?.bio || '';
     const avatarDataUrl = currentAccount?.avatarDataUrl || '';
-    weLog.info('account', 'createAccountTab', { isNew, accountName });
+    weLog.info('account', 'createAccountTab', { isNew, accountName, wizard: !!wizard });
 
-    content.innerHTML = `
-        <div class="account-page-wrapper">
-            <div class="account-page-scroll">
-                <div class="account-page-inner">
-                    <h2>${isNew ? (t('ui.account_register') || '注册账户') : (t('ui.account_settings') || '账户设置')}</h2>
-                    <div class="account-page-avatar">
-                        <div class="account-page-avatar-preview" id="account-avatar-preview">
-                            ${avatarDataUrl ? `<img src="${avatarDataUrl}" alt="avatar" />` : `<span>${accountName.charAt(0).toUpperCase() || '?'}</span>`}
+    // Lucide earth SVG（来自 lucide-static/icons/earth.svg）
+    const EARTH_SVG = '<svg viewBox="0 0 24 24" width="96" height="96" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M21.54 15H17a2 2 0 0 0-2 2v4.54"/><path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17"/><path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05"/><circle cx="12" cy="12" r="10"/></svg>';
+
+    // 构建步骤指示器
+    function buildStepIndicator(currentStep) {
+        return `
+            <div class="wizard-steps">
+                <span class="wizard-step ${currentStep === 1 ? 'active' : ''}">${t('ui.language') || '语言'}</span>
+                <span class="wizard-step-sep">—</span>
+                <span class="wizard-step ${currentStep === 2 ? 'active' : ''}">${t('ui.account') || '账户'}</span>
+            </div>
+        `;
+    }
+
+    if (wizard) {
+        // 两步向导模式
+        content.innerHTML = `
+            <div class="account-page-wrapper">
+                <div class="account-page-scroll">
+                    <div class="wizard-step-header">
+                        ${buildStepIndicator(1)}
+                    </div>
+                    <div class="wizard-step-body" id="wizard-step-1">
+                        <div class="wizard-lang-icon">${EARTH_SVG}</div>
+                        <div class="wizard-lang-field">
+                            <label>${t('ui.language') || 'Language'}</label>
+                            <select id="wizard-lang-select" class="wizard-lang-select">
+                                <option value="en">English</option>
+                                <option value="zh_CN">中文</option>
+                                <option value="ja">日本語</option>
+                                <option value="ru">Русский</option>
+                            </select>
                         </div>
                     </div>
-                    <div class="account-page-avatar-actions">
-                        <button class="account-page-link" id="account-btn-upload">${t('ui.upload_avatar') || '上传头像'}</button>
-                        <span class="account-page-link-sep">|</span>
-                        <button class="account-page-link" id="account-btn-remove" ${avatarDataUrl ? '' : 'disabled'}>${t('ui.remove_avatar') || '移除头像'}</button>
-                    </div>
-                    <div class="account-page-form">
-                        <div class="account-page-field">
-                            <label>${t('ui.account_name') || '账户名称'} <span class="required">*</span></label>
-                            <input type="text" id="account-name-input" value="${accountName}" placeholder="${t('ui.account_name_placeholder') || '请输入账户名称'}" maxlength="20" />
-                            <p class="field-hint">${t('ui.account_name_hint') || '仅支持英文、数字、下划线、连字符'}</p>
+                    <div class="account-page-inner" id="wizard-step-2" style="display:none;">
+                        ${buildStepIndicator(2)}
+                        <h2>${t('ui.account_register') || '注册账户'}</h2>
+                        <div class="account-page-avatar">
+                            <div class="account-page-avatar-preview" id="account-avatar-preview">
+                                <span>?</span>
+                            </div>
                         </div>
-                        <div class="account-page-field">
-                            <label>${t('ui.display_name') || '显示名称'}</label>
-                            <input type="text" id="account-display-input" value="${accountDisplayName}" placeholder="${t('ui.display_name_placeholder') || '请输入显示名称'}" maxlength="30" />
+                        <div class="account-page-avatar-actions">
+                            <button class="account-page-link" id="account-btn-upload">${t('ui.upload_avatar') || '上传头像'}</button>
+                            <span class="account-page-link-sep">|</span>
+                            <button class="account-page-link" id="account-btn-remove" disabled>${t('ui.remove_avatar') || '移除头像'}</button>
                         </div>
-                        <div class="account-page-field">
-                            <label>${t('ui.bio') || '简介'}</label>
-                            <textarea id="account-bio-input" rows="3" maxlength="120" placeholder="${t('ui.bio_placeholder') || '写一句个人签名…'}">${accountBio.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+                        <div class="account-page-form">
+                            <div class="account-page-field">
+                                <label>${t('ui.account_name') || '账户名称'} <span class="required">*</span></label>
+                                <input type="text" id="account-name-input" value="" placeholder="${t('ui.account_name_placeholder') || '请输入账户名称'}" maxlength="20" />
+                                <p class="field-hint">${t('ui.account_name_hint') || '仅支持英文、数字、下划线、连字符'}</p>
+                            </div>
+                            <div class="account-page-field">
+                                <label>${t('ui.display_name') || '显示名称'}</label>
+                                <input type="text" id="account-display-input" value="" placeholder="${t('ui.display_name_placeholder') || '请输入显示名称'}" maxlength="30" />
+                            </div>
+                            <div class="account-page-field">
+                                <label>${t('ui.bio') || '简介'}</label>
+                                <textarea id="account-bio-input" rows="2" maxlength="120" placeholder="${t('ui.bio_placeholder') || '写一句个人签名…'}"></textarea>
+                            </div>
                         </div>
                     </div>
                 </div>
+                <div class="account-page-footer" id="wizard-footer-1">
+                    <button class="btn-account-submit" id="wizard-btn-next">${t('ui.next') || '下一步'}</button>
+                </div>
+                <div class="account-page-footer" id="wizard-footer-2" style="display:none;">
+                    <button class="btn-account-back" id="wizard-btn-back">${t('ui.back') || '上一步'}</button>
+                    <button class="btn-account-submit" id="account-btn-submit">${t('ui.confirm') || '确认'}</button>
+                </div>
             </div>
-            <div class="account-page-footer">
-                ${!isNew ? `<button class="btn-account-danger" id="account-btn-delete">${t('ui.delete_account') || '删除账户'}</button>` : ''}
-                <button class="btn-account-submit" id="account-btn-submit">${t('ui.confirm') || '确认'}</button>
-            </div>
-        </div>
-        <input type="file" id="account-avatar-file" accept="image/*" style="display:none" />
-    `;
+            <input type="file" id="account-avatar-file" accept="image/*" style="display:none" />
+        `;
 
-    let tempAvatarDataUrl = avatarDataUrl;
-
-    // 上传头像
-    const fileInput = content.querySelector('#account-avatar-file');
-    content.querySelector('#account-btn-upload').onclick = () => { weLog.info('account', 'createAccountTab: 点击上传头像'); fileInput.click(); };
-    fileInput.onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        weLog.info('account', 'createAccountTab: 选择头像文件', { name: file.name, size: file.size });
-        if (file.size > 2 * 1024 * 1024) {
-            weLog.warn('account', 'createAccountTab: 头像超过2MB', { size: file.size });
-            alert(t('ui.avatar_too_large') || '头像不能超过2MB');
-            return;
-        }
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            tempAvatarDataUrl = evt.target.result;
-            const preview = content.querySelector('#account-avatar-preview');
-            preview.innerHTML = `<img src="${tempAvatarDataUrl}" alt="avatar" />`;
-            content.querySelector('#account-btn-remove').disabled = false;
-            weLog.info('account', 'createAccountTab: 头像读取完成');
-        };
-        reader.readAsDataURL(file);
-    };
-
-    // 移除头像
-    content.querySelector('#account-btn-remove').onclick = () => {
-        weLog.info('account', 'createAccountTab: 点击移除头像');
-        tempAvatarDataUrl = '';
-        const nameInput = content.querySelector('#account-name-input');
-        const preview = content.querySelector('#account-avatar-preview');
-        const initial = (nameInput.value || '?').charAt(0).toUpperCase();
-        preview.innerHTML = `<span>${initial}</span>`;
-        content.querySelector('#account-btn-remove').disabled = true;
-    };
-
-    // 名称输入：实时过滤非法字符 + 更新首字母预览
-    content.querySelector('#account-name-input').oninput = (e) => {
-        // 仅允许英文、数字、下划线、连字符
-        const filtered = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
-        if (filtered !== e.target.value) e.target.value = filtered;
-        if (tempAvatarDataUrl) return;
-        const preview = content.querySelector('#account-avatar-preview');
-        const initial = (filtered || '?').charAt(0).toUpperCase();
-        preview.innerHTML = `<span>${initial}</span>`;
-    };
-
-    // 确认保存
-    content.querySelector('#account-btn-submit').onclick = async () => {
-        const name = content.querySelector('#account-name-input').value.trim();
-        const displayName = content.querySelector('#account-display-input').value.trim();
-        const bio = content.querySelector('#account-bio-input').value.trim();
-        weLog.info('account', 'createAccountTab: 点击保存', { name, displayName, isNew });
-
-        if (!name) {
-            weLog.warn('account', 'createAccountTab: 账户名称为空');
-            alert(t('ui.account_name_required') || '请输入账户名称');
-            return;
-        }
-        if (name.length < 2) {
-            weLog.warn('account', 'createAccountTab: 账户名称过短', { length: name.length });
-            alert(t('ui.account_name_too_short') || '账户名称至少2个字符');
-            return;
-        }
-
-        const accountData = {
-            name,
-            displayName: displayName || name,
-            bio,
-            avatarDataUrl: tempAvatarDataUrl || generateInitialAvatar(name),
-            createdAt: currentAccount?.createdAt || new Date().toISOString()
-        };
-
-        const result = await weAPI.saveAccount(accountData);
-        if (result.success) {
-            weLog.info('account', 'createAccountTab: 保存账户成功', { name });
-            currentAccount = result.account || accountData;
-            if (tempAvatarDataUrl) {
-                currentAccount.avatarDataUrl = tempAvatarDataUrl;
-            } else {
-                currentAccount.avatarDataUrl = accountData.avatarDataUrl;
-            }
-            updateAccountUI();
-            closeTab(id);
-            showNotification(isNew ? (t('ui.account_created') || '账户创建成功') : (t('ui.account_updated') || '账户已更新'));
-        } else {
-            weLog.error('account', 'createAccountTab: 保存账户失败', result.error);
-            alert(t('ui.save_failed') + ': ' + result.error);
-        }
-    };
-
-    // 删除账户
-    const deleteBtn = content.querySelector('#account-btn-delete');
-    if (deleteBtn) {
-        deleteBtn.onclick = () => {
-            if (!currentAccount) return;
-            weLog.info('account', 'createAccountTab: 点击删除账户');
-            if (!confirm(t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。')) return;
-            if (!confirm(t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。')) return;
-            weAPI.deleteAccount().then(result => {
-                if (result.success) {
-                    weLog.info('account', 'createAccountTab: 删除账户成功');
-                    currentAccount = null;
-                    updateAccountUI();
-                    closeTab(id);
-                    showNotification(t('ui.account_deleted') || '账户已删除');
-                } else {
-                    weLog.error('account', 'createAccountTab: 删除账户失败', result.error);
-                    alert(t('ui.delete_failed') + ': ' + result.error);
+        // 步骤1：语言选择（立即切换）
+        let tempAvatarDataUrl = '';
+        const langSelect = content.querySelector('#wizard-lang-select');
+        langSelect.value = 'en';
+        // 选择语言立即切换界面
+        langSelect.addEventListener('change', async () => {
+            const lang = langSelect.value;
+            weLog.info('account', 'createAccountTab: 语言切换', { lang });
+            try {
+                await loadLanguage(lang);
+                const settings = await weAPI.getSettings();
+                settings.language = lang;
+                await weAPI.setSettings(settings);
+                updateFileMenuTexts();
+                // 刷新当前界面文字
+                if (typeof refreshAllUITexts === 'function') refreshAllUITexts();
+                // 刷新步骤1中的文字
+                const step1Indicator = content.querySelector('.wizard-step-header .wizard-steps');
+                if (step1Indicator) step1Indicator.outerHTML = buildStepIndicator(1);
+                const langLabel = content.querySelector('.wizard-lang-field label');
+                if (langLabel) langLabel.textContent = t('ui.language') || 'Language';
+                const nextBtn = content.querySelector('#wizard-btn-next');
+                if (nextBtn) nextBtn.textContent = t('ui.next') || '下一步';
+                // 刷新标签页标题
+                const tabEl = tabs['account']?.tabElement;
+                if (tabEl) {
+                    const titleSpan = tabEl.querySelector('.tab-title');
+                    if (titleSpan) titleSpan.textContent = t('ui.define_world') || '定义世界';
                 }
-            });
+            } catch (e) {
+                weLog.error('account', 'createAccountTab: 语言切换失败', e && e.stack ? e.stack : String(e));
+            }
+        });
+        // 下一步 → 切换到步骤2
+        content.querySelector('#wizard-btn-next').onclick = () => {
+            content.querySelector('.wizard-step-header').style.display = 'none';
+            content.querySelector('#wizard-step-1').style.display = 'none';
+            content.querySelector('#wizard-step-2').style.display = '';
+            content.querySelector('#wizard-footer-1').style.display = 'none';
+            content.querySelector('#wizard-footer-2').style.display = '';
+            // 刷新步骤2中的文字
+            const step2Indicator = content.querySelector('#wizard-step-2 .wizard-steps');
+            if (step2Indicator) step2Indicator.outerHTML = buildStepIndicator(2);
+            content.querySelector('#wizard-step-2 h2').textContent = t('ui.account_register') || '注册账户';
+            // 刷新步骤2中的 label 和 placeholder
+            const step2labels = content.querySelectorAll('#wizard-step-2 .account-page-field label');
+            if (step2labels[0]) step2labels[0].innerHTML = (t('ui.account_name') || '账户名称') + ' <span class="required">*</span>';
+            if (step2labels[1]) step2labels[1].textContent = t('ui.display_name') || '显示名称';
+            if (step2labels[2]) step2labels[2].textContent = t('ui.bio') || '简介';
+            const nameInput = content.querySelector('#account-name-input');
+            if (nameInput) nameInput.placeholder = t('ui.account_name_placeholder') || '请输入账户名称';
+            const displayInput = content.querySelector('#account-display-input');
+            if (displayInput) displayInput.placeholder = t('ui.display_name_placeholder') || '请输入显示名称';
+            const bioInput = content.querySelector('#account-bio-input');
+            if (bioInput) bioInput.placeholder = t('ui.bio_placeholder') || '写一句个人签名…';
+            const hint = content.querySelector('.field-hint');
+            if (hint) hint.textContent = t('ui.account_name_hint') || '仅支持英文、数字、下划线、连字符';
+            const backBtn = content.querySelector('#wizard-btn-back');
+            if (backBtn) backBtn.textContent = t('ui.back') || '上一步';
+            const submitBtn = content.querySelector('#account-btn-submit');
+            if (submitBtn) submitBtn.textContent = t('ui.confirm') || '确认';
         };
+
+        // 步骤2：账户注册
+        const fileInput = content.querySelector('#account-avatar-file');
+        content.querySelector('#account-btn-upload').onclick = () => { fileInput.click(); };
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                alert(t('ui.avatar_too_large') || '头像不能超过2MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                tempAvatarDataUrl = evt.target.result;
+                const preview = content.querySelector('#account-avatar-preview');
+                preview.innerHTML = `<img src="${tempAvatarDataUrl}" alt="avatar" />`;
+                content.querySelector('#account-btn-remove').disabled = false;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        content.querySelector('#account-btn-remove').onclick = () => {
+            tempAvatarDataUrl = '';
+            const nameInput = content.querySelector('#account-name-input');
+            const preview = content.querySelector('#account-avatar-preview');
+            const initial = (nameInput.value || '?').charAt(0).toUpperCase();
+            preview.innerHTML = `<span>${initial}</span>`;
+            content.querySelector('#account-btn-remove').disabled = true;
+        };
+
+        content.querySelector('#account-name-input').oninput = (e) => {
+            const filtered = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
+            if (filtered !== e.target.value) e.target.value = filtered;
+            if (tempAvatarDataUrl) return;
+            const preview = content.querySelector('#account-avatar-preview');
+            const initial = (filtered || '?').charAt(0).toUpperCase();
+            preview.innerHTML = `<span>${initial}</span>`;
+        };
+
+        // 上一步 → 回到步骤1
+        content.querySelector('#wizard-btn-back').onclick = () => {
+            content.querySelector('.wizard-step-header').style.display = '';
+            content.querySelector('#wizard-step-2').style.display = 'none';
+            content.querySelector('#wizard-step-1').style.display = '';
+            content.querySelector('#wizard-footer-2').style.display = 'none';
+            content.querySelector('#wizard-footer-1').style.display = '';
+            const step1Indicator = content.querySelector('.wizard-step-header .wizard-steps');
+            if (step1Indicator) step1Indicator.outerHTML = buildStepIndicator(1);
+        };
+
+        // 确认保存
+        content.querySelector('#account-btn-submit').onclick = async () => {
+            const name = content.querySelector('#account-name-input').value.trim();
+            const displayName = content.querySelector('#account-display-input').value.trim();
+            const bio = content.querySelector('#account-bio-input').value.trim();
+            if (!name) {
+                showNotification(t('ui.account_name_required') || '请输入账户名称');
+                return;
+            }
+            if (name.length < 2) {
+                showNotification(t('ui.account_name_too_short') || '账户名称至少2个字符');
+                return;
+            }
+            const accountData = {
+                name,
+                displayName: displayName || name,
+                bio,
+                avatarDataUrl: tempAvatarDataUrl || generateInitialAvatar(name),
+                createdAt: new Date().toISOString()
+            };
+            const result = await weAPI.saveAccount(accountData);
+            if (result.success) {
+                currentAccount = result.account || accountData;
+                if (tempAvatarDataUrl) currentAccount.avatarDataUrl = tempAvatarDataUrl;
+                else currentAccount.avatarDataUrl = accountData.avatarDataUrl;
+                updateAccountUI();
+                closeTab(id);
+                showNotification(t('ui.account_created') || '账户创建成功');
+            } else {
+                alert(t('ui.save_failed') + ': ' + result.error);
+            }
+        };
+    } else {
+        // 非向导模式（从设置打开）
+        content.innerHTML = `
+            <div class="account-page-wrapper">
+                <div class="account-page-scroll">
+                    <div class="account-page-inner">
+                        <h2>${isNew ? (t('ui.account_register') || '注册账户') : (t('ui.account_settings') || '账户设置')}</h2>
+                        <div class="account-page-avatar">
+                            <div class="account-page-avatar-preview" id="account-avatar-preview">
+                                ${avatarDataUrl ? `<img src="${avatarDataUrl}" alt="avatar" />` : `<span>${accountName.charAt(0).toUpperCase() || '?'}</span>`}
+                            </div>
+                        </div>
+                        <div class="account-page-avatar-actions">
+                            <button class="account-page-link" id="account-btn-upload">${t('ui.upload_avatar') || '上传头像'}</button>
+                            <span class="account-page-link-sep">|</span>
+                            <button class="account-page-link" id="account-btn-remove" ${avatarDataUrl ? '' : 'disabled'}>${t('ui.remove_avatar') || '移除头像'}</button>
+                        </div>
+                        <div class="account-page-form">
+                            <div class="account-page-field">
+                                <label>${t('ui.account_name') || '账户名称'} <span class="required">*</span></label>
+                                <input type="text" id="account-name-input" value="${accountName}" placeholder="${t('ui.account_name_placeholder') || '请输入账户名称'}" maxlength="20" />
+                                <p class="field-hint">${t('ui.account_name_hint') || '仅支持英文、数字、下划线、连字符'}</p>
+                            </div>
+                            <div class="account-page-field">
+                                <label>${t('ui.display_name') || '显示名称'}</label>
+                                <input type="text" id="account-display-input" value="${accountDisplayName}" placeholder="${t('ui.display_name_placeholder') || '请输入显示名称'}" maxlength="30" />
+                            </div>
+                            <div class="account-page-field">
+                                <label>${t('ui.bio') || '简介'}</label>
+                                <textarea id="account-bio-input" rows="3" maxlength="120" placeholder="${t('ui.bio_placeholder') || '写一句个人签名…'}">${accountBio.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="account-page-footer">
+                    ${!isNew ? `<button class="btn-account-danger" id="account-btn-delete">${t('ui.delete_account') || '删除账户'}</button>` : ''}
+                    <button class="btn-account-submit" id="account-btn-submit">${t('ui.confirm') || '确认'}</button>
+                </div>
+            </div>
+            <input type="file" id="account-avatar-file" accept="image/*" style="display:none" />
+        `;
+
+        let tempAvatarDataUrl = avatarDataUrl;
+
+        const fileInput = content.querySelector('#account-avatar-file');
+        content.querySelector('#account-btn-upload').onclick = () => { fileInput.click(); };
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                alert(t('ui.avatar_too_large') || '头像不能超过2MB');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                tempAvatarDataUrl = evt.target.result;
+                const preview = content.querySelector('#account-avatar-preview');
+                preview.innerHTML = `<img src="${tempAvatarDataUrl}" alt="avatar" />`;
+                content.querySelector('#account-btn-remove').disabled = false;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        content.querySelector('#account-btn-remove').onclick = () => {
+            tempAvatarDataUrl = '';
+            const nameInput = content.querySelector('#account-name-input');
+            const preview = content.querySelector('#account-avatar-preview');
+            const initial = (nameInput.value || '?').charAt(0).toUpperCase();
+            preview.innerHTML = `<span>${initial}</span>`;
+            content.querySelector('#account-btn-remove').disabled = true;
+        };
+
+        content.querySelector('#account-name-input').oninput = (e) => {
+            const filtered = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
+            if (filtered !== e.target.value) e.target.value = filtered;
+            if (tempAvatarDataUrl) return;
+            const preview = content.querySelector('#account-avatar-preview');
+            const initial = (filtered || '?').charAt(0).toUpperCase();
+            preview.innerHTML = `<span>${initial}</span>`;
+        };
+
+        content.querySelector('#account-btn-submit').onclick = async () => {
+            const name = content.querySelector('#account-name-input').value.trim();
+            const displayName = content.querySelector('#account-display-input').value.trim();
+            const bio = content.querySelector('#account-bio-input').value.trim();
+            if (!name) {
+                showNotification(t('ui.account_name_required') || '请输入账户名称');
+                return;
+            }
+            if (name.length < 2) {
+                showNotification(t('ui.account_name_too_short') || '账户名称至少2个字符');
+                return;
+            }
+            const accountData = {
+                name,
+                displayName: displayName || name,
+                bio,
+                avatarDataUrl: tempAvatarDataUrl || generateInitialAvatar(name),
+                createdAt: currentAccount?.createdAt || new Date().toISOString()
+            };
+            const result = await weAPI.saveAccount(accountData);
+            if (result.success) {
+                currentAccount = result.account || accountData;
+                if (tempAvatarDataUrl) currentAccount.avatarDataUrl = tempAvatarDataUrl;
+                else currentAccount.avatarDataUrl = accountData.avatarDataUrl;
+                updateAccountUI();
+                closeTab(id);
+                showNotification(isNew ? (t('ui.account_created') || '账户创建成功') : (t('ui.account_updated') || '账户已更新'));
+            } else {
+                alert(t('ui.save_failed') + ': ' + result.error);
+            }
+        };
+
+        const deleteBtn = content.querySelector('#account-btn-delete');
+        if (deleteBtn) {
+            deleteBtn.onclick = () => {
+                if (!currentAccount) return;
+                if (!confirm(t('ui.account_delete_confirm') || '确定要删除账户吗？此操作不可撤销。')) return;
+                if (!confirm(t('ui.account_delete_confirm_2') || '真的要删除吗？所有账户数据将被清除。')) return;
+                weAPI.deleteAccount().then(result => {
+                    if (result.success) {
+                        currentAccount = null;
+                        updateAccountUI();
+                        closeTab(id);
+                        showNotification(t('ui.account_deleted') || '账户已删除');
+                    } else {
+                        alert(t('ui.delete_failed') + ': ' + result.error);
+                    }
+                });
+            };
+        }
     }
 
     block.appendChild(content);
     root.appendChild(block);
-    addTab(id, t('ui.account') || '账户', root, true);
+    addTab(id, t('ui.define_world') || '定义世界', root, true);
     weLog.info('account', '← createAccountTab 完成');
 }

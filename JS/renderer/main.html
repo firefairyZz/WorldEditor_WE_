@@ -21,6 +21,7 @@
     <title>WE - World Editor</title>
 </head>
 <body class="material-none">
+<script>document.body.classList.add('is-desktop');</script>
     <!-- 背景图片层（最底层，由用户在设置中选择；遮罩层 #main 覆盖其上） -->
     <div id="background-image-layer"></div>
     <!-- 三段式结构：title-bar / tab-bar / #main -->
@@ -58,15 +59,40 @@
     <div id="notification-bar"></div>
 
     <div id="tab-bar">
+        <button id="btn-mobile-back" class="mobile-back-btn" title="返回文件树" style="display:none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
         <div class="tabs-container"></div>
         <button id="btn-tab-settings" class="tab-action-btn" title="设置">&#xE713;</button>
     </div>
+
+    <!-- 手机端返回按钮（独立于 tab-bar，固定定位） -->
+    <button id="btn-mobile-back-fixed" class="mobile-back-btn-fixed" title="返回文件树" style="display:none">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
 
     <div id="main">
         <div id="content-container"></div>
     </div>
 
     <div id="status-bar">就绪</div>
+
+    <!-- ====== 移动端底部导航栏 ====== -->
+    <nav id="mobile-nav">
+        <button class="mobile-nav-btn active" data-mobile-tab="welcome">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>启程</span>
+        </button>
+        <button class="mobile-nav-btn" data-mobile-tab="edit">
+            <img id="mobile-nav-we-icon" src="../resources/White.png" alt="WE" class="mobile-nav-we-icon" />
+            <svg id="mobile-nav-plus-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span id="mobile-nav-edit-label">编辑</span>
+        </button>
+        <button class="mobile-nav-btn" data-mobile-tab="settings">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>设置</span>
+        </button>
+    </nav>
 
     <!-- 浮层（绝对定位，不参与布局） -->
     <div id="file-menu-popup" class="menu-popup"></div>
@@ -100,6 +126,7 @@
     <script src="js/tabs/tab-context-menu.js" defer></script>
     <script src="js/tabs/file-drop.js" defer></script>
     <script src="js/tabs/debug.js" defer></script>
+    <script src="js/tabs/mobile-nav.js" defer></script>
     <script src="js/tabs/account.js" defer></script>
     <script src="js/tabs/node-graph.js" defer></script>
     <script src="js/tabs/init.js" defer></script>
