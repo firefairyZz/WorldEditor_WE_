@@ -1,0 +1,1868 @@
+﻿// 需要过滤的系统文件/临时文件名
+const SYSTEM_FILE_PATTERNS = [
+    /^\+$/,
+    /^index\.html$/i,
+    /^_metadata\.json$/i,
+    /^~\$/,
+    /\.tmp$/i,
+    /\.temp$/i,
+    /~$/
+];
+
+function buildFileTree(files) {
+    const root = {};
+    const isMobile = !document.body.classList.contains('is-desktop');
+    for (const file of files) {
+        // 统一过滤：隐藏文件 + _ 开头文件夹
+        if (shouldSkipPath(file)) continue;
+        const fileName = file.split('/').pop();
+        if (isMobile && (/\.wep$/i.test(fileName) || /\.bwep$/i.test(fileName))) continue;
+        let isSystemFile = false;
+        for (const pattern of SYSTEM_FILE_PATTERNS) {
+            if (pattern.test(fileName)) { isSystemFile = true; break; }
+        }
+        if (isSystemFile) continue;
+        if (file.endsWith('/.keep')) {
+            const dirPath = file.slice(0, -'/.keep'.length);
+            const parts = dirPath.split('/');
+            let current = root;
+            for (const part of parts) {
+                if (!current[part]) current[part] = {};
+                current = current[part];
+            }
+            continue;
+        }
+        const parts = file.split('/');
+        let current = root;
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (i === parts.length - 1) {
+                if (!current._files) current._files = [];
+                current._files.push(part);
+            } else {
+                if (!current[part]) current[part] = {};
+                current = current[part];
+            }
+        }
+    }
+    return root;
+}
+
+function stripExt(name) {
+    if (name.endsWith('.node.json')) return name.slice(0, -10);
+    const idx = name.lastIndexOf('.');
+    return idx > 0 ? name.substring(0, idx) : name;
+}
+
+// 统一过滤：跳过隐藏文件和文件夹
+// 规则：
+// 1. . 开头的文件/文件夹 → 跳过
+// 2. _ 开头的文件夹（非 __ 开头）→ 跳过整个路径（如 _images/）
+// 3. _ 开头的文件（非 __img_/__bin_/__media_ 前缀）→ 跳过
+function shouldSkipPath(filePath) {
+    const parts = filePath.split('/');
+    // 检查路径中的所有文件夹名（中间段）
+    for (let i = 0; i < parts.length - 1; i++) {
+        const folder = parts[i];
+        if (folder.startsWith('.')) return true;
+        if (folder.startsWith('_') && !folder.startsWith('__')) return true;
+    }
+    // 检查最后的文件名
+    const fileName = parts[parts.length - 1];
+    if (fileName.startsWith('.')) return true;
+    if (fileName.startsWith('_') && !fileName.startsWith('__img_') && !fileName.startsWith('__bin_') && !fileName.startsWith('__media_')) return true;
+    return false;
+}
+
+// 存储文件前缀定义（旧架构遗留）
+const STORAGE_PREFIXES = { '__img_': 6, '__bin_': 6, '__media_': 8 };
+function getStoragePrefix(filename) {
+    for (const [prefix, length] of Object.entries(STORAGE_PREFIXES)) {
+        if (filename.startsWith(prefix)) return { prefix, length };
+    }
+    return null;
+}
+function getCleanName(filename) {
+    const info = getStoragePrefix(filename);
+    return info ? filename.slice(info.length) : filename;
+}
+
+// 扩展名常量
+const SUPPORTED_TEXT_EXTENSIONS = [
+    '.txt', '.md', '.markdown', '.rtf', '.log', '.csv', '.json', '.xml', '.html', '.htm',
+    '.css', '.js', '.ts', '.jsx', '.tsx', '.yml', '.yaml', '.ini', '.cfg', '.conf',
+    '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.php', '.rb', '.lua',
+    '.sql', '.sh', '.bat', '.ps1', '.svg', '.tex', '.org', '.rst', '.wiki'
+];
+const VIEWER_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif'];
+const VIEWER_MEDIA_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.mp3', '.wav', '.flac', '.aac', '.m4a', '.avi'];
+const VIEWER_DOC_EXTENSIONS = ['.pdf'];
+const VIEWER_EXTENSIONS = [...VIEWER_IMAGE_EXTENSIONS, ...VIEWER_MEDIA_EXTENSIONS, ...VIEWER_DOC_EXTENSIONS];
+const UNSUPPORTED_EXTENSIONS = [
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+    '.exe', '.dll', '.so', '.dylib', '.jar', '.war', '.class',
+    '.apk', '.ipa', '.iso', '.img',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+];
+
+// Lucide 图标（lucide-static v1.28.0 官方 SVG，stroke-width=2，加 .tree-icon class 让父容器控制颜色）
+const TREE_ICONS = {
+    folder: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+    folderOpen: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>',
+    file: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg>',
+    gitBranch: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>',
+    video: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
+    image: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
+    audio: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+    fileText: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
+    code: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>',
+    archive: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>',
+    bookmark: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/></svg>',
+    tag: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>',
+    tags: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.172 2a2 2 0 0 1 1.414.586l6.71 6.71a2.4 2.4 0 0 1 0 3.408l-4.592 4.592a2.4 2.4 0 0 1-3.408 0l-6.71-6.71A2 2 0 0 1 6 9.172V3a1 1 0 0 1 1-1z"/><path d="M2 7v6.172a2 2 0 0 0 .586 1.414l6.71 6.71a2.4 2.4 0 0 0 3.191.193"/><circle cx="10.5" cy="6.5" r=".5" fill="currentColor"/></svg>',
+    fileJson: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>',
+};
+
+// ====== 标签显示状态（按 safeId）======
+const tagVisibility = {}; // { safeId: false } = 标签隐藏
+function isTagsHidden(safeId) { return tagVisibility[safeId] === true; }
+function toggleTagVisibility(safeId) { tagVisibility[safeId] = !tagVisibility[safeId]; renderAll(); }
+
+const ARROW_COLLAPSED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ARROW_EXPANDED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// 文件树拖拽状态
+let treeDragData = { path: null, type: null, safeId: null };
+const rootDropBound = new WeakSet();
+
+// 排序顺序：'asc' 升序 | 'desc' 降序
+let fileSortOrder = 'asc';
+
+// ====== 存储前缀 & 类别 ======
+function getStoragePrefix(filename) {
+    for (const [prefix, length] of Object.entries(STORAGE_PREFIXES)) {
+        if (filename.startsWith(prefix)) {
+            return { prefix, length };
+        }
+    }
+    return null;
+}
+
+function getCleanName(filename) {
+    const info = getStoragePrefix(filename);
+    if (info) {
+        return filename.slice(info.length);
+    }
+    return filename;
+}
+
+function addStoragePrefix(cleanName, originalFilename) {
+    const info = getStoragePrefix(originalFilename);
+    if (info) {
+        return info.prefix + cleanName;
+    }
+    return cleanName;
+}
+
+function getFileCategory(filename) {
+    // 使用编辑器注册表的元数据检测（如果可用）
+    const _getMeta = window.getFileMetadata;
+    if (typeof _getMeta === 'function') {
+        const meta = _getMeta(filename);
+        // 转换为文件树使用的分类名
+        if (meta.category === 'viewer' && meta.isImage) return 'viewer-image';
+        if (meta.category === 'viewer') return 'viewer';
+        if (meta.category === 'unsupported') return 'unsupported';
+        if (meta.category === 'nodegraph') return 'nodegraph';
+        return meta.category; // 'text'
+    }
+    
+    // 回退：本地检测逻辑
+    // 提取文件名部分再检查前缀（避免路径干扰）
+    const fileNameOnly = filename ? filename.split(/[\\/]/).pop() : '';
+    const isStoredImage = fileNameOnly.startsWith('__img_');
+    const isStoredBinary = fileNameOnly.startsWith('__bin_');
+    const isStoredMedia = fileNameOnly.startsWith('__media_');
+    const cleanName = isStoredImage ? filename.slice(6) : 
+                      (isStoredBinary ? filename.slice(6) : 
+                       (isStoredMedia ? filename.slice(8) : filename));
+    const ext = cleanName.lastIndexOf('.') >= 0 ? cleanName.substring(cleanName.lastIndexOf('.')).toLowerCase() : '';
+    
+    if (isStoredImage) return 'viewer-image';
+    if (isStoredMedia) return 'viewer'; // 视频/音频文件在文件树中显示为展示类
+    if (isStoredBinary) return 'unsupported';
+    if (cleanName.endsWith('.node.json')) return 'nodegraph';
+    if (SUPPORTED_TEXT_EXTENSIONS.includes(ext) || !ext) return 'text';
+    if (VIEWER_EXTENSIONS.includes(ext)) return 'viewer';
+    if (UNSUPPORTED_EXTENSIONS.includes(ext)) return 'unsupported';
+    if (ext) return 'unsupported';
+    return 'text';
+}
+
+// 根据文件路径返回 { icon: TREE_ICONS key, badge: 徽章文本或 null }
+function getFileIconAndBadge(filePath) {
+    const fileName = filePath.split('/').pop();
+    const cleanName = getCleanName(fileName);
+    const isNodeGraph = cleanName.endsWith('.node.json');
+    const ext = isNodeGraph ? '.node.json' : 
+                (cleanName.lastIndexOf('.') >= 0 ? cleanName.substring(cleanName.lastIndexOf('.')).toLowerCase() : '');
+    
+    if (isNodeGraph) return { icon: TREE_ICONS.gitBranch, badge: '节点图' };
+    if (VIEWER_IMAGE_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.image, badge: ext.toUpperCase().replace('.', '') };
+    if (['.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext)) return { icon: TREE_ICONS.video, badge: ext.toUpperCase().replace('.', '') };
+    if (['.mp3', '.wav', '.flac', '.aac', '.m4a'].includes(ext)) return { icon: TREE_ICONS.audio, badge: ext.toUpperCase().replace('.', '') };
+    if (VIEWER_DOC_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.fileText, badge: 'PDF' };
+    if (['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(ext)) return { icon: TREE_ICONS.archive, badge: ext.toUpperCase().replace('.', '') };
+    if (['.json', '.xml', '.html', '.htm', '.css', '.js', '.ts', '.jsx', '.tsx'].includes(ext)) return { icon: TREE_ICONS.code, badge: ext.toUpperCase().replace('.', '') };
+    if (SUPPORTED_TEXT_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.fileText, badge: ext ? ext.toUpperCase().replace('.', '') : null };
+    if (UNSUPPORTED_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.archive, badge: ext.toUpperCase().replace('.', '') };
+    if (!ext) return { icon: TREE_ICONS.fileText, badge: null };
+    return { icon: TREE_ICONS.file, badge: ext.toUpperCase().replace('.', '') };
+}
+
+// ====== 多选状态 ======
+// selectedItems: Map<path, { type: 'file'|'folder', element: HTMLElement }>
+const multiSelectState = {
+    safeId: null,
+    items: new Map(),
+    lastClickedPath: null,
+    toolbar: null
+};
+
+function clearSelection(safeId) {
+    weLog.debug('filetree', '→ clearSelection 开始', { safeId });
+    if (safeId && multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'clearSelection: safeId 不匹配，跳过', { current: multiSelectState.safeId, requested: safeId });
+        return;
+    }
+    multiSelectState.items.forEach(item => {
+        item.element.classList.remove('selected');
+    });
+    multiSelectState.items.clear();
+    multiSelectState.lastClickedPath = null;
+    hideMultiSelectToolbar();
+}
+
+function toggleSelectItem(path, type, element, safeId) {
+    weLog.debug('filetree', '→ toggleSelectItem 开始', { path, type, safeId });
+    if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'toggleSelectItem: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (multiSelectState.items.has(path)) {
+        multiSelectState.items.delete(path);
+        element.classList.remove('selected');
+    } else {
+        multiSelectState.items.set(path, { type, element });
+        element.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectItem(path, type, element, safeId) {
+    weLog.debug('filetree', '→ selectItem 开始', { path, type, safeId });
+    if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectItem: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (!multiSelectState.items.has(path)) {
+        multiSelectState.items.set(path, { type, element });
+        element.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectRange(path, type, element, safeId, container) {
+    weLog.debug('filetree', '→ selectRange 开始', { path, type, safeId });
+    if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectRange: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    if (!multiSelectState.lastClickedPath) {
+        weLog.debug('filetree', 'selectRange: 无上次点击记录，降级为单选');
+        selectItem(path, type, element, safeId);
+        return;
+    }
+
+    // 获取所有可见的文件和文件夹元素
+    const allItems = [];
+    container.querySelectorAll('.tree-file, .tree-folder-header').forEach(el => {
+        if (el.classList.contains('tree-folder-header')) {
+            const folderDiv = el.closest('.tree-folder');
+            if (folderDiv && folderDiv.parentElement === container) {
+                allItems.push(el);
+            }
+        } else {
+            if (el.parentElement === container) {
+                allItems.push(el);
+            }
+        }
+    });
+
+    // 找到起始和结束索引
+    let startIdx = -1, endIdx = -1;
+    for (let i = 0; i < allItems.length; i++) {
+        const el = allItems[i];
+        const itemPath = el.classList.contains('tree-folder-header')
+            ? el.closest('.tree-folder').dataset.folderPath
+            : el.dataset.file;
+        if (itemPath === multiSelectState.lastClickedPath) startIdx = i;
+        if (itemPath === path) endIdx = i;
+    }
+    if (startIdx === -1 || endIdx === -1) {
+        weLog.debug('filetree', 'selectRange: 起止元素未找到，降级为单选', { startIdx, endIdx });
+        selectItem(path, type, element, safeId);
+        return;
+    }
+    if (startIdx > endIdx) [startIdx, endIdx] = [endIdx, startIdx];
+
+    // 清除当前选择
+    multiSelectState.items.forEach(item => item.element.classList.remove('selected'));
+    multiSelectState.items.clear();
+
+    for (let i = startIdx; i <= endIdx; i++) {
+        const el = allItems[i];
+        if (el.classList.contains('tree-folder-header')) {
+            const folderDiv = el.closest('.tree-folder');
+            const folderPath = folderDiv.dataset.folderPath;
+            multiSelectState.items.set(folderPath, { type: 'folder', element: el });
+        } else {
+            multiSelectState.items.set(el.dataset.file, { type: 'file', element: el });
+        }
+        el.classList.add('selected');
+    }
+    updateMultiSelectToolbar();
+}
+
+function selectAllVisible(safeId, container) {
+    weLog.info('filetree', '→ selectAllVisible 开始', { safeId });
+    if (multiSelectState.safeId !== safeId) {
+        weLog.debug('filetree', 'selectAllVisible: 切换 safeId 上下文', { old: multiSelectState.safeId, new: safeId });
+        clearSelection(multiSelectState.safeId);
+        multiSelectState.safeId = safeId;
+    }
+    multiSelectState.items.clear();
+    // 递归遍历所有可见的文件和文件夹
+    function traverse(parent) {
+        const children = parent.children;
+        for (const child of children) {
+            if (child.classList.contains('tree-folder')) {
+                const header = child.querySelector(':scope > .tree-folder-header');
+                const content = child.querySelector(':scope > .tree-folder-content');
+                if (header) {
+                    const folderPath = child.dataset.folderPath;
+                    if (folderPath) {
+                        multiSelectState.items.set(folderPath, { type: 'folder', element: header });
+                        header.classList.add('selected');
+                    }
+                }
+                if (content && content.style.display !== 'none') {
+                    traverse(content);
+                }
+            } else if (child.classList.contains('tree-file')) {
+                const filePath = child.dataset.file;
+                if (filePath) {
+                    multiSelectState.items.set(filePath, { type: 'file', element: child });
+                    child.classList.add('selected');
+                }
+            }
+        }
+    }
+    traverse(container);
+    updateMultiSelectToolbar();
+}
+
+function hideMultiSelectToolbar() {
+    weLog.debug('filetree', '→ hideMultiSelectToolbar 开始', { hasToolbar: !!multiSelectState.toolbar });
+    if (multiSelectState.toolbar) {
+        multiSelectState.toolbar.remove();
+        multiSelectState.toolbar = null;
+    }
+}
+
+function updateMultiSelectToolbar() {
+    const count = multiSelectState.items.size;
+    if (count === 0) {
+        weLog.debug('filetree', 'updateMultiSelectToolbar: 选中数为0，隐藏工具栏');
+        hideMultiSelectToolbar();
+        return;
+    }
+    if (!multiSelectState.toolbar) {
+        multiSelectState.toolbar = document.createElement('div');
+        multiSelectState.toolbar.className = 'multi-select-toolbar';
+        document.body.appendChild(multiSelectState.toolbar);
+    }
+    const safeId = multiSelectState.safeId;
+    const projectPath = tabs[safeId]?.projectPath;
+
+    multiSelectState.toolbar.innerHTML = `
+        <span class="multi-select-count">${count} ${t('ui.items_selected') || '项已选'}</span>
+        <button class="multi-select-btn" data-action="tag">${t('ui.batch_tag') || '批量加标签'}</button>
+        <button class="multi-select-btn" data-action="remove-tag">${t('ui.batch_remove_tag') || '批量删标签'}</button>
+        <button class="multi-select-btn multi-select-danger" data-action="delete">${t('ui.delete') || '删除'}</button>
+        <button class="multi-select-btn" data-action="cancel">✕</button>
+    `;
+
+    // 定位工具栏
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (treeContainer) {
+        const rect = treeContainer.getBoundingClientRect();
+        multiSelectState.toolbar.style.left = rect.left + 'px';
+        multiSelectState.toolbar.style.top = (rect.bottom - 40) + 'px';
+        multiSelectState.toolbar.style.width = rect.width + 'px';
+    }
+
+    multiSelectState.toolbar.querySelector('[data-action="tag"]').onclick = () => batchAddTags(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="remove-tag"]').onclick = () => batchRemoveTags(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="delete"]').onclick = () => batchDelete(safeId, projectPath);
+    multiSelectState.toolbar.querySelector('[data-action="cancel"]').onclick = () => clearSelection(safeId);
+}
+
+async function batchAddTags(safeId, projectPath) {
+    weLog.info('filetree', '→ batchAddTags 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchAddTags: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
+    const paths = Array.from(multiSelectState.items.keys());
+    window.tagModule.openTagPicker(paths[0], async (tag) => {
+        // 对所有选中项应用相同标签
+        for (const path of paths) {
+            await window.tagModule.addTag(path, tag.label, tag.color, tag.emoji);
+        }
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        clearSelection(safeId);
+        showNotification(`${t('ui.tags_added') || '已添加标签'} (${paths.length})`);
+    });
+}
+
+function batchRemoveTags(safeId, projectPath) {
+    weLog.info('filetree', '→ batchRemoveTags 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchRemoveTags: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
+    const paths = Array.from(multiSelectState.items.keys());
+
+    // 收集所有选中项的标签（去重）
+    const tagMap = new Map(); // tagKey -> { tag, count }
+    for (const p of paths) {
+        const tags = window.tagModule?.getTagsForFile(p) || [];
+        for (const tag of tags) {
+            const key = `${tag.label}|${tag.color}|${tag.emoji}`;
+            if (tagMap.has(key)) {
+                tagMap.get(key).count++;
+            } else {
+                tagMap.set(key, { tag, count: 1 });
+            }
+        }
+    }
+
+    if (tagMap.size === 0) {
+        weLog.info('filetree', 'batchRemoveTags: 选中项没有标签可删除');
+        showNotification(t('ui.no_tags_to_remove') || '选中项没有标签');
+        return;
+    }
+
+    // 创建选择面板
+    const overlay = document.createElement('div');
+    overlay.className = 'tag-picker-overlay';
+    overlay.innerHTML = `<div class="tag-picker" style="max-width: 360px;">
+        <div class="tag-picker-header">
+            <h3>${t('ui.batch_remove_tag') || '批量删标签'}</h3>
+            <button class="tag-picker-close" type="button">×</button>
+        </div>
+        <div class="tag-picker-body">
+            <p style="font-size:12px;color:var(--text-sec);margin-bottom:8px;">${paths.length} ${t('ui.items') || '项'} — ${t('ui.select_tags_to_remove') || '选择要删除的标签'}</p>
+            <div class="batch-remove-tag-list"></div>
+        </div>
+        <div class="tag-actions">
+            <button class="btn-cancel" type="button">${t('ui.cancel')}</button>
+            <button class="btn-save" type="button">${t('ui.delete') || '删除'}</button>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const listEl = overlay.querySelector('.batch-remove-tag-list');
+    const selectedTagIds = new Set();
+
+    for (const [key, { tag, count }] of tagMap) {
+        const item = document.createElement('div');
+        item.className = 'batch-remove-tag-item';
+        item.innerHTML = `
+            <span class="tag-item" style="background-color:${tag.color}">
+                <span class="tag-emoji">${tag.emoji || ''}</span>
+                <span class="tag-label">${tag.label || ''}</span>
+            </span>
+            <span style="font-size:11px;color:var(--text-sec);">${count}/${paths.length}</span>
+        `;
+        item.onclick = () => {
+            if (selectedTagIds.has(key)) {
+                selectedTagIds.delete(key);
+                item.classList.remove('selected');
+            } else {
+                selectedTagIds.add(key);
+                item.classList.add('selected');
+            }
+        };
+        listEl.appendChild(item);
+    }
+
+    const closeOverlay = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) closeOverlay(); };
+    overlay.querySelector('.tag-picker-close').onclick = closeOverlay;
+    overlay.querySelector('.btn-cancel').onclick = closeOverlay;
+    overlay.querySelector('.btn-save').onclick = async () => {
+        if (selectedTagIds.size === 0) { closeOverlay(); return; }
+        let removed = 0;
+        for (const p of paths) {
+            const tags = window.tagModule?.getTagsForFile(p) || [];
+            for (const tag of tags) {
+                const key = `${tag.label}|${tag.color}|${tag.emoji}`;
+                if (selectedTagIds.has(key)) {
+                    await window.tagModule.removeTag(p, tag.id);
+                    removed++;
+                }
+            }
+        }
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        clearSelection(safeId);
+        showNotification(`${t('ui.tags_removed') || '已删除标签'} (${removed})`);
+    };
+}
+
+async function batchDelete(safeId, projectPath) {
+    weLog.info('filetree', '→ batchDelete 开始', { safeId, projectPath, count: multiSelectState.items.size });
+    if (!projectPath || multiSelectState.items.size === 0) {
+        weLog.warn('filetree', 'batchDelete: projectPath 为空或无选中项，跳过', { projectPath, count: multiSelectState.items.size });
+        return;
+    }
+    const count = multiSelectState.items.size;
+    const ok = confirm((t('ui.batch_delete_confirm') || '确定删除选中的') + ` ${count} ` + (t('ui.items') || '项') + '?');
+    if (!ok) {
+        weLog.info('filetree', 'batchDelete: 用户取消删除');
+        return;
+    }
+
+    let successCount = 0;
+    let lastFileList = tabs[safeId].fileList;
+    for (const [path, item] of multiSelectState.items) {
+        try {
+            if (item.type === 'file') {
+                const res = await weAPI.deleteFile(projectPath, path);
+                if (res.success) {
+                    successCount++;
+                    lastFileList = res.fileList;
+                    if (tabs[safeId].currentFile === path) {
+                        if (window.closeProjectFile) window.closeProjectFile(safeId);
+                    }
+                }
+            } else {
+                const res = await weAPI.deleteFolder(projectPath, path);
+                if (res.success) {
+                    successCount++;
+                    lastFileList = res.fileList;
+                    if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(path + '/')) {
+                        if (window.closeProjectFile) window.closeProjectFile(safeId);
+                    }
+                }
+            }
+        } catch (e) {
+            weLog.error('filetree', 'batchDelete: 单项删除失败', e && e.stack ? e.stack : String(e));
+        }
+    }
+
+    tabs[safeId].fileList = lastFileList;
+    refreshFileTree(safeId, tabs[safeId].fileList);
+    clearSelection(safeId);
+    showNotification(`${t('ui.deleted') || '已删除'} ${successCount}/${count}`);
+    weLog.info('filetree', '← batchDelete 完成', { successCount, total: count });
+}
+
+function renderTreeNodes(container, tree, basePath = '') {
+    const folders = Object.keys(tree).filter(k => k !== '_files');
+    folders.sort();
+    if (fileSortOrder === 'desc') folders.reverse();
+    for (const folder of folders) {
+        const folderPath = basePath ? `${basePath}/${folder}` : folder;
+        const folderDiv = document.createElement('div');
+        folderDiv.className = 'tree-folder';
+        folderDiv.dataset.folderPath = folderPath;
+        const header = document.createElement('div');
+        header.className = 'tree-folder-header';
+        // 显示文件夹标签
+        const folderTags = window.tagModule?.getTagsForFile(folderPath) || [];
+        const folderTagsHtml = folderTags.length > 0
+            ? '<span class="file-tags">' + folderTags.map(tag =>
+                `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
+              ).join('') + '</span>'
+            : '';
+        header.innerHTML = `<span class="tree-arrow">${ARROW_COLLAPSED}</span><span class="folder-name">${folder}</span>${folderTagsHtml ? '<span class="folder-tags-wrap">' + folderTagsHtml + '</span>' : ''}`;
+        header.onclick = (e) => {
+            // Ctrl+点击 = 切换多选
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleSelectItem(folderPath, 'folder', header, container.closest('[id^="file-tree-"]').id.replace('file-tree-', ''));
+                multiSelectState.lastClickedPath = folderPath;
+                return;
+            }
+            // Shift+点击 = 范围选择
+            if (e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+                selectRange(folderPath, 'folder', header, sid, container);
+                return;
+            }
+            const content = folderDiv.querySelector('.tree-folder-content');
+            const arrow = header.querySelector('.tree-arrow');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                if (arrow) arrow.innerHTML = ARROW_EXPANDED;
+            } else {
+                content.style.display = 'none';
+                if (arrow) arrow.innerHTML = ARROW_COLLAPSED;
+            }
+        };
+        const content = document.createElement('div');
+        content.className = 'tree-folder-content';
+        content.style.display = 'none';
+        renderTreeNodes(content, tree[folder], folderPath);
+
+        // 文件夹右键菜单
+        header.oncontextmenu = (e) => {
+            e.preventDefault();
+            showFolderContextMenu(e, folderPath, container);
+        };
+
+        // 文件夹可拖拽（移动）
+        header.draggable = true;
+        header.addEventListener('dragstart', (e) => {
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            treeDragData = { path: folderPath, type: 'folder', safeId: sid };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', folderPath);
+            header.classList.add('dragging');
+            e.stopPropagation();
+        });
+        header.addEventListener('dragend', () => {
+            header.classList.remove('dragging');
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        // 文件夹作为 drop 目标
+        header.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            // 防止文件夹拖到自身或子文件夹
+            if (treeDragData.type === 'folder') {
+                if (treeDragData.path === folderPath) return;
+                if (folderPath.startsWith(treeDragData.path + '/')) return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            header.classList.add('drag-over');
+        });
+        header.addEventListener('dragleave', () => {
+            header.classList.remove('drag-over');
+        });
+        header.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            e.preventDefault();
+            e.stopPropagation();
+            header.classList.remove('drag-over');
+
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            handleTreeDrop(treeDragData, folderPath, sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        folderDiv.appendChild(header);
+        folderDiv.appendChild(content);
+        container.appendChild(folderDiv);
+    }
+    const files = tree._files || [];
+    files.sort();
+    if (fileSortOrder === 'desc') files.reverse();
+    for (const file of files) {
+        const filePath = basePath ? `${basePath}/${file}` : file;
+        const fileDiv = document.createElement('div');
+        fileDiv.className = 'tree-file';
+        fileDiv.dataset.file = filePath;
+
+        const thumb = window.tagModule?.getThumbnail(filePath);
+        const tags = window.tagModule?.getTagsForFile(filePath) || [];
+
+        let thumbHtml = '';
+        if (thumb) {
+            thumbHtml = `<span class="file-thumb"><img src="${thumb}" /></span>`;
+        }
+
+        // 根据文件类型选图标和徽章
+        const { icon: fileIcon, badge: typeBadge } = getFileIconAndBadge(filePath);
+        const useIcon = !thumb;
+        const fileIconHtml = useIcon ? fileIcon : '';
+        const fileDesc = window.tagModule?.getDesc(filePath) || '';
+        const descHtml = fileDesc ? `<span class="file-desc">${escapeHtml(fileDesc)}</span>` : '';
+        // 标签可见性
+        const tagsHidden = isTagsHidden(safeId);
+        let tagsScrollerHtml = '';
+        if (!tagsHidden && tags.length > 0) {
+            const tagsContent = tags.map(tag =>
+                `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
+            ).join('');
+            tagsScrollerHtml = `<span class="file-tags-scroller" tabindex="-1"><span class="file-tags">${tagsContent}</span></span>`;
+        }
+        // 徽章：标签隐藏时才显示，且放在最右边
+        const badgeHtml = (!tagsHidden || !typeBadge) ? '' : `<span class="file-type-badge">${typeBadge}</span>`;
+        fileDiv.innerHTML = `${fileIconHtml ? '<span class="file-icon">' + fileIconHtml + '</span>' : ''}${thumbHtml}<span class="file-name">${stripExt(file)}</span>${descHtml}${tagsScrollerHtml}${badgeHtml}`;
+        // 鼠标滚轮滚动标签
+        if (tagsScrollerHtml) {
+            const scroller = fileDiv.querySelector('.file-tags-scroller');
+            if (scroller) {
+                scroller.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    scroller.scrollLeft += e.deltaY > 0 ? 20 : -20;
+                }, { passive: false });
+            }
+        }
+        // 文件选中时键盘左右键滚动标签
+        fileDiv._tagsScroller = tagsScrollerHtml ? fileDiv.querySelector('.file-tags-scroller') : null;
+        fileDiv.onclick = (e) => {
+            e.stopPropagation();
+            const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            // Ctrl+点击 = 切换多选
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                toggleSelectItem(filePath, 'file', fileDiv, safeId);
+                multiSelectState.lastClickedPath = filePath;
+                return;
+            }
+            // Shift+点击 = 范围选择
+            if (e.shiftKey) {
+                e.preventDefault();
+                selectRange(filePath, 'file', fileDiv, safeId, container);
+                return;
+            }
+            // 普通点击 = 清除多选，打开文件
+            if (multiSelectState.items.size > 0) {
+                clearSelection(safeId);
+            }
+            openProjectFile(safeId, filePath);
+            // 触发文件选中事件（移动端导航使用）
+            document.dispatchEvent(new CustomEvent('file-selected', { detail: { filename: filePath, safeId } }));
+        };
+
+        fileDiv.oncontextmenu = (e) => {
+            e.preventDefault();
+            showFileContextMenu(e, filePath, container);
+        };
+
+        // 文件可拖拽（移动）
+        fileDiv.draggable = true;
+        fileDiv.addEventListener('dragstart', (e) => {
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            treeDragData = { path: filePath, type: 'file', safeId: sid };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', filePath);
+            fileDiv.classList.add('dragging');
+            e.stopPropagation();
+        });
+        fileDiv.addEventListener('dragend', () => {
+            fileDiv.classList.remove('dragging');
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        // 文件也作为 drop 目标（移动到该文件所在文件夹）
+        fileDiv.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            if (treeDragData.path === filePath) return; // 不能拖到自己上
+            e.preventDefault();
+            e.stopPropagation();
+            fileDiv.classList.add('drag-over-file');
+        });
+        fileDiv.addEventListener('dragleave', () => {
+            fileDiv.classList.remove('drag-over-file');
+        });
+        fileDiv.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            e.preventDefault();
+            e.stopPropagation();
+            fileDiv.classList.remove('drag-over-file');
+
+            const sid = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            // 目标文件夹 = 该文件所在的文件夹
+            const targetFolder = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+            handleTreeDrop(treeDragData, targetFolder, sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+
+        container.appendChild(fileDiv);
+    }
+}
+
+// 处理文件树内拖拽移动
+async function handleTreeDrop(dragData, targetFolder, safeId, projectPath) {
+    weLog.info('filetree', '→ handleTreeDrop 开始', { sourcePath: dragData.path, type: dragData.type, targetFolder, safeId });
+    const sourcePath = dragData.path;
+    const name = sourcePath.split('/').pop();
+    const newPath = targetFolder ? `${targetFolder}/${name}` : name;
+
+    if (sourcePath === newPath) {
+        weLog.debug('filetree', 'handleTreeDrop: 源路径与目标路径相同，跳过', { sourcePath, newPath });
+        return;
+    }
+
+    if (dragData.type === 'file') {
+        const res = await weAPI.renameFile(projectPath, sourcePath, newPath);
+        if (res.success) {
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.file_moved') || '文件已移动');
+        } else {
+            showNotification((t('ui.move_failed') || '移动失败') + ': ' + (res.error || ''));
+        }
+    } else if (dragData.type === 'folder') {
+        weLog.info('filetree', 'handleTreeDrop: 走了文件夹移动分支', { sourcePath, newPath });
+        const res = await weAPI.renameFolder(projectPath, sourcePath, newPath);
+        if (res.success) {
+            // 关闭已打开的子文件（路径变化）
+            if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(sourcePath + '/')) {
+                tabs[safeId].currentFile = null;
+                if (quill) { quill.setText(''); }
+            }
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.folder_moved') || '文件夹已移动');
+        } else {
+            showNotification((t('ui.move_failed') || '移动失败') + ': ' + (res.error || ''));
+        }
+    }
+}
+
+function positionContextMenu(menu, e) {
+    weLog.debug('filetree', '→ positionContextMenu 开始', { x: e.clientX, y: e.clientY });
+    document.body.appendChild(menu);
+    const x = Math.min(e.clientX, window.innerWidth - menu.offsetWidth - 10);
+    const y = Math.min(e.clientY, window.innerHeight - menu.offsetHeight - 10);
+    menu.style.left = Math.max(0, x) + 'px';
+    menu.style.top = Math.max(0, y) + 'px';
+    const closeMenu = (ev) => {
+        if (!menu.contains(ev.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 10);
+}
+
+function showFileContextMenu(e, filePath, container) {
+    weLog.info('filetree', '→ showFileContextMenu 开始', { filePath });
+    const existing = document.getElementById('file-context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.id = 'file-context-menu';
+    menu.className = 'context-menu';
+
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    const projectPath = tabs[safeId]?.projectPath;
+    const fileName = filePath.split('/').pop();
+    const displayName = stripExt(fileName);
+    const dirPart = filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : '';
+
+    // "管理简介"：提示用户输入文件简介
+    const descItem = document.createElement('div');
+    descItem.className = 'context-item';
+    descItem.textContent = t('ui.manage_desc') || '管理简介';
+    descItem.onclick = () => { menu.remove(); openDescManager(filePath, container); };
+
+    const tagItem = document.createElement('div');
+    tagItem.className = 'context-item';
+    tagItem.textContent = t('ui.manage_tags') || '管理标签';
+    tagItem.onclick = () => { menu.remove(); openTagManager(filePath, container); };
+
+    const thumbItem = document.createElement('div');
+    thumbItem.className = 'context-item';
+    thumbItem.textContent = t('ui.manage_thumbnail') || '管理缩略图';
+    thumbItem.onclick = () => { menu.remove(); openThumbnailManager(filePath, container); };
+
+    const renameItem = document.createElement('div');
+    renameItem.className = 'context-item';
+    renameItem.textContent = t('ui.rename') || '重命名';
+    renameItem.onclick = async () => {
+        menu.remove();
+        const result = await showPrompt(t('ui.rename') || '重命名', displayName);
+        if (!result || !result.value) return;
+        const newName = result.value.trim();
+        if (!newName || newName === displayName) return;
+        // 节点图文件保持 .node.json 完整后缀
+        let newFileName;
+        if (fileName.endsWith('.node.json')) {
+            newFileName = newName + '.node.json';
+        } else {
+            newFileName = newName + (fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.')) : '');
+        }
+        const newPath = dirPart ? dirPart + '/' + newFileName : newFileName;
+        const res = await weAPI.renameFile(projectPath, filePath, newPath);
+        if (res.success) {
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.renamed') || '已重命名');
+        } else {
+            showNotification((t('ui.rename_failed') || '重命名失败') + ': ' + (res.error || ''));
+        }
+    };
+
+    const deleteItem = document.createElement('div');
+    deleteItem.className = 'context-item context-item-danger';
+    deleteItem.textContent = t('ui.delete') || '删除';
+    deleteItem.onclick = async () => {
+        menu.remove();
+        const ok = confirm((t('ui.delete_confirm') || '确定删除') + ' "' + displayName + '" ?');
+        if (!ok) return;
+        const res = await weAPI.deleteFile(projectPath, filePath);
+        if (res.success) {
+            // 若当前已打开该文件，关闭并切回目录独占
+            if (tabs[safeId].currentFile === filePath) {
+                if (window.closeProjectFile) window.closeProjectFile(safeId);
+            }
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.deleted') || '已删除');
+        } else {
+            showNotification((t('ui.delete_failed') || '删除失败') + ': ' + (res.error || ''));
+        }
+    };
+
+    // "关闭文件"：仅当右键的是当前已打开文件时显示，用于从完整 TA 回目录独占
+    const isCurrentOpen = tabs[safeId]?.currentFile === filePath;
+    let closeItem = null;
+    if (isCurrentOpen) {
+        closeItem = document.createElement('div');
+        closeItem.className = 'context-item';
+        closeItem.textContent = t('ui.close_file') || '关闭文件';
+        closeItem.onclick = () => {
+            menu.remove();
+            if (window.closeProjectFile) window.closeProjectFile(safeId);
+        };
+    }
+
+    // "新标签页打开"：所有文件类型都支持（富文本 / Markdown / 节点图）
+    const standaloneTabId = typeof getOpenFileTabId === 'function' ? getOpenFileTabId(projectPath, filePath) : null;
+    const isInOtherTab = standaloneTabId && standaloneTabId !== safeId;  // 在别的独立标签打开
+    const isInThisProject = standaloneTabId === safeId;                   // 在本项目页打开
+
+    const openStandaloneItem = document.createElement('div');
+    openStandaloneItem.className = 'context-item';
+    if (isInThisProject) {
+        openStandaloneItem.textContent = t('ui.open_in_new_tab') || '在新标签页打开';
+    } else if (isInOtherTab) {
+        openStandaloneItem.textContent = (t('ui.file_already_open') || '已在新标签页打开') + ' → ' + (t('ui.jump_to') || '跳转');
+    } else {
+        openStandaloneItem.textContent = t('ui.open_in_new_tab') || '在新标签页打开';
+    }
+    openStandaloneItem.onclick = async () => {
+        menu.remove();
+        if (isInThisProject) {
+            // 文件在项目页打开中 → 先注销 openFileMap（否则 openFileInNewTab 冲突检测会误报）
+            if (typeof unregisterOpenFile === 'function') {
+                unregisterOpenFile(projectPath, filePath);
+            }
+            // 然后关闭项目页的编辑器
+            if (window.closeProjectFile) window.closeProjectFile(safeId);
+        }
+        if (typeof openFileInNewTab === 'function') {
+            await openFileInNewTab(projectPath, filePath, tabs[safeId]?.projectMode);
+        } else {
+            // 降级：节点图复用旧路径
+            if (isNodeGraph && typeof createNodeGraphTab === 'function') {
+                const baseName = fileName.replace(/\.node\.json$/, '');
+                const tabId = createNodeGraphTab(baseName, baseName, projectPath);
+                if (tabId) switchTab(tabId);
+            } else {
+                weLog.warn('filetree', 'openFileInNewTab 未加载');
+            }
+        }
+    };
+    menu.appendChild(openStandaloneItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
+
+    menu.appendChild(descItem);
+    menu.appendChild(tagItem);
+    menu.appendChild(thumbItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
+    menu.appendChild(renameItem);
+    menu.appendChild(deleteItem);
+    if (closeItem) {
+        menu.appendChild(document.createElement('div')).className = 'context-sep';
+        menu.appendChild(closeItem);
+    }
+
+    positionContextMenu(menu, e);
+}
+
+function openDescManager(filePath, container) {
+    weLog.info('filetree', '→ openDescManager 开始', { filePath });
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    const displayName = stripExt(filePath.split('/').pop());
+    const currentDesc = window.tagModule?.getDesc(filePath) || '';
+
+    // 创建自定义简介编辑对话框（支持多行）
+    const overlay = document.createElement('div');
+    overlay.className = 'prompt-overlay';
+    overlay.innerHTML = `<div class="prompt-box" style="max-width:400px;">
+        <h3 class="prompt-title">${t('ui.manage_desc') || '管理简介'}</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px 0;">${escapeHtml(displayName)}</p>
+        <textarea id="desc-input" class="prompt-input" style="min-height:80px;resize:vertical;font-family:inherit;padding:8px 12px;" placeholder="${t('ui.desc_placeholder') || '简短描述该文件...'}">${escapeHtml(currentDesc)}</textarea>
+        <div class="prompt-actions">
+            <button id="desc-cancel" class="prompt-btn prompt-btn-cancel">${t('ui.cancel')}</button>
+            <button id="desc-clear" class="prompt-btn prompt-btn-cancel" style="margin-right:auto;">${t('ui.clear') || '清除'}</button>
+            <button id="desc-save" class="prompt-btn prompt-btn-ok">${t('ui.save')}</button>
+        </div>
+    </div>`;
+    document.body.appendChild(overlay);
+
+    const textarea = overlay.querySelector('#desc-input');
+    textarea.focus();
+
+    overlay.querySelector('#desc-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('#desc-clear').onclick = async () => {
+        await window.tagModule.setDesc(filePath, '');
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        overlay.remove();
+        showNotification(t('ui.desc_cleared') || '简介已清除');
+    };
+    overlay.querySelector('#desc-save').onclick = async () => {
+        const newDesc = textarea.value.trim();
+        await window.tagModule.setDesc(filePath, newDesc);
+        refreshFileTree(safeId, tabs[safeId].fileList);
+        overlay.remove();
+        showNotification(newDesc ? (t('ui.desc_updated') || '简介已更新') : (t('ui.desc_cleared') || '简介已清除'));
+    };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') overlay.remove();
+        if (e.key === 'Enter' && e.ctrlKey) {
+            overlay.querySelector('#desc-save').click();
+        }
+    });
+}
+
+function showFolderContextMenu(e, folderPath, container) {
+    weLog.info('filetree', '→ showFolderContextMenu 开始', { folderPath });
+    const existing = document.getElementById('file-context-menu');
+    if (existing) existing.remove();
+
+    const menu = document.createElement('div');
+    menu.id = 'file-context-menu';
+    menu.className = 'context-menu';
+
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    const projectPath = tabs[safeId]?.projectPath;
+    const folderName = folderPath.split('/').pop();
+
+    // "导入文件"：从系统文件选择器导入到该文件夹
+    const importItem = document.createElement('div');
+    importItem.className = 'context-item';
+    importItem.textContent = t('ui.import_files') || '导入文件';
+    importItem.onclick = () => {
+        menu.remove();
+        triggerImportFileDialog(safeId, projectPath, folderPath);
+    };
+
+    const tagItem = document.createElement('div');
+    tagItem.className = 'context-item';
+    tagItem.textContent = t('ui.manage_tags') || '管理标签';
+    tagItem.onclick = () => { menu.remove(); openTagManager(folderPath, container); };
+
+    const renameItem = document.createElement('div');
+    renameItem.className = 'context-item';
+    renameItem.textContent = t('ui.rename') || '重命名';
+    renameItem.onclick = async () => {
+        menu.remove();
+        const result = await showPrompt(t('ui.rename') || '重命名', folderName);
+        if (!result || !result.value) return;
+        const newName = result.value.trim();
+        if (!newName || newName === folderName) return;
+        const newFolderPath = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) + '/' + newName : newName;
+        const res = await weAPI.renameFolder(projectPath, folderPath, newFolderPath);
+        if (res.success) {
+            // 关闭已打开的子文件（因为路径变化）
+            if (tabs[safeId].currentFile && (tabs[safeId].currentFile === folderPath || tabs[safeId].currentFile.startsWith(folderPath + '/'))) {
+                tabs[safeId].currentFile = null;
+                if (quill) { quill.setText(''); }
+            }
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.renamed') || '已重命名');
+        } else {
+            showNotification((t('ui.rename_failed') || '重命名失败') + ': ' + (res.error || ''));
+        }
+    };
+
+    const deleteItem = document.createElement('div');
+    deleteItem.className = 'context-item context-item-danger';
+    deleteItem.textContent = t('ui.delete') || '删除';
+    deleteItem.onclick = async () => {
+        menu.remove();
+        const ok = confirm((t('ui.delete_confirm') || '确定删除文件夹') + ' "' + folderName + '" ' + (t('ui.delete_warning') || '及其所有内容？') + '');
+        if (!ok) return;
+        const res = await weAPI.deleteFolder(projectPath, folderPath);
+        if (res.success) {
+            if (tabs[safeId].currentFile && tabs[safeId].currentFile.startsWith(folderPath + '/')) {
+                tabs[safeId].currentFile = null;
+                if (quill) { quill.setText(''); }
+            }
+            tabs[safeId].fileList = res.fileList;
+            refreshFileTree(safeId, res.fileList);
+            showNotification(t('ui.deleted') || '已删除');
+        } else {
+            showNotification((t('ui.delete_failed') || '删除失败') + ': ' + (res.error || ''));
+        }
+    };
+
+    menu.appendChild(importItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
+    menu.appendChild(tagItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
+    menu.appendChild(renameItem);
+    menu.appendChild(deleteItem);
+
+    positionContextMenu(menu, e);
+}
+
+// ====== 文件导入 ======
+function triggerImportFileDialog(safeId, projectPath, targetFolder) {
+    // 使用全局暴露的导入函数
+    if (window.importFilesFromExternal) {
+        window.importFilesFromExternal(safeId, projectPath, targetFolder);
+    } else {
+        // 后备方案：直接创建 file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.multiple = true;
+        fileInput.style.display = 'none';
+        
+        fileInput.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            showNotification(`正在导入 ${files.length} 个文件...`, 3000);
+            
+            let importedCount = 0;
+            let failedCount = 0;
+            
+            for (const file of files) {
+                try {
+                    const targetPath = targetFolder ? `${targetFolder}/${file.name}` : file.name;
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    const isMediaFile = ['mp4','webm','ogg','mov','avi','mp3','wav','flac','aac','m4'].includes(ext);
+                    const isImageFile = ['png','jpg','jpeg','gif','bmp','webp','ico','tiff','tif'].includes(ext);
+                    
+                    if (isMediaFile) {
+                        const mediaFilename = `__media_${file.name}`;
+                        const dataUrl = await readFileAsDataURL(file);
+                        const mimeType = file.type || (ext.startsWith('mp3') ? 'audio/mpeg' : 'video/mp4');
+                        const res = await weAPI.saveMediaFile(projectPath, mediaFilename, dataUrl, mimeType);
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    } else if (isImageFile) {
+                        const imgFilename = `__img_${file.name}`;
+                        const dataUrl = await readFileAsDataURL(file);
+                        const res = await weAPI.saveMediaFile(projectPath, imgFilename, dataUrl, file.type || 'image/png');
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    } else {
+                        const content = await readFileAsText(file);
+                        const res = await weAPI.saveFile(projectPath, targetPath, content);
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    }
+                } catch (err) {
+                    console.error('导入文件失败:', err);
+                    failedCount++;
+                }
+            }
+            
+            if (importedCount > 0) {
+                const updated = await weAPI.listFiles(projectPath);
+                if (updated.success) {
+                    tabs[safeId].fileList = updated.files;
+                    refreshFileTree(safeId, updated.files);
+                }
+            }
+            
+            showNotification(`导入完成: 成功 ${importedCount} 个${failedCount > 0 ? `, 失败 ${failedCount} 个` : ''}`, 3000);
+        };
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        setTimeout(() => {
+            if (fileInput.parentNode) fileInput.parentNode.removeChild(fileInput);
+        }, 10000);
+    }
+}
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+    });
+}
+
+function openTagManager(filePath, container) {
+    const existing = document.getElementById('tag-manager-panel');
+    if (existing) existing.remove();
+
+    const panel = document.createElement('div');
+    panel.id = 'tag-manager-panel';
+    panel.className = 'tag-manager-panel';
+
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    const fileDiv = container.querySelector(`[data-file="${filePath.replace(/"/g, '\\"')}"]`);
+
+    const header = document.createElement('div');
+    header.className = 'tag-manager-header';
+    header.innerHTML = `<span class="tag-manager-title">${t('ui.manage_tags') || 'Manage Tags'}: ${stripExt(filePath.split('/').pop())}</span><button class="close-btn">✕</button>`;
+    panel.appendChild(header);
+
+    const tagsContainer = document.createElement('div');
+    tagsContainer.className = 'tags-container';
+    const tags = window.tagModule?.getTagsForFile(filePath) || [];
+    tags.forEach(tag => {
+        const tagEl = document.createElement('span');
+        tagEl.className = 'tag-item';
+        tagEl.style.backgroundColor = tag.color;
+        tagEl.innerHTML = `<span class="tag-emoji">${tag.emoji || ''}</span><span class="tag-label">${tag.label}</span><span class="tag-remove">✕</span>`;
+        tagEl.querySelector('.tag-remove').onclick = async () => {
+            await window.tagModule.removeTag(filePath, tag.id);
+            refreshFileTree(safeId, tabs[safeId].fileList);
+            panel.remove();
+        };
+        tagsContainer.appendChild(tagEl);
+    });
+    panel.appendChild(tagsContainer);
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'tag-add-large';
+    addBtn.textContent = '+ ' + (t('ui.add_tag') || 'Add Tag');
+    addBtn.onclick = () => {
+        window.tagModule.openTagPicker(filePath, () => {
+            refreshFileTree(safeId, tabs[safeId].fileList);
+            panel.remove();
+        });
+        panel.remove();
+    };
+    panel.appendChild(addBtn);
+
+    header.querySelector('.close-btn').onclick = () => panel.remove();
+
+    if (fileDiv) {
+        const rect = fileDiv.getBoundingClientRect();
+        panel.style.position = 'fixed';
+        let left = rect.right + 10;
+        let top = rect.top;
+        if (left + 240 > window.innerWidth) left = rect.left - 250;
+        if (left < 0) left = 10;
+        if (top + 200 > window.innerHeight) top = window.innerHeight - 210;
+        if (top < 0) top = 10;
+        panel.style.left = left + 'px';
+        panel.style.top = top + 'px';
+    } else {
+        panel.style.position = 'fixed';
+        panel.style.right = '20px';
+        panel.style.top = '80px';
+    }
+
+    document.body.appendChild(panel);
+}
+
+function openThumbnailManager(filePath, container) {
+    weLog.info('filetree', '→ openThumbnailManager 开始', { filePath });
+    const safeId = container.closest('[id^="file-tree-"]').id.replace('file-tree-', '');
+    window.tagModule.openThumbnailPicker(filePath, () => {
+        refreshFileTree(safeId, tabs[safeId].fileList);
+    });
+}
+
+function showFileTreeLoading(safeId, message = '正在加载项目...') {
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (!treeContainer) return;
+    
+    treeContainer.innerHTML = `
+        <div class="filetree-loading">
+            <div class="ft-loading-spinner"></div>
+            <div class="ft-loading-text">${message}</div>
+        </div>
+    `;
+}
+
+// 外部调用：根据文件路径在文件树里高亮（用于打开文件后同步选中状态）
+function highlightFileInTree(safeId, filePath) {
+    const container = document.getElementById(`file-tree-${safeId}`);
+    if (!container) return;
+    // 先清除旧选中
+    if (multiSelectState.safeId === safeId) clearSelection(safeId);
+    container.querySelectorAll('.tree-file.selected, .tree-folder.selected, .tree-file.active, .tree-folder.active').forEach(el => {
+        el.classList.remove('selected', 'active');
+    });
+    // 找文件项
+    const fileEl = container.querySelector(`.tree-file[data-file="${CSS.escape(filePath)}"]`);
+    if (fileEl) {
+        fileEl.classList.add('selected');
+        // 滚动到可见
+        fileEl.scrollIntoView({ block: 'nearest' });
+    }
+}
+window.highlightFileInTree = highlightFileInTree;
+
+function refreshFileTree(safeId, files) {
+    weLog.info('filetree', '→ refreshFileTree 开始', { safeId, fileCount: files ? files.length : 0 });
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (!treeContainer) {
+        weLog.warn('filetree', 'refreshFileTree: treeContainer 元素不存在', { safeId });
+        return;
+    }
+    treeContainer.innerHTML = '';
+    // 清除多选状态
+    if (multiSelectState.safeId === safeId) clearSelection(safeId);
+    const tree = buildFileTree(files);
+    renderTreeNodes(treeContainer, tree);
+
+    // 点击空白区域清除选择
+    treeContainer.onclick = (e) => {
+        if (e.target === treeContainer) {
+            clearSelection(safeId);
+        }
+    };
+
+    // Ctrl+A 全选（在文件树内）
+    treeContainer.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            e.preventDefault();
+            selectAllVisible(safeId, treeContainer);
+        }
+        if (e.key === 'Escape') {
+            clearSelection(safeId);
+        }
+        // 左右箭头滚动选中文件的标签
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const sel = treeContainer.querySelector('.tree-file.selected, .tree-file.active');
+            if (sel && sel._tagsScroller) {
+                e.preventDefault();
+                const step = e.key === 'ArrowRight' ? 40 : -40;
+                sel._tagsScroller.scrollLeft += step;
+            }
+        }
+    });
+
+    // 根容器作为 drop 目标（拖到根目录），只绑定一次
+    if (!rootDropBound.has(treeContainer)) {
+        rootDropBound.add(treeContainer);
+        treeContainer.addEventListener('dragover', (e) => {
+            if (!treeDragData.path) return;
+            // 如果鼠标在文件夹 header 上，由 header 处理
+            if (e.target.closest('.tree-folder-header')) return;
+            const sid = treeContainer.id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        treeContainer.addEventListener('drop', (e) => {
+            if (!treeDragData.path) return;
+            if (e.target.closest('.tree-folder-header')) return;
+            const sid = treeContainer.id.replace('file-tree-', '');
+            if (treeDragData.safeId !== sid) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const project = tabs[sid];
+            if (!project) return;
+
+            handleTreeDrop(treeDragData, '', sid, project.projectPath);
+            treeDragData = { path: null, type: null, safeId: null };
+        });
+    }
+}
+
+// 排序切换
+function setupSortToggle(safeId) {
+    const btn = document.getElementById(`sort-toggle-${safeId}`);
+    if (!btn) return;
+
+    // 同步当前排序状态到按钮图标
+    updateSortButtonIcon(btn);
+
+    btn.addEventListener('click', () => {
+        fileSortOrder = fileSortOrder === 'asc' ? 'desc' : 'asc';
+        updateSortButtonIcon(btn);
+
+        // 刷新所有项目的文件树
+        for (const sid in tabs) {
+            if (tabs[sid].fileList) {
+                refreshFileTree(sid, tabs[sid].fileList);
+                // 同步其他按钮图标
+                const otherBtn = document.getElementById(`sort-toggle-${sid}`);
+                if (otherBtn && otherBtn !== btn) updateSortButtonIcon(otherBtn);
+            }
+        }
+    });
+}
+
+function updateSortButtonIcon(btn) {
+    weLog.debug('filetree', '→ updateSortButtonIcon 开始', { fileSortOrder });
+    if (fileSortOrder === 'asc') {
+        btn.title = t('ui.sort_asc') || '升序（点击切换为降序）';
+        btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 4l5-2 5 2M5 6v6m3-6v6m3-6v6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    } else {
+        btn.title = t('ui.sort_desc') || '降序（点击切换为升序）';
+        btn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 12l5 2 5-2M5 10V4m3 6V4m3 6V4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+}
+
+// 标签显示切换
+function setupTagToggle(safeId) {
+    const btn = document.getElementById(`tag-toggle-${safeId}`);
+    if (!btn) return;
+
+    btn.addEventListener('click', () => {
+        tagVisibility[safeId] = !tagVisibility[safeId];
+        const hidden = tagVisibility[safeId];
+        btn.classList.toggle('active', hidden);
+        btn.title = hidden ? '显示标签' : '隐藏标签';
+        // 刷新文件树
+        refreshFileTree(safeId, tabs[safeId]?.fileList || []);
+    });
+}
+
+// ====== 搜索功能 ======
+const searchState = {};
+
+// 通配符/模糊匹配
+function matchQuery(text, query) {
+    if (!query) return { match: true, score: 0 };
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+
+    // 通配符模式
+    if (lowerQuery.includes('*') || lowerQuery.includes('?')) {
+        const pattern = lowerQuery
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '.*')
+            .replace(/\?/g, '.');
+        const regex = new RegExp(pattern);
+        return regex.test(lowerText) ? { match: true, score: 50 } : { match: false, score: 0 };
+    }
+
+    // 精确连续匹配（优先）
+    const idx = lowerText.indexOf(lowerQuery);
+    if (idx !== -1) return { match: true, score: 100 - Math.min(idx, 50) };
+
+    // 模糊匹配：query 每个字符按顺序出现在 text 中
+    let qi = 0, lastPos = -1, gapBonus = 0;
+    for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
+        if (lowerText[i] === lowerQuery[qi]) {
+            if (lastPos >= 0 && i - lastPos > 1) gapBonus -= (i - lastPos - 1);
+            lastPos = i;
+            qi++;
+        }
+    }
+    if (qi === lowerQuery.length) {
+        return { match: true, score: 30 + gapBonus };
+    }
+    return { match: false, score: 0 };
+}
+
+function setupSearch(safeId) {
+    weLog.info('filetree', '→ setupSearch 开始', { safeId });
+    const input = document.getElementById(`search-input-${safeId}`);
+    const clearBtn = document.getElementById(`search-clear-${safeId}`);
+    const filters = document.getElementById(`search-filters-${safeId}`);
+    const toggleBtn = document.getElementById(`search-toggle-${safeId}`);
+    const searchBody = document.getElementById(`search-body-${safeId}`);
+    if (!input || !filters) {
+        weLog.warn('filetree', 'setupSearch: input 或 filters 元素不存在', { safeId, hasInput: !!input, hasFilters: !!filters });
+        return;
+    }
+
+    searchState[safeId] = { query: '', types: new Set(['file', 'folder', 'tag', 'content']), contentCache: null };
+
+    // 默认折叠搜索栏
+    if (toggleBtn && searchBody) {
+        searchBody.style.display = 'none';
+        toggleBtn.classList.add('collapsed');
+        toggleBtn.title = t('ui.search_expand') || '展开搜索';
+    }
+
+    // 折叠/展开整个搜索框
+    if (toggleBtn && searchBody) {
+        toggleBtn.addEventListener('click', () => {
+            if (searchBody.style.display === 'none') {
+                searchBody.style.display = '';
+                toggleBtn.classList.remove('collapsed');
+                toggleBtn.title = t('ui.search_placeholder') || '搜索...';
+            } else {
+                searchBody.style.display = 'none';
+                toggleBtn.classList.add('collapsed');
+                toggleBtn.title = t('ui.search_expand') || '展开搜索';
+                // 清除搜索状态
+                input.value = '';
+                searchState[safeId].query = '';
+                clearBtn.style.display = 'none';
+                executeSearch(safeId);
+            }
+        });
+    }
+
+    let debounceTimer = null;
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            searchState[safeId].query = input.value.trim();
+            clearBtn.style.display = input.value ? 'block' : 'none';
+            executeSearch(safeId);
+        }, 200);
+    });
+
+    clearBtn.addEventListener('click', () => {
+        input.value = '';
+        searchState[safeId].query = '';
+        clearBtn.style.display = 'none';
+        executeSearch(safeId);
+        input.focus();
+    });
+
+    // toggle 按钮
+    filters.querySelectorAll('.search-filter-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.dataset.type;
+            if (btn.classList.contains('active')) {
+                btn.classList.remove('active');
+                searchState[safeId].types.delete(type);
+            } else {
+                btn.classList.add('active');
+                searchState[safeId].types.add(type);
+            }
+            executeSearch(safeId);
+        });
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            input.value = '';
+            searchState[safeId].query = '';
+            clearBtn.style.display = 'none';
+            executeSearch(safeId);
+        }
+    });
+}
+
+async function executeSearch(safeId) {
+    weLog.debug('filetree', '→ executeSearch 开始', { safeId, query: searchState[safeId] ? searchState[safeId].query : null });
+    const state = searchState[safeId];
+    if (!state) {
+        weLog.warn('filetree', 'executeSearch: searchState 不存在', { safeId });
+        return;
+    }
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (!treeContainer) {
+        weLog.warn('filetree', 'executeSearch: treeContainer 元素不存在', { safeId });
+        return;
+    }
+
+    if (!state.query) {
+        weLog.debug('filetree', 'executeSearch: 查询为空，恢复默认文件树');
+        treeContainer.classList.remove('search-mode');
+        treeContainer.innerHTML = '';
+        const tree = buildFileTree(tabs[safeId].fileList);
+        renderTreeNodes(treeContainer, tree);
+        return;
+    }
+
+    const query = state.query;
+    const results = [];
+    const types = state.types;
+    const noFilter = types.size === 0; // 都不选 = 全部
+
+    // 搜索文件名和文件夹名
+    if (noFilter || types.has('file') || types.has('folder')) {
+        const seenFolders = new Set();
+        for (const file of tabs[safeId].fileList) {
+            if (shouldSkipPath(file)) continue;
+            const parts = file.split('/');
+            const fileName = parts[parts.length - 1];
+            const displayName = stripExt(fileName);
+
+            // 文件夹名匹配
+            for (let i = 0; i < parts.length - 1; i++) {
+                const folder = parts[i];
+                if (seenFolders.has(folder)) continue;
+                const m = matchQuery(folder, query);
+                if (m.match) {
+                    seenFolders.add(folder);
+                    if (noFilter || types.has('folder')) {
+                        results.push({ type: 'folder', name: folder, path: parts.slice(0, i + 1).join('/'), matchText: folder, score: m.score });
+                    }
+                }
+            }
+
+            // 文件名匹配
+            const mDisplay = matchQuery(displayName, query);
+            const mFull = matchQuery(fileName, query);
+            const bestScore = Math.max(mDisplay.score, mFull.score);
+            if (mDisplay.match || mFull.match) {
+                if (noFilter || types.has('file')) {
+                    results.push({ type: 'file', name: displayName, path: file, matchText: displayName, score: bestScore });
+                }
+            }
+        }
+    }
+
+    // 搜索标签
+    if (noFilter || types.has('tag')) {
+        const tags = window.tagModule?.metadata?.tags || {};
+        for (const [filePath, fileTags] of Object.entries(tags)) {
+            for (const tag of fileTags) {
+                const label = tag.label || '';
+                const emoji = tag.emoji || '';
+                const combined = label + ' ' + emoji;
+                const mLabel = matchQuery(label, query);
+                const mEmoji = matchQuery(emoji, query);
+                const mCombined = matchQuery(combined, query);
+                const bestScore = Math.max(mLabel.score, mEmoji.score, mCombined.score);
+                if (mLabel.match || mEmoji.match || mCombined.match) {
+                    const parts = filePath.split('/');
+                    const displayName = stripExt(parts[parts.length - 1]);
+                    results.push({
+                        type: 'tag', name: displayName, path: filePath,
+                        matchText: emoji + ' ' + label, score: bestScore,
+                        tagColor: tag.color, tagEmoji: emoji, tagLabel: label
+                    });
+                }
+            }
+        }
+    }
+
+    // 搜索文件内容
+    if (noFilter || types.has('content')) {
+        const project = tabs[safeId];
+        if (project) {
+            if (!state.contentCache) {
+                state.contentCache = {};
+                const promises = tabs[safeId].fileList
+                    .filter(f => {
+                        if (shouldSkipPath(f)) return false;
+                        // 只搜索文本类文件内容：SUPPORTED_TEXT_EXTENSIONS + 节点图 JSON
+                        const fn = f.split('/').pop();
+                        const cn = getCleanName(fn);
+                        if (cn.endsWith('.node.json')) return true;
+                        const ext = cn.lastIndexOf('.') >= 0 ? cn.substring(cn.lastIndexOf('.')).toLowerCase() : '';
+                        return SUPPORTED_TEXT_EXTENSIONS.includes(ext) || !ext;
+                    })
+                    .map(async (file) => {
+                        const res = await weAPI.readFile(project.projectPath, file);
+                        if (res.success) {
+                            let text = res.content
+                                .replace(/<[^>]+>/g, ' ')          // 清 HTML 标签
+                                .replace(/&nbsp;/g, ' ')            // 清实体
+                                .replace(/[{}[\]]/g, ' ')           // 清 JSON 大括号方括号
+                                .replace(/"/g, ' ')                 // 清双引号
+                                .replace(/^[\s,]+|[\s,]+$/g, '')    // 清首尾多余逗号空格
+                                .replace(/[:,]/g, ' ')              // 清冒号逗号
+                                .replace(/\s+/g, ' ');              // 压缩多余空白
+                            state.contentCache[file] = text;
+                        }
+                    });
+                await Promise.all(promises);
+            }
+
+            for (const [filePath, text] of Object.entries(state.contentCache)) {
+                const m = matchQuery(text, query);
+                if (m.match) {
+                    const parts = filePath.split('/');
+                    const displayName = stripExt(parts[parts.length - 1]);
+                    // 找第一个匹配位置用于摘要
+                    const lowerText = text.toLowerCase();
+                    const lowerQuery = query.toLowerCase();
+                    let idx = lowerText.indexOf(lowerQuery);
+                    if (idx === -1) {
+                        // 模糊匹配：找第一个字符位置
+                        let qi = 0;
+                        for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
+                            if (lowerText[i] === lowerQuery[qi]) { qi++; if (qi === lowerQuery.length) idx = i; }
+                        }
+                    }
+                    if (idx === -1) idx = 0;
+                    const snippetStart = Math.max(0, idx - 20);
+                    const snippetEnd = Math.min(text.length, idx + query.length + 30);
+                    let snippet = text.substring(snippetStart, snippetEnd).replace(/\s+/g, ' ').trim();
+                    if (snippetStart > 0) snippet = '...' + snippet;
+                    if (snippetEnd < text.length) snippet = snippet + '...';
+                    results.push({ type: 'content', name: displayName, path: filePath, matchText: snippet, score: m.score });
+                }
+            }
+        }
+    }
+
+    treeContainer.classList.add('search-mode');
+    treeContainer.innerHTML = '';
+
+    if (results.length === 0) {
+        weLog.info('filetree', 'executeSearch: 无搜索结果', { query });
+        treeContainer.innerHTML = `<div class="search-empty">${t('ui.search_no_results') || 'No results found'}</div>`;
+        return;
+    }
+
+    // 排序：先按分数，再按类型
+    const typeOrder = { file: 0, folder: 1, tag: 2, content: 3 };
+    results.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return typeOrder[a.type] - typeOrder[b.type] || a.name.localeCompare(b.name);
+    });
+
+    const typeIcons = {
+        file: '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M3 2h7l3 3v9H3V2zm7 0v3h3"/></svg>',
+        folder: '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M2 4h4l1 1h7v8H2V4z"/></svg>',
+        tag: '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M2 2h6l6 6-6 6-6-6V2z"/></svg>',
+        content: '<svg viewBox="0 0 16 16" width="14" height="14"><path fill="none" stroke="currentColor" stroke-width="1.5" d="M3 3h10v10H3zM5 6h6M5 9h6M5 12h4"/></svg>'
+    };
+    const typeLabels = {
+        file: t('ui.search_file') || 'File',
+        folder: t('ui.search_folder') || 'Folder',
+        tag: t('ui.search_tag') || 'Tag',
+        content: t('ui.search_content') || 'Content'
+    };
+
+    const resultList = document.createElement('div');
+    resultList.className = 'search-results';
+
+    // 结果计数
+    const countBar = document.createElement('div');
+    countBar.className = 'search-result-count';
+    countBar.textContent = `${results.length} ${t('ui.search_results') || 'results'}`;
+    treeContainer.appendChild(countBar);
+
+    for (const r of results) {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+
+        const left = document.createElement('div');
+        left.className = 'search-result-left';
+        left.innerHTML = `<span class="search-result-icon">${typeIcons[r.type]}</span>`;
+
+        const info = document.createElement('div');
+        info.className = 'search-result-info';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'search-result-name';
+        nameEl.textContent = r.name;
+
+        const matchEl = document.createElement('div');
+        matchEl.className = 'search-result-match';
+        if (r.type === 'tag') {
+            const hidden = isTagsHidden(safeId);
+            matchEl.innerHTML = `<span class="mini-tag${hidden ? ' tag-hidden-ref' : ''}" style="background-color:${r.tagColor}">${r.tagEmoji || ''} ${r.tagLabel || ''}</span>`;
+        } else if (r.type === 'content') {
+            matchEl.textContent = r.matchText;
+            matchEl.classList.add('content-snippet');
+        } else {
+            matchEl.textContent = r.path;
+            matchEl.classList.add('result-path');
+        }
+
+        info.appendChild(nameEl);
+        info.appendChild(matchEl);
+        left.appendChild(info);
+
+        const badge = document.createElement('span');
+        badge.className = 'search-result-badge search-badge-' + r.type;
+        badge.textContent = typeLabels[r.type];
+
+        item.appendChild(left);
+        item.appendChild(badge);
+
+        item.addEventListener('click', () => {
+            if (r.type === 'folder') {
+                // 展开到该文件夹
+                const tree = buildFileTree(tabs[safeId].fileList);
+                treeContainer.innerHTML = '';
+                treeContainer.classList.remove('search-mode');
+                renderTreeNodes(treeContainer, tree);
+                // 展开对应文件夹
+                expandFolderPath(treeContainer, r.path);
+            } else {
+                // 打开文件
+                openProjectFile(safeId, r.path);
+                // 清除搜索
+                const input = document.getElementById(`search-input-${safeId}`);
+                if (input) { input.value = ''; searchState[safeId].query = ''; }
+                const clearBtn = document.getElementById(`search-clear-${safeId}`);
+                if (clearBtn) clearBtn.style.display = 'none';
+                treeContainer.classList.remove('search-mode');
+                treeContainer.innerHTML = '';
+                const tree = buildFileTree(tabs[safeId].fileList);
+                renderTreeNodes(treeContainer, tree);
+            }
+        });
+
+        item.addEventListener('mouseenter', () => item.classList.add('hover'));
+        item.addEventListener('mouseleave', () => item.classList.remove('hover'));
+
+        resultList.appendChild(item);
+    }
+
+    treeContainer.appendChild(resultList);
+}
+
+function expandFolderPath(container, folderPath) {
+    weLog.debug('filetree', '→ expandFolderPath 开始', { folderPath });
+    const parts = folderPath.split('/');
+    let current = container;
+    for (const part of parts) {
+        const folders = current.querySelectorAll(':scope > .tree-folder');
+        for (const f of folders) {
+            const name = f.querySelector('.folder-name')?.textContent;
+            if (name === part) {
+                const content = f.querySelector('.tree-folder-content');
+                const arrow = f.querySelector('.tree-arrow');
+                if (content && content.style.display === 'none') {
+                    content.style.display = 'block';
+                    if (arrow) arrow.innerHTML = ARROW_EXPANDED;
+                }
+                current = content;
+                break;
+            }
+        }
+    }
+}
+

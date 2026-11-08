@@ -1,0 +1,630 @@
+/* Quill 工具栏/编辑器默认可见；可通过 JS 切换显示 */
+#quill-toolbar {
+    display: flex;
+    visibility: visible;
+}
+#quill-editor {
+    display: flex;
+    visibility: visible;
+}
+
+/* ========== Quill 卡片化 Blot 样式 ========== */
+/* 图片卡片 */
+.ql-image-card {
+    background: var(--bg-main, #1e1e1e);
+    border: 1px solid var(--border, #3c3c3c);
+    border-radius: var(--radius-md, 8px);
+    padding: 12px;
+    margin: 8px 0;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    width: auto;
+    min-width: 60px;
+    transition: border-color 0.2s;
+    user-select: none;
+}
+.ql-image-card:hover {
+    border-color: var(--accent, #0078d4);
+}
+.ql-image-card.ql-image-card-selected {
+    border-color: var(--accent, #0078d4);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0, 120, 212, 0.3));
+}
+
+/* 图片外框容器 */
+.ql-image-card-wrapper {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+    min-width: 40px;
+    min-height: 40px;
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: var(--radius-sm, 4px);
+    overflow: hidden;
+    align-self: center;
+    aspect-ratio: auto;
+}
+.ql-image-card-wrapper img {
+    border-radius: var(--radius-sm, 4px);
+    display: block;
+}
+
+/* 缩放手柄（四角） */
+.ql-image-resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border: 2px solid var(--accent, #0078d4);
+    border-radius: 2px;
+    z-index: 10;
+    display: none;
+    cursor: nwse-resize;
+}
+.ql-image-card-selected .ql-image-resize-handle {
+    display: block;
+}
+.ql-image-resize-nw {
+    top: -5px;
+    left: -5px;
+    cursor: nwse-resize;
+}
+.ql-image-resize-ne {
+    top: -5px;
+    right: -5px;
+    cursor: nesw-resize;
+}
+.ql-image-resize-sw {
+    bottom: -5px;
+    left: -5px;
+    cursor: nesw-resize;
+}
+.ql-image-resize-se {
+    bottom: -5px;
+    right: -5px;
+    cursor: nwse-resize;
+}
+
+/* 图片缩放浮动工具栏 */
+.ql-image-fit-toolbar {
+    position: fixed;
+    z-index: 9999;
+    background: var(--bg-card, var(--bg-main));
+    border: 1px solid var(--border, #3c3c3c);
+    border-radius: var(--radius-md, 8px);
+    padding: 4px;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.ql-image-fit-toolbar.ql-image-fit-toolbar-visible {
+    display: flex;
+}
+.ql-image-fit-toolbar button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 4px);
+    padding: 4px 8px;
+    cursor: pointer;
+    color: var(--text, #eee);
+    font-size: 12px;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+.ql-image-fit-toolbar button:hover {
+    background: var(--hover-bg, rgba(0, 120, 212, 0.1));
+    color: var(--text, #eee);
+}
+.ql-image-fit-toolbar button.ql-image-fit-active {
+    background: var(--accent, #0078d4);
+    color: #fff;
+    border-color: var(--accent, #0078d4);
+}
+
+/* 文件链接卡片 */
+.ql-file-card,
+.ql-node-card {
+    background: var(--bg-main, #1e1e1e);
+    border: 1px solid var(--border, #3c3c3c);
+    border-radius: var(--radius-md, 8px);
+    padding: 12px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s, background-color 0.2s;
+    cursor: pointer;
+    user-select: none;
+    max-width: 420px;
+    width: auto;
+}
+.ql-file-card:hover,
+.ql-node-card:hover {
+    border-color: var(--accent, #0078d4);
+    background-color: var(--hover-bg, rgba(0, 120, 212, 0.07));
+}
+.ql-file-card.ql-card-selected,
+.ql-node-card.ql-card-selected {
+    border-color: var(--accent, #0078d4);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0, 120, 212, 0.3));
+    background-color: var(--hover-bg, rgba(0, 120, 212, 0.1));
+}
+.ql-image-card.ql-card-selected {
+    border-color: var(--accent, #0078d4);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0, 120, 212, 0.3));
+    background-color: var(--hover-bg, rgba(0, 120, 212, 0.1));
+}
+.ql-url-card.ql-card-selected {
+    border-color: var(--accent, #0078d4);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0, 120, 212, 0.3));
+    background-color: var(--hover-bg, rgba(0, 120, 212, 0.15));
+}
+.ql-card-icon {
+    color: var(--text-secondary, #999);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+}
+.ql-card-icon svg {
+    width: 24px;
+    height: 24px;
+}
+.ql-card-icon.ql-card-icon-thumb {
+    overflow: hidden;
+    border-radius: 4px;
+    background: var(--bg-sidebar, #2d2d2d);
+}
+.ql-card-icon.ql-card-icon-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.ql-card-info {
+    flex: 1;
+    min-width: 0;
+}
+.ql-card-title {
+    display: inline;
+    font-weight: 500;
+    color: var(--text, #eee);
+    font-size: 14px;
+}
+.ql-card-target {
+    display: inline;
+    font-size: 11px;
+    color: var(--accent, #0078d4);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 6px;
+    opacity: 0.85;
+}
+.ql-card-file-desc {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary, #999);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+    opacity: 0.7;
+}
+.ql-card-hint {
+    display: block;
+    font-size: 12px;
+    color: var(--text-secondary, #999);
+    margin-top: 2px;
+}
+
+/* 降级备用节点（纯文本块，可选中删除） */
+.ql-card-fallback {
+    background: var(--bg-main, #1e1e1e);
+    border: 1px dashed var(--border, #3c3c3c);
+    border-radius: var(--radius-md, 8px);
+    padding: 8px 12px;
+    margin: 8px 0;
+    color: var(--text-secondary, #999);
+    font-size: 13px;
+    font-style: italic;
+    opacity: 0.8;
+}
+
+/* ========== 网址卡片（内联级） ========== */
+.ql-url-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-input, #3c3c3c);
+    border: 1px solid var(--border, #3c3c3c);
+    border-radius: var(--radius-sm, 4px);
+    padding: 3px 8px;
+    cursor: pointer;
+    user-select: none;
+    vertical-align: middle;
+    transition: border-color 0.15s, background-color 0.15s;
+    line-height: 1.4;
+    font-size: 13px;
+    max-width: 100%;
+}
+.ql-url-card:hover {
+    border-color: var(--accent, #0078d4);
+    background: var(--hover-bg, rgba(0, 120, 212, 0.07));
+}
+.ql-url-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary, #999);
+    flex-shrink: 0;
+    line-height: 1;
+}
+.ql-url-card-icon svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+.ql-url-card-url {
+    color: var(--accent, #0078d4);
+    text-decoration: underline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 280px;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1.4;
+    flex: 1;
+    min-width: 50px;
+}
+.ql-url-card-label {
+    color: var(--text-secondary, #999);
+    font-size: 12px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+.ql-url-card-box {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary, #999);
+    flex-shrink: 0;
+    margin-left: auto;
+    opacity: 0.5;
+    width: 16px;
+    height: 16px;
+}
+.ql-url-card-box svg {
+    width: 12px;
+    height: 12px;
+    display: block;
+}
+.ql-url-card-fallback {
+    color: var(--text-secondary, #999);
+    font-style: italic;
+    cursor: default;
+}
+
+/* ========== 节点图卡片 ========== */
+.ql-node-card {
+    background: var(--bg-main, #1e1e1e);
+    border: 1px solid var(--border, #3c3c3c);
+    border-radius: var(--radius-md, 8px);
+    margin: 8px 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch; /* 覆盖 .ql-file-card, .ql-node-card 的 align-items: center */
+    padding: 0; /* 覆盖 .ql-file-card, .ql-node-card 的 padding */
+    gap: 0; /* 覆盖 .ql-file-card, .ql-node-card 的 gap */
+    max-width: 420px;
+    transition: border-color 0.2s, background-color 0.2s;
+    cursor: pointer;
+    user-select: none;
+}
+.ql-node-card:hover {
+    border-color: var(--accent, #0078d4);
+    background: var(--hover-bg, rgba(0, 120, 212, 0.07));
+}
+.ql-node-card-thumb {
+    width: 100%;
+    height: 120px;
+    overflow: hidden;
+    background: var(--bg-sidebar, #252526);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ql-node-card-thumb svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+.ql-node-card-thumb-placeholder {
+    color: var(--text-secondary, #999);
+    font-size: 12px;
+    text-align: center;
+    padding: 8px;
+}
+.ql-node-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border, #3c3c3c);
+}
+/* ========== 图片卡片底部信息栏 ========== */
+.ql-image-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0 0 0;
+    gap: 8px;
+}
+.ql-image-card-desc {
+    font-size: 12px;
+    color: var(--text-secondary, #999);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.ql-image-card-desc-empty {
+    opacity: 0.4;
+    font-style: italic;
+    cursor: pointer;
+}
+.ql-image-card-desc-empty:hover {
+    opacity: 0.8;
+}
+.ql-image-card-box {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary, #999);
+    flex-shrink: 0;
+}
+.ql-image-card-box svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 文件链接卡片右下角 box 图标 */
+.ql-card-box-icon {
+    display: flex;
+    align-items: center;
+    color: var(--text-secondary, #999);
+    flex-shrink: 0;
+}
+.ql-card-box-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* ========== 插入卡片对话框 ========== */
+.insert-card-dialog {
+    position: fixed;
+    top: 36px; left: 0; right: 0; bottom: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: insertCardFadeIn 0.18s ease;
+}
+@keyframes insertCardFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.insert-card-dialog .dialog-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--bg-sidebar);
+    opacity: 0.96;
+}
+.insert-card-dialog .dialog-box {
+    position: relative;
+    background: var(--bg-main);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0;
+    width: 440px;
+    max-width: 90vw;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.35);
+    animation: insertCardSlideUp 0.2s ease;
+    overflow: hidden;
+}
+@keyframes insertCardSlideUp {
+    from { transform: translateY(16px) scale(0.97); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+.insert-card-dialog .dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-sidebar);
+}
+.insert-card-dialog .dialog-header svg {
+    color: var(--accent);
+    flex-shrink: 0;
+}
+.insert-card-dialog .dialog-header h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+}
+.insert-card-dialog .dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 20px;
+}
+.insert-card-dialog .card-type-select {
+    display: flex;
+    gap: 0;
+    background: var(--bg-sidebar);
+    border-radius: 6px;
+    padding: 3px;
+    border: 1px solid var(--border);
+}
+.insert-card-dialog .card-type-btn {
+    flex: 1;
+    padding: 7px 8px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.15s;
+    text-align: center;
+    white-space: nowrap;
+}
+.insert-card-dialog .card-type-btn.active {
+    background: var(--accent);
+    color: white;
+    font-weight: 500;
+}
+.insert-card-dialog .card-type-btn:not(.active):hover {
+    color: var(--text);
+    background: var(--bg-hover);
+}
+.insert-card-dialog .card-input-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.insert-card-dialog .card-input-row label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.insert-card-dialog .card-input-row input,
+.insert-card-dialog .card-input-row select {
+    padding: 8px 12px;
+    background: var(--bg-sidebar);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.insert-card-dialog .card-input-row input:focus,
+.insert-card-dialog .card-input-row select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.15);
+}
+/* 图片输入组：URL 输入框 + 本地按钮横排 */
+.insert-card-dialog .card-image-input-group {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+.insert-card-dialog .card-image-input-group input {
+    flex: 1;
+    min-width: 0;
+}
+.insert-card-dialog .card-local-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-sidebar);
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+.insert-card-dialog .card-local-btn:hover {
+    border-color: var(--accent);
+    color: var(--text);
+    background: var(--bg-hover);
+}
+.insert-card-dialog .card-local-btn svg {
+    flex-shrink: 0;
+}
+/* 文件目标选择行（标题/节点选择）换行显示 */
+.insert-card-dialog .card-file-target-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+.insert-card-dialog .card-file-target-row label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+.insert-card-dialog .card-file-target-row select {
+    padding: 8px 12px;
+    background: var(--bg-sidebar);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.insert-card-dialog .card-file-target-row select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.15);
+}
+.insert-card-dialog .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-sidebar);
+}
+.insert-card-dialog .dialog-actions .btn-cancel {
+    padding: 7px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.insert-card-dialog .dialog-actions .btn-cancel:hover {
+    border-color: var(--text-secondary);
+    background: var(--hover-bg);
+}
+.insert-card-dialog .dialog-actions .btn-confirm {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: opacity 0.15s;
+}
+.insert-card-dialog .dialog-actions .btn-confirm:hover {
+    opacity: 0.9;
+}
+/* 透明模式下对话框使用不透明背景 */
+body.material-active .insert-card-dialog .dialog-box {
+    background: var(--bg-main-solid) !important;
+    border-color: var(--border-solid) !important;
+}

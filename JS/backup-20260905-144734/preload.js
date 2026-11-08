@@ -1,0 +1,110 @@
+﻿const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('weAPI', {
+    minimize: () => ipcRenderer.send('minimize-window'),
+    maximize: () => ipcRenderer.send('maximize-window'),
+    unmaximize: () => ipcRenderer.send('unmaximize-window'),
+    close: () => ipcRenderer.send('close-window'),
+    onMaximizedChanged: (callback) => ipcRenderer.on('maximized-change', (event, isMaximized) => callback(isMaximized)),
+    isMaximized: () => ipcRenderer.invoke('is-maximized'),
+    restoreForDrag: (cursorX, cursorY, clientX, clientY, maximizedWidth) =>
+        ipcRenderer.invoke('restore-for-drag', cursorX, cursorY, clientX, clientY, maximizedWidth),
+    moveWindowTo: (x, y) => ipcRenderer.send('move-window-to', x, y),
+
+    getDefaultProjectPath: (name) => ipcRenderer.invoke('get-default-project-path', name),
+    createProject: (folder, name, desc, template, projectMode) =>
+        ipcRenderer.invoke('create-project', folder, name, desc, template, projectMode),
+    openProject: (folder) => ipcRenderer.invoke('open-project', folder),
+    closeProject: (folder, shouldSave) => ipcRenderer.invoke('close-project', folder, shouldSave),
+    saveProject: (folder) => ipcRenderer.invoke('save-project', folder),
+    readFile: (folder, filename) => ipcRenderer.invoke('read-file', folder, filename),
+    readImageFile: (folder, filename) => ipcRenderer.invoke('read-image-file', folder, filename),
+    cleanupImageTemp: (filePaths) => ipcRenderer.invoke('cleanup-image-temp', filePaths),
+    readMediaFile: (folder, filename) => ipcRenderer.invoke('read-media-file', folder, filename),
+    saveMediaFile: (folder, filename, arrayBuffer, mimeType) => ipcRenderer.invoke('save-media-file', folder, filename, arrayBuffer, mimeType),
+    listFiles: (folder) => ipcRenderer.invoke('list-files', folder),
+    saveFile: (folder, filename, content) => ipcRenderer.invoke('save-file', folder, filename, content),
+    addFile: (folder, filename) => ipcRenderer.invoke('add-file', folder, filename),
+    addFolder: (folder, folderPath) => ipcRenderer.invoke('add-folder', folder, folderPath),
+    selectFolder: () => ipcRenderer.invoke('select-folder'),
+    getRecentProjects: () => ipcRenderer.invoke('get-recent-projects'),
+    togglePinProject: (folder) => ipcRenderer.invoke('toggle-pin-project', folder),
+    isProjectPinned: (folder) => ipcRenderer.invoke('is-project-pinned', folder),
+    getVersion: () => ipcRenderer.invoke('get-version'),
+    toggleDevTools: () => ipcRenderer.invoke('toggle-devtools'),
+    getAccount: () => ipcRenderer.invoke('get-account'),
+    saveAccount: (account) => ipcRenderer.invoke('save-account', account),
+    deleteAccount: () => ipcRenderer.invoke('delete-account'),
+    deleteUserConfig: () => ipcRenderer.invoke('delete-user-config'),
+    getAccountAvatar: (account) => ipcRenderer.invoke('get-account-avatar', account),
+    getSettings: () => ipcRenderer.invoke('get-settings'),
+    setSettings: (settings) => ipcRenderer.invoke('set-settings', settings),
+    loadLang: (lang) => ipcRenderer.invoke('load-lang', lang),
+    setAlwaysOnTop: (flag) => ipcRenderer.invoke('set-always-on-top', flag),
+    isAlwaysOnTop: () => ipcRenderer.invoke('is-always-on-top'),
+
+    readMetadata: (folder) => ipcRenderer.invoke('read-metadata', folder),
+    saveMetadata: (folder, metadata) => ipcRenderer.invoke('save-metadata', folder, metadata),
+    storeImage: (folder, imageName, imageData) => ipcRenderer.invoke('store-image', folder, imageName, imageData),
+    deleteImage: (folder, imageName) => ipcRenderer.invoke('delete-image', folder, imageName),
+    getUpdateNotes: (lang) => ipcRenderer.invoke('get-update-notes', lang),
+
+    renameFile: (folder, oldPath, newPath) => ipcRenderer.invoke('rename-file', folder, oldPath, newPath),
+    renameFolder: (folder, oldPath, newPath) => ipcRenderer.invoke('rename-folder', folder, oldPath, newPath),
+    deleteFile: (folder, filePath) => ipcRenderer.invoke('delete-file', folder, filePath),
+    deleteFolder: (folder, folderPath) => ipcRenderer.invoke('delete-folder', folder, folderPath),
+    renameProject: (oldFolder, newName) => ipcRenderer.invoke('rename-project', oldFolder, newName),
+    deleteProject: (folder) => ipcRenderer.invoke('delete-project', folder),
+
+    // Splash 状态更新（仅用于 splash 页面）
+    onSplashStatus: (callback) => ipcRenderer.on('splash-status', (event, text, progress) => callback(text, progress)),
+
+    // 打开外部链接（使用系统默认浏览器）
+    openExternalLink: (url) => ipcRenderer.invoke('open-external-link', url),
+
+    setBackgroundMaterial: (material) => ipcRenderer.invoke('set-background-material', material),
+
+    // 文件拖放支持
+    saveFileFromPath: (folder, filePath) => ipcRenderer.invoke('save-file-from-path', folder, filePath),
+    getProjectStats: (folder) => ipcRenderer.invoke('get-project-stats', folder),
+    setProjectMode: (folder, newMode) => ipcRenderer.invoke('set-project-mode', folder, newMode),
+
+    // 导出功能
+    exportPdf: (html, filename) => ipcRenderer.invoke('export-pdf', html, filename),
+    exportZip: (folder, filename) => ipcRenderer.invoke('export-zip', folder, filename),
+    exportHtml: (html, filename) => ipcRenderer.invoke('export-html', html, filename),
+    exportArchive: (content, filename) => ipcRenderer.invoke('export-archive', content, filename),
+
+    // 背景图片
+    selectBackgroundImage: () => ipcRenderer.invoke('select-background-image'),
+    getBackgroundImage: (name) => ipcRenderer.invoke('get-background-image', name),
+    clearBackgroundImage: () => ipcRenderer.invoke('clear-background-image'),
+
+    // 检查更新
+    checkUpdate: () => ipcRenderer.invoke('check-update'),
+
+    // 系统主题
+    getSystemTheme: () => ipcRenderer.invoke('get-system-theme'),
+    onSystemThemeChanged: (callback) => {
+        ipcRenderer.on('system-theme-changed', (event, data) => callback(data));
+    },
+
+    // 渲染进程日志（写入 ./log/JS/renderer.log）
+    writeLog: (level, module, message, dataStr) => ipcRenderer.send('renderer-log', level, module, message, dataStr),
+
+    // 手机模式
+    isMobileMode: () => ipcRenderer.invoke('is-mobile-mode'),
+    // 使用 send 方式（比 invoke 更可靠，避免 Electron 33 下 handle 注册问题）
+    enterMobileMode: () => ipcRenderer.send('enter-mobile-mode'),
+
+    // 临时目录管理
+    clearTempDirectory: (options) => ipcRenderer.invoke('clear-temp-directory', options),
+    getTempDirectoryStatus: () => ipcRenderer.invoke('get-temp-directory-status'),
+
+    // ===== 日志相关 =====
+    getLogContent: (maxLines) => ipcRenderer.invoke('get-log-content', maxLines),
+    getLogFiles: () => ipcRenderer.invoke('get-log-files'),
+    readLogFile: (filePath, maxLines) => ipcRenderer.invoke('read-log-file', filePath, maxLines),
+    clearLogs: () => ipcRenderer.invoke('clear-logs'),
+    exportLogs: (options) => ipcRenderer.invoke('export-logs', options),
+    getLogStats: () => ipcRenderer.invoke('get-log-stats'),});
