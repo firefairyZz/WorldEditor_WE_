@@ -1,4 +1,8 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, nativeTheme, protocol, net } = require('electron');
+// 注册自定义 we-file:// 协议（必须在 app.whenReady 之前调用）
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'we-file', privileges: { standard: true, secure: true, supportFetchAPI: true, bypassCSP: true, stream: true } }
+]);
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
@@ -21,6 +25,21 @@ if (!IS_MOBILE_MODE) {
     } catch (e) {
         console.log(`[startup] mica-electron 加载失败: ${e.message}，使用原生 BrowserWindow`);
     }
+}
+
+// we-window-native：提供 nativeMaximize/Restore/Minimize（带 DWM 动画）
+let weWindow = null;
+try {
+    weWindow = require('./we-window-native');
+    if (weWindow && weWindow.isLoaded && weWindow.isLoaded()) {
+        console.log('[startup] we-window-native 加载成功（DWM 动画可用）');
+    } else {
+        console.log('[startup] we-window-native 模块存在但无 native 产物');
+        weWindow = null;
+    }
+} catch (e) {
+    console.log(`[startup] we-window-native 加载失败: ${e.message}`);
+    weWindow = null;
 }
 
 // 手机模式 IPC
@@ -90,6 +109,7 @@ const DEFAULT_SETTINGS = {
     materialTint: 78,
     materialOverlay: 30,
     materialBarTint: 100,
+    materialAutoAdaptTheme: true,
     colorPreset: 'auto',
     customColors: null,
     customShortcuts: null
@@ -378,6 +398,76 @@ ipcMain.on('renderer-log', (event, level, module, message, dataStr) => {
 // 应用退出前刷新剩余日志
 app.on('before-quit', () => { _flushLogBuffer(); });
 
+// ========== 日志读取 IPC ==========
+ipcMain.handle('get-log-content', async (event, maxLines = 2000) => {
+    try {
+        if (!fs.existsSync(RENDERER_LOG_PATH)) return { success: true, content: '' };
+        const content = fs.readFileSync(RENDERER_LOG_PATH, 'utf8');
+        const lines = content.split('\n');
+        return { success: true, content: lines.slice(-maxLines).join('\n') };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('get-log-files', async () => {
+    try {
+        if (!fs.existsSync(RENDERER_LOG_DIR)) return { success: true, files: [] };
+        const files = fs.readdirSync(RENDERER_LOG_DIR)
+            .filter(f => /^renderer-\d{8}-\d{6}\.log$/.test(f))
+            .sort()
+            .reverse()
+            .map(f => {
+                const stat = fs.statSync(path.join(RENDERER_LOG_DIR, f));
+                return { name: f, size: stat.size, mtime: stat.mtimeMs };
+            });
+        return { success: true, files };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('read-log-file', async (event, filePath, maxLines = 2000) => {
+    try {
+        if (!fs.existsSync(filePath)) return { success: false, error: '文件不存在' };
+        const content = fs.readFileSync(filePath, 'utf8');
+        const lines = content.split('\n');
+        return { success: true, content: lines.slice(-maxLines).join('\n') };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('clear-logs', async () => {
+    try {
+        if (!fs.existsSync(RENDERER_LOG_DIR)) return { success: true, cleared: 0 };
+        let cleared = 0;
+        const files = fs.readdirSync(RENDERER_LOG_DIR).filter(f => /\.log$/.test(f));
+        for (const f of files) {
+            try { fs.unlinkSync(path.join(RENDERER_LOG_DIR, f)); cleared++; } catch (e) {}
+        }
+        return { success: true, cleared };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('export-logs', async (event, options = {}) => {
+    try {
+        if (!fs.existsSync(RENDERER_LOG_DIR)) return { success: false, error: '没有日志' };
+        const files = fs.readdirSync(RENDERER_LOG_DIR).filter(f => /\.log$/.test(f));
+        const allContent = files.map(f => `\n===== ${f} =====\n` + fs.readFileSync(path.join(RENDERER_LOG_DIR, f), 'utf8')).join('\n');
+        return { success: true, content: allContent, count: files.length };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+ipcMain.handle('get-log-stats', async () => {
+    try {
+        if (!fs.existsSync(RENDERER_LOG_DIR)) return { success: true, count: 0, totalSize: 0, totalSizeFormatted: '0 B' };
+        const files = fs.readdirSync(RENDERER_LOG_DIR).filter(f => /\.log$/.test(f));
+        let total = 0;
+        for (const f of files) { try { total += fs.statSync(path.join(RENDERER_LOG_DIR, f)).size; } catch (e) {} }
+        const fmt = (b) => {
+            if (b < 1024) return b + ' B';
+            if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+            return (b/1024/1024).toFixed(2) + ' MB';
+        };
+        return { success: true, count: files.length, totalSize: total, totalSizeFormatted: fmt(total) };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
 // 全局 IPC 处理器
 ipcMain.handle('get-version', () => APP_VERSION);
 
@@ -394,7 +484,6 @@ nativeTheme.on('updated', () => {
 });
 
 // ========== 检查更新 ==========
-const { net } = require('electron');
 const UPDATE_REPO = 'firefairyZz/WorldEditor_WE_';
 
 function compareVersions(v1, v2) {
@@ -865,20 +954,40 @@ function isPinned(folder) {
 }
 
 // 项目文件读写
+// 缓存：按文件夹缓存已解压的项目文件，避免每次 read-file 都重新解压 zip
+// 只在 .wep 文件的 mtime 变化时才重新读取
+const _wepCache = new Map(); // folder → { mtime: number, files: object }
+
 function readProjectWep(folder) {
     const wepPath = path.join(folder, 'project.wep');
-    if (!fs.existsSync(wepPath)) return {};
+    if (!fs.existsSync(wepPath)) return Promise.resolve({});
+    try {
+        const stat = fs.statSync(wepPath);
+        const cached = _wepCache.get(folder);
+        if (cached && cached.mtime === stat.mtimeMs) {
+            return Promise.resolve(cached.files);
+        }
+        // 没有缓存或 mtime 变了 → 重新解压
+    } catch (e) {}
     return new Promise((resolve, reject) => {
         const data = {};
         fs.createReadStream(wepPath)
             .pipe(unzipper.Parse())
             .on('entry', entry => {
                 const fileName = entry.path;
-                let content = '';
-                entry.on('data', chunk => content += chunk.toString());
-                entry.on('end', () => { data[fileName] = content; });
+                const chunks = [];
+                entry.on('data', chunk => chunks.push(chunk));
+                entry.on('end', () => {
+                    data[fileName] = Buffer.concat(chunks); // 存 Buffer，不 toString
+                });
             })
-            .on('finish', () => resolve(data))
+            .on('finish', () => {
+                try {
+                    const stat = fs.statSync(wepPath);
+                    _wepCache.set(folder, { mtime: stat.mtimeMs, files: data });
+                } catch (e) {}
+                resolve(data);
+            })
             .on('error', reject);
     });
 }
@@ -889,9 +998,29 @@ function writeProjectWep(folder, files) {
         const archive = archiver('zip', { zlib: { level: 5 } });
         archive.pipe(output);
         for (const [name, content] of Object.entries(files)) {
-            archive.append(content, { name });
+            let buf;
+            if (Buffer.isBuffer(content)) {
+                buf = content;
+            } else if (typeof content === 'string') {
+                buf = Buffer.from(content, 'utf8');
+            } else if (content && typeof content === 'object' && content.type === 'Buffer' && Array.isArray(content.data)) {
+                // IPC 传过来的 Buffer 会被 JSON 序列化成 {type:'Buffer', data:[...]}
+                buf = Buffer.from(content.data);
+            } else if (typeof content === 'object' && content !== null) {
+                buf = Buffer.from(JSON.stringify(content), 'utf8');
+            } else {
+                buf = Buffer.from(String(content || ''), 'utf8');
+            }
+            archive.append(buf, { name });
         }
-        output.on('close', resolve);
+        output.on('close', () => {
+            // 写完后立即更新缓存，下次读直接命中
+            try {
+                const stat = fs.statSync(wepPath);
+                _wepCache.set(folder, { mtime: stat.mtimeMs, files: files });
+            } catch (e) {}
+            resolve();
+        });
         archive.finalize();
     });
 }
@@ -919,6 +1048,81 @@ function backupProject(folder) {
             }
         } catch (e) {}
     }
+}
+
+// ====== 二进制/文本辅助 ======
+const BINARY_EXTS = new Set([
+    // 图片
+    'png','jpg','jpeg','gif','webp','bmp','ico','tiff','tif','avif','heic',
+    // 视频
+    'mp4','webm','mov','avi','mkv','flv','wmv','m4v','3gp','ts',
+    // 音频
+    'mp3','wav','ogg','flac','aac','m4a','wma','opus','aiff',
+    // 文档/其他
+    'pdf','doc','docx','xls','xlsx','ppt','pptx','zip','rar','7z','tar','gz',
+    // 字体
+    'ttf','otf','woff','woff2','eot',
+    // 其他
+    'exe','dll','so','dylib','class','pyc'
+]);
+const TEXT_EXTS = new Set([
+    'txt','md','markdown','rst','org','nfo','log','csv','tsv',
+    'json','xml','yaml','yml','toml','ini','cfg','conf','env',
+    'html','htm','xhtml','css','scss','sass','less',
+    'js','mjs','cjs','ts','jsx','tsx','vue','svelte',
+    'py','rb','java','c','h','cpp','hpp','cs','go','rs','swift','kt',
+    'sh','bash','ps1','bat','cmd','sql','graphql','gql',
+    'rtf','tex','bib','asciidoc','adoc'
+]);
+
+function _isBinaryFilename(filename) {
+    const ext = path.extname(filename).toLowerCase().slice(1);
+    return BINARY_EXTS.has(ext);
+}
+function _isTextFilename(filename) {
+    const ext = path.extname(filename).toLowerCase().slice(1);
+    return TEXT_EXTS.has(ext);
+}
+// 把 zip 里 Buffer 转成 renderer 友好的字符串
+function _bufferToRenderer(buf, filename) {
+    if (!buf || buf.length === 0) return '';
+    // 如果看起来是二进制（含 null 字节且非文本扩展名），用 base64 + 前缀
+    if (_isBinaryFilename(filename)) {
+        return '__b64:' + buf.toString('base64');
+    }
+    // 如果包含 null 字节，也是二进制
+    if (buf.indexOf(0) >= 0 && !_isTextFilename(filename)) {
+        return '__b64:' + buf.toString('base64');
+    }
+    return buf.toString('utf8');
+}
+// 把 renderer 传入的内容转成 Buffer 存 zip
+function _rendererContentToBuffer(content, filename) {
+    if (Buffer.isBuffer(content)) return content;
+    if (content && typeof content === 'object' && content.type === 'Buffer' && Array.isArray(content.data)) {
+        return Buffer.from(content.data);
+    }
+    if (typeof content === 'string') {
+        // __b64: 前缀表示 base64 编码的二进制
+        if (content.startsWith('__b64:')) {
+            return Buffer.from(content.slice(6), 'base64');
+        }
+        // data URL
+        if (content.startsWith('data:')) {
+            const commaIdx = content.indexOf(',');
+            if (commaIdx >= 0) {
+                const header = content.slice(0, commaIdx);
+                if (header.includes('base64')) {
+                    return Buffer.from(content.slice(commaIdx + 1), 'base64');
+                }
+                return Buffer.from(decodeURIComponent(content.slice(commaIdx + 1)), 'utf8');
+            }
+        }
+        // 默认 utf8 文本
+        return Buffer.from(content, 'utf8');
+    }
+    // 其他（null/undefined/number）
+    return Buffer.from(String(content || ''), 'utf8');
 }
 
 function createSplash() {
@@ -1135,7 +1339,12 @@ function createMainWindow() {
         mainWin.webContents.send('maximized-change', mainWin.isMaximized());
     });
 
-    ipcMain.on('minimize-window', () => mainWin.minimize());
+    // 用 we-window-native 的 ShowWindow(SW_*) 带 DWM 动画，fallback 到 Electron API
+    ipcMain.on('minimize-window', () => {
+        if (!mainWin || mainWin.isDestroyed()) return;
+        if (weWindow && weWindow.isLoaded()) weWindow.nativeMinimize(mainWin);
+        else mainWin.minimize();
+    });
     // 最大化/还原切换：处理三种状态
     //   1. isMaximized()=true → 标准 unmaximize
     //   2. __isMaximized=true 但 isMaximized()=false → Aero snap 假最大化，手动 setBounds 还原
@@ -1143,7 +1352,8 @@ function createMainWindow() {
     ipcMain.on('maximize-window', () => {
         if (!mainWin || mainWin.isDestroyed()) return;
         if (mainWin.isMaximized()) {
-            mainWin.unmaximize();
+            if (weWindow && weWindow.isLoaded()) weWindow.nativeRestore(mainWin);
+            else mainWin.unmaximize();
         } else if (mainWin.__isMaximized) {
             // Aero snap 最大化（isMaximized 返回 false），手动还原到上次正常 bounds
             console.log('[maximize-btn] restoring from aero-snap maximize');
@@ -1157,10 +1367,16 @@ function createMainWindow() {
                 mainWin.center();
             }
         } else {
-            mainWin.maximize();
+            if (weWindow && weWindow.isLoaded()) weWindow.nativeMaximize(mainWin);
+            else mainWin.maximize();
         }
     });
-    ipcMain.on('unmaximize-window', () => { if (mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()) mainWin.unmaximize(); });
+    ipcMain.on('unmaximize-window', () => {
+        if (mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()) {
+            if (weWindow && weWindow.isLoaded()) weWindow.nativeRestore(mainWin);
+            else mainWin.unmaximize();
+        }
+    });
     ipcMain.on('close-window', () => mainWin.close());
     ipcMain.handle('is-maximized', () => !!(mainWin && !mainWin.isDestroyed() && mainWin.isMaximized()));
 
@@ -1180,7 +1396,9 @@ function createMainWindow() {
                     resolve();
                 };
                 mainWin.once('resize', onResize);
-                mainWin.unmaximize(); // 触发 unmaximize 事件 → __isMaximized=false + setMaximized(false)
+                // 用 nativeRestore（ShowWindow SW_RESTORE）带 DWM 动画，且对 Aero Snap 窗口也生效
+                if (weWindow && weWindow.isLoaded()) weWindow.nativeRestore(mainWin);
+                else mainWin.unmaximize();
                 setTimeout(onResize, 150); // 兜底：resize 未触发也继续
             });
         }
@@ -1386,6 +1604,7 @@ function createMainWindow() {
         addRecent(folder);
         try {
             const files = await readProjectWep(folder);
+            console.log('[open-project] 读取文件列表:', Object.keys(files));
             // 读取项目模式和创建者信息
             let projectMode = 'rich';
             let owner = null;
@@ -1397,14 +1616,18 @@ function createMainWindow() {
                     if (meta.owner) owner = meta.owner;
                 }
             } catch(e) {}
-            return { success: true, folder, name: path.basename(folder), fileList: Object.keys(files), projectMode, owner };
-        } catch (e) { return { success: false, error: e.message }; }
+            const fileList = Object.keys(files);
+            console.log('[open-project] 返回 fileList:', fileList);
+            return { success: true, folder, name: path.basename(folder), fileList, projectMode, owner };
+        } catch (e) { console.error('[open-project] 失败:', e); return { success: false, error: e.message }; }
     });
 
     ipcMain.handle('read-file', async (event, folder, filename) => {
         try {
             const files = await readProjectWep(folder);
-            return { success: true, content: files[filename] || '' };
+            const buf = files[filename];
+            if (!buf || (Buffer.isBuffer(buf) && buf.length === 0)) return { success: true, content: '' };
+            return { success: true, content: _bufferToRenderer(buf, filename) };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
@@ -1418,7 +1641,7 @@ function createMainWindow() {
     ipcMain.handle('save-file', async (event, folder, filename, content) => {
         try {
             const files = await readProjectWep(folder);
-            files[filename] = content;
+            files[filename] = _rendererContentToBuffer(content, filename);
             await writeProjectWep(folder, files);
             backupProject(folder);
             return { success: true };
@@ -1638,16 +1861,34 @@ function createMainWindow() {
     ipcMain.handle('store-image', async (event, folder, imageName, imageData) => {
         try {
             const files = await readProjectWep(folder);
-            files['_images/' + imageName] = imageData;
+            // imageData 是 base64 字符串（不带 data: 前缀），直接转 Buffer
+            files[imageName] = Buffer.from(imageData, 'base64');
             await writeProjectWep(folder, files);
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
     });
 
+    // 通用二进制存储端点（视频/音频/PDF 等）
+    ipcMain.handle('store-binary', async (event, folder, filename, base64Data) => {
+        try {
+            console.log('[store-binary] 开始写入:', filename, 'base64 长度:', base64Data.length);
+            const files = await readProjectWep(folder);
+            console.log('[store-binary] 写入前文件列表:', Object.keys(files));
+            files[filename] = Buffer.from(base64Data, 'base64');
+            console.log('[store-binary] 写入后文件列表:', Object.keys(files));
+            await writeProjectWep(folder, files);
+            const verifyFiles = await readProjectWep(folder);
+            console.log('[store-binary] 写入后验证文件列表:', Object.keys(verifyFiles));
+            console.log('[store-binary] 验证目标文件存在:', !!verifyFiles[filename]);
+            backupProject(folder);
+            return { success: true };
+        } catch (e) { console.error('[store-binary] 失败:', e); return { success: false, error: e.message }; }
+    });
+
     ipcMain.handle('delete-image', async (event, folder, imageName) => {
         try {
             const files = await readProjectWep(folder);
-            delete files['_images/' + imageName];
+            delete files[imageName];
             await writeProjectWep(folder, files);
             return { success: true };
         } catch (e) { return { success: false, error: e.message }; }
@@ -1860,6 +2101,32 @@ function initRecentJson() {
 }
 
 app.whenReady().then(() => {
+    // 注册 we-file:// 协议处理器 → 映射到本地文件（解决大视频 file:// 跨域崩溃）
+    protocol.handle('we-file', (request) => {
+        try {
+            // we-file://media/C:/Users/xxx/video.mp4 → C:\Users\xxx\video.mp4
+            const url = new URL(request.url);
+            const rawPath = decodeURIComponent(url.pathname); // /C:/Users/...
+            const winPath = rawPath.replace(/^\//, '').replace(/\//g, '\\'); // C:\Users\...
+            const resolvedPath = path.resolve(winPath);
+            if (!fs.existsSync(resolvedPath)) {
+                return new Response('File not found', { status: 404 });
+            }
+            const fileBuffer = fs.readFileSync(resolvedPath);
+            // 根据扩展名推断 MIME
+            const ext = path.extname(resolvedPath).toLowerCase();
+            const mimeMap = {
+                '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+                '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.m4a': 'audio/mp4'
+            };
+            const mime = mimeMap[ext] || 'application/octet-stream';
+            return new Response(fileBuffer, { headers: { 'Content-Type': mime } });
+        } catch (e) {
+            console.error('[we-file] 协议处理失败:', e.message);
+            return new Response('Internal error', { status: 500 });
+        }
+    });
+
     // 初始化教程和 recent.json（在主窗口打开前）
     initTutorial();
     initRecentJson();
@@ -1969,6 +2236,117 @@ ipcMain.handle('open-external-link', async (event, url) => {
     } catch (e) {
         return { success: false, error: e.message };
     }
+});
+
+// === 以下为恢复的 8 月版 IPC 端点 ===
+
+// 关闭项目（清缓存，不需要解包/打包架构）
+ipcMain.handle('close-project', async (event, folder, shouldSave) => {
+    try {
+        _wepCache.delete(folder);
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 保存项目（独立保存入口）
+ipcMain.handle('save-project', async (event, folder) => {
+    try {
+        const files = await readProjectWep(folder);
+        await writeProjectWep(folder, files);
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 读取图片文件（从 .wep zip 中读 base64 data URL）
+ipcMain.handle('read-image-file', async (event, folder, filename) => {
+    try {
+        const files = await readProjectWep(folder);
+        let buf = files[filename];
+        if (!buf || (Buffer.isBuffer(buf) && buf.length === 0)) return { success: false, error: '文件不存在' };
+
+        const ext = path.extname(filename).toLowerCase().slice(1);
+        const mimeMap = {
+            'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'gif': 'image/gif', 'webp': 'image/webp', 'bmp': 'image/bmp',
+            'svg': 'image/svg+xml', 'tiff': 'image/tiff', 'ico': 'image/x-icon',
+            'avif': 'image/avif', 'heic': 'image/heic'
+        };
+        const mimeType = mimeMap[ext] || 'image/' + ext;
+
+        // Buffer → base64 拼 data URL
+        let dataUrl;
+        if (ext === 'svg' || mimeType === 'image/svg+xml') {
+            // SVG 是 XML 文本
+            dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(buf.toString('utf8'));
+        } else {
+            const base64 = Buffer.isBuffer(buf) ? buf.toString('base64') : String(buf);
+            dataUrl = `data:${mimeType};base64,${base64}`;
+        }
+        return { success: true, dataUrl, mimeType, size: buf.length };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 读取媒体文件（视频/音频）— 大文件走临时路径，小文件走 base64
+ipcMain.handle('read-media-file', async (event, folder, filename) => {
+    try {
+        const files = await readProjectWep(folder);
+        let buf = files[filename];
+        if (!buf || (Buffer.isBuffer(buf) && buf.length === 0)) return { success: false, error: '文件不存在' };
+
+        const ext = path.extname(filename).toLowerCase();
+        const mimeMap = {
+            '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime',
+            '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+            '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+            '.flac': 'audio/flac', '.m4a': 'audio/mp4'
+        };
+        const mimeType = mimeMap[ext] || 'application/octet-stream';
+
+        // 大文件（>500KB）→ 写临时目录返回 file:/// URL，避免 base64 卡顿
+        const LARGE_FILE_THRESHOLD = 512 * 1024;
+        if (buf.length > LARGE_FILE_THRESHOLD) {
+            const weTempDir = path.join(app.getPath('userData'), 'we-temp-media');
+            if (!fs.existsSync(weTempDir)) fs.mkdirSync(weTempDir, { recursive: true });
+            const safeName = filename.replace(/[^\w.\-]/g, '_');
+            const tempPath = path.join(weTempDir, Date.now() + '_' + safeName);
+            fs.writeFileSync(tempPath, buf);
+            // 转成 we-file:// URL → 由上面注册的协议处理器映射到本地文件
+            const fileUrl = 'we-file://media/' + tempPath.replace(/\\/g, '/');
+            console.log('[read-media-file] 大文件走临时路径:', filename, '→', tempPath, 'size:', buf.length);
+            return { success: true, fileUrl, mimeType, size: buf.length, useFilePath: true };
+        }
+
+        // 小文件 → base64
+        const base64 = Buffer.isBuffer(buf) ? buf.toString('base64') : String(buf);
+        return { success: true, dataUrl: `data:${mimeType};base64,${base64}`, mimeType, size: buf.length, useFilePath: false };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 清理图片临时文件（当前架构没有临时目录，清空项目缓存即可）
+ipcMain.handle('cleanup-image-temp', async (event, folder) => {
+    try {
+        _wepCache.delete(folder);
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 保存媒体文件（接收 base64 data URL，存入 .wep）
+ipcMain.handle('save-media-file', async (event, folder, filename, content) => {
+    try {
+        const files = await readProjectWep(folder);
+        files[filename] = _rendererContentToBuffer(content, filename);
+        await writeProjectWep(folder, files);
+        backupProject(folder);
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+});
+
+// 清理临时目录（当前架构没有临时目录，清空所有缓存）
+ipcMain.handle('clear-temp-directory', async () => {
+    try {
+        _wepCache.clear();
+        return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

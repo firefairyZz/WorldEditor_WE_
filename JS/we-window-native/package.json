@@ -1,0 +1,49 @@
+{
+  "name": "@we-editor/native-window",
+  "version": "0.1.0",
+  "description": "Native Win32 window controls for Electron — Mica/Acrylic material, DWM corner control, ThickFrame resize/Aero snap",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "src/",
+    "binding.gyp",
+    "prebuilds/"
+  ],
+  "scripts": {
+    "install": "node-gyp-build || echo 'Native build failed, trying prebuild...'",
+    "build": "node-gyp rebuild",
+    "test": "node test.js"
+  },
+  "gypfile": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "electron",
+    "mica",
+    "acrylic",
+    "dwm",
+    "windows",
+    "win11",
+    "native",
+    "addon",
+    "node-api",
+    "napi"
+  ],
+  "author": "World Editor",
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64",
+    "ia32"
+  ],
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
+    "node-addon-api": "^8.9.2",
+    "node-gyp": "^10.0.0",
+    "node-gyp-build": "^4.8.4"
+  }
+}

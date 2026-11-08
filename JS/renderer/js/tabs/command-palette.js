@@ -78,7 +78,7 @@ const commandPalette = {
 
         // 标签操作
         this.register({ id: 'close-tab', label: t('ui.close_tab') || '关闭标签', group: tabGroup, action: () => {
-            if (activeTabId && tabs[activeTabId]?.closable) closeTab(activeTabId);
+            if (activeTabId && tabs[activeTabId]?.closable && !tabs[activeTabId]?.pinned) closeTab(activeTabId);
         }});
         this.register({ id: 'next-tab', label: t('ui.next_tab') || '下一个标签', group: tabGroup, action: () => switchToNextTab() });
         this.register({ id: 'prev-tab', label: t('ui.prev_tab') || '上一个标签', group: tabGroup, action: () => switchToPrevTab() });
@@ -204,10 +204,10 @@ const commandPalette = {
             );
         }
 
-        // 如果在 all 模式下无匹配，添加"在编辑器中查找"选项
+        // 如果在 all 模式下无匹配，添加搜索 fallback 选项
         if (mode === 'all' && q && this.filteredCommands.length === 0) {
-            weLog.info('command-palette', 'filter: 无匹配，添加在编辑器中查找选项', { q });
-            this.filteredCommands = [{
+            weLog.info('command-palette', 'filter: 无匹配，添加搜索 fallback 选项', { q });
+            const editorFallback = {
                 id: 'find-in-editor',
                 label: `${t('ui.command_palette_find_in_editor') || '在编辑器中查找'}: "${q}"`,
                 group: '',
@@ -217,7 +217,37 @@ const commandPalette = {
                     findBar.countMatches(q);
                     findBar.findNext(true);
                 }
-            }];
+            };
+            // 尝试找一个打开的项目的文件树搜索框
+            const projectFallback = {
+                id: 'find-in-project',
+                label: `在项目中搜索: "${q}"`,
+                group: '',
+                action: () => {
+                    // 找第一个活跃的项目文件树搜索框
+                    const searchInputs = document.querySelectorAll('[id^="search-input-"]');
+                    for (const input of searchInputs) {
+                        const safeId = input.id.replace('search-input-', '');
+                        const searchBody = document.getElementById(`search-body-${safeId}`);
+                        const toggleBtn = document.getElementById(`search-toggle-${safeId}`);
+                        if (searchBody) {
+                            // 展开搜索栏
+                            searchBody.style.display = '';
+                            if (toggleBtn) toggleBtn.classList.remove('collapsed');
+                            // 填入关键词并触发搜索
+                            input.value = q;
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.focus();
+                            return;
+                        }
+                    }
+                    // 没有打开的项目 → 退回到编辑器内搜索
+                    findBar.show(false);
+                    findBar.findInput.value = q;
+                    findBar.countMatches(q);
+                }
+            };
+            this.filteredCommands = [editorFallback, projectFallback];
         }
 
         this.renderList();

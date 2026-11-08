@@ -198,8 +198,8 @@ async function openMarkdownFile(safeId, filename) {
 
     mdToolbar.querySelector('.btn-md-link').onclick = () => {
         weLog.info('editor', 'openMarkdownFile: 点击 MD 链接按钮');
-        showPrompt(t('ui.enter_url') || 'Enter URL:', 'https://...').then(url => {
-            if (url) wrapMarkdownTextarea(textarea, '[', `](${url})`);
+        showPrompt(t('ui.enter_url') || 'Enter URL:', 'https://...').then(res => {
+            if (res && res.value) wrapMarkdownTextarea(textarea, '[', `](${res.value})`);
         });
     };
 
@@ -210,8 +210,8 @@ async function openMarkdownFile(safeId, filename) {
 
     mdToolbar.querySelector('.btn-md-image').onclick = () => {
         weLog.info('editor', 'openMarkdownFile: 点击 MD 图片按钮');
-        showPrompt(t('ui.enter_image_url') || 'Enter image URL:', 'https://...').then(url => {
-            if (url) wrapMarkdownTextarea(textarea, '![', `](${url})`);
+        showPrompt(t('ui.enter_image_url') || 'Enter image URL:', 'https://...').then(res => {
+            if (res && res.value) wrapMarkdownTextarea(textarea, '![', `](${res.value})`);
         });
     };
 

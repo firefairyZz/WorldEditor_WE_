@@ -17,14 +17,16 @@ function debounce(fn, wait = 250) {
 }
 
 function showPrompt(title, placeholder = '', options = {}) {
-    weLog.info('utils', '→ showPrompt 开始', { title, hasTypeSwitch: !!options.typeSwitch });
+    weLog.info('utils', '→ showPrompt 开始', { title, hasTypeSwitch: !!options.typeSwitch, showImport: !!options.showImport });
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'prompt-overlay';
+        const hasTypeSwitch = options.typeSwitch || options.showImport;
         overlay.innerHTML = `<div class="prompt-box">
             <h3 class="prompt-title">${escapeHtml(title)}</h3>
-            ${options.typeSwitch ? `
+            ${hasTypeSwitch ? `
             <div class="prompt-type-switch">
+                ${options.showImport ? `<button class="prompt-type-btn" data-type="import">📥 ${t('ui.import_files') || '导入'}</button>` : ''}
                 <button class="prompt-type-btn active" data-type="file">${t('ui.file') || '文件'}</button>
                 <button class="prompt-type-btn" data-type="folder">${t('ui.folder') || '文件夹'}</button>
                 <button class="prompt-type-btn" data-type="nodegraph">${t('ui.nodegraph') || '节点图'}</button>
@@ -38,41 +40,62 @@ function showPrompt(title, placeholder = '', options = {}) {
         document.body.appendChild(overlay);
 
         const input = overlay.querySelector('#prompt-input');
-        input.focus();
+        const okBtn = overlay.querySelector('#prompt-ok');
         let selectedType = options.defaultType || 'file';
 
         // 类型切换
-        if (options.typeSwitch) {
+        if (hasTypeSwitch) {
             const buttons = overlay.querySelectorAll('.prompt-type-btn');
+            const typeButtons = overlay.querySelectorAll('.prompt-type-switch .prompt-type-btn');
             buttons.forEach(btn => {
                 btn.onclick = () => {
-                    buttons.forEach(b => b.classList.remove('active'));
+                    typeButtons.forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
                     selectedType = btn.dataset.type;
                     weLog.debug('utils', 'showPrompt: 切换类型', { selectedType });
-                    let label;
-                    if (selectedType === 'file') label = t('ui.file_name') || '文件名';
-                    else if (selectedType === 'folder') label = t('ui.folder_name') || '文件夹名';
-                    else label = t('ui.nodegraph_name') || '节点图名称';
-                    input.placeholder = label;
+                    if (selectedType === 'import') {
+                        input.style.display = 'none';
+                        okBtn.textContent = t('ui.import_files') || '导入';
+                        okBtn.className = 'prompt-btn prompt-btn-ok';
+                    } else {
+                        input.style.display = '';
+                        okBtn.textContent = t('ui.ok');
+                        let label;
+                        if (selectedType === 'file') label = t('ui.file_name') || '文件名';
+                        else if (selectedType === 'folder') label = t('ui.folder_name') || '文件夹名';
+                        else label = t('ui.nodegraph_name') || '节点图名称';
+                        input.placeholder = label;
+                    }
                 };
             });
-            input.placeholder = options.defaultType === 'folder' ? (t('ui.folder_name') || '文件夹名') : (t('ui.file_name') || '文件名');
+            // 初始化 placeholder
+            if (selectedType === 'folder') input.placeholder = t('ui.folder_name') || '文件夹名';
+            else if (selectedType === 'nodegraph') input.placeholder = t('ui.nodegraph_name') || '节点图名称';
         }
 
         overlay.querySelector('#prompt-cancel').onclick = () => { weLog.info('utils', 'showPrompt: 用户取消'); overlay.remove(); resolve(null); };
         overlay.querySelector('#prompt-ok').onclick = () => {
+            if (selectedType === 'import') {
+                weLog.info('utils', 'showPrompt: 选择导入');
+                overlay.remove();
+                resolve({ value: '', type: 'import' });
+                return;
+            }
             const val = input.value.trim();
-            weLog.info('utils', 'showPrompt: 用户确认', { value: val, type: options.typeSwitch ? selectedType : undefined });
+            weLog.info('utils', 'showPrompt: 用户确认', { value: val, type: selectedType });
             overlay.remove();
-            resolve(options.typeSwitch ? { value: val, type: selectedType } : (val || null));
+            resolve({ value: val, type: selectedType });
         };
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                if (selectedType === 'import') {
+                    overlay.querySelector('#prompt-ok').click();
+                    return;
+                }
                 const val = input.value.trim();
                 weLog.info('utils', 'showPrompt: Enter 确认', { value: val });
                 overlay.remove();
-                resolve(options.typeSwitch ? { value: val, type: selectedType } : (val || null));
+                resolve({ value: val, type: selectedType });
             }
             if (e.key === 'Escape') { weLog.info('utils', 'showPrompt: Escape 取消'); overlay.remove(); resolve(null); }
         });

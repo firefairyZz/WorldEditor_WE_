@@ -9,6 +9,8 @@
 }
 .node-graph-toolbar {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 0;
     padding: 6px 8px;
@@ -19,10 +21,12 @@
     box-sizing: border-box;
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    white-space: nowrap;
 }
-.node-graph-toolbar::-webkit-scrollbar { height: 3px; }
-.node-graph-toolbar::-webkit-scrollbar-thumb { background: var(--border, #ccc); border-radius: 2px; }
+.node-graph-toolbar > * { flex-shrink: 0; }
+.node-graph-toolbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .ng-btn {
     width: 32px;
     height: 32px;
@@ -510,8 +514,28 @@
     font-style: italic;
 }
 .ng-add-file-btn {
+    width: auto;
+    height: auto;
+    padding: 4px 10px;
     margin-top: 4px;
     font-size: 11px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    line-height: 1.4;
+    border: 1px dashed var(--border, #ccc);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.15s;
+}
+.ng-add-file-btn:hover {
+    color: var(--accent, #4a90d9);
+    border-color: var(--accent, #4a90d9);
+    background: var(--hover-bg, rgba(0,0,0,0.05));
 }
 /* Toggle switch for edge properties */
 .ng-prop-row-toggle {
@@ -931,8 +955,28 @@ body.material-active .ng-history-panel {
 }
 
 .ng-add-file-btn {
+    width: auto;
+    height: auto;
+    padding: 4px 10px;
     margin-top: 4px;
     font-size: 11px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    line-height: 1.4;
+    border: 1px dashed var(--border, #ccc);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary, #888);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    transition: all 0.15s;
+}
+.ng-add-file-btn:hover {
+    color: var(--accent, #4a90d9);
+    border-color: var(--accent, #4a90d9);
+    background: var(--hover-bg, rgba(0,0,0,0.05));
 }
 
 /* ========== 排版下拉菜单 ========== */

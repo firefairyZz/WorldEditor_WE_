@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  :root {
+    --splash-bg: #2d2d2d;
+    --splash-text: #ccc;
+    --splash-sub: #aaa;
+    --splash-track: rgba(255,255,255,0.1);
+    --splash-fill: #0078d4;
+  }
+  body { margin:0; height:100vh; display:flex; background:transparent; font-family: 'Segoe UI', sans-serif; }
+  .container { display:flex; width:100%; height:100%; border-radius:12px; overflow:hidden; background:var(--splash-bg); color:var(--splash-text); }
+  .left { width:130px; background: url('../resources/Load_image.png') center/cover; }
+  .right { flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px; }
+  h1 { font-size:18px; margin:0 0 10px; color:var(--splash-text); }
+  .version { color:var(--splash-sub); font-size:12px; }
+  .status-container { margin-top:20px; width:200px; }
+  .status { color:var(--splash-sub); font-size:12px; margin-bottom:8px; text-align:center; transition: opacity 0.3s; }
+  .progress-bar { width:100%; height:3px; background: var(--splash-track); border-radius:2px; overflow:hidden; }
+  .progress-fill { height:100%; background: var(--splash-fill); width:0%; transition: width 0.3s ease; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="left"></div>
+  <div class="right">
+    <h1>WE - World Editor</h1>
+    <span class="version">版本 <span id="version">...</span></span>
+    <div class="status-container">
+      <div class="status" id="status">正在初始化...</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    </div>
+  </div>
+</div>
+<script>
+  const statusEl = document.getElementById('status');
+  const progressEl = document.getElementById('progress-fill');
+
+  function updateStatus(text, progress) {
+    if (text) statusEl.textContent = text;
+    if (typeof progress === 'number') {
+      progressEl.style.width = progress + '%';
+    }
+  }
+
+  // 获取版本号
+  window.weAPI.getVersion().then(v => document.getElementById('version').textContent = v);
+
+  // 获取主题并应用配色方案
+  window.weAPI.getSettings().then(settings => {
+    const presets = {
+      'we-light': { bg:'#E8FBF9', text:'#0B2A2E', sub:'#2F585E', track:'rgba(0,0,0,0.08)', fill:'#00897B' },
+      'default-light': { bg:'#ffffff', text:'#1e1e1e', sub:'#666666', track:'rgba(0,0,0,0.08)', fill:'#0078d4' },
+      'github-light': { bg:'#ffffff', text:'#1f2328', sub:'#656d76', track:'rgba(0,0,0,0.08)', fill:'#0969da' },
+      'solarized-light': { bg:'#fdf6e3', text:'#586e75', sub:'#657b83', track:'rgba(0,0,0,0.08)', fill:'#268bd2' },
+      'nord-light': { bg:'#f5f7fa', text:'#2e3440', sub:'#4c566a', track:'rgba(0,0,0,0.08)', fill:'#5e81ac' },
+      'default-dark': { bg:'#2d2d2d', text:'#cccccc', sub:'#999999', track:'rgba(255,255,255,0.1)', fill:'#0078d4' },
+      'dracula': { bg:'#282a36', text:'#f8f8f2', sub:'#6272a4', track:'rgba(255,255,255,0.1)', fill:'#bd93f9' },
+      'monokai': { bg:'#272822', text:'#f8f8f2', sub:'#75715e', track:'rgba(255,255,255,0.1)', fill:'#a6e22e' },
+      'solarized-dark': { bg:'#002b36', text:'#93a1a1', sub:'#657b83', track:'rgba(255,255,255,0.1)', fill:'#268bd2' },
+      'nord': { bg:'#2e3440', text:'#d8dee9', sub:'#81a1c1', track:'rgba(255,255,255,0.1)', fill:'#88c0d0' },
+      'github-dark': { bg:'#0d1117', text:'#c9d1d9', sub:'#8b949e', track:'rgba(255,255,255,0.1)', fill:'#58a6ff' },
+      'one-dark': { bg:'#282c34', text:'#abb2bf', sub:'#5c6370', track:'rgba(255,255,255,0.1)', fill:'#61afef' }
+    };
+
+    const preset = settings.customColors || presets[settings.colorPreset] || presets['default-dark'];
+    const root = document.documentElement;
+    if (settings.customColors) {
+      root.style.setProperty('--splash-bg', settings.customColors['--bg-main'] || '#2d2d2d');
+      root.style.setProperty('--splash-text', settings.customColors['--text'] || '#ccc');
+      root.style.setProperty('--splash-sub', settings.customColors['--text-secondary'] || '#aaa');
+      root.style.setProperty('--splash-fill', settings.customColors['--accent'] || '#0078d4');
+      const isLight = (settings.customColors['--bg-main'] || '#').toLowerCase() > '#a';
+      root.style.setProperty('--splash-track', isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.1)');
+    } else if (preset) {
+      root.style.setProperty('--splash-bg', preset.bg);
+      root.style.setProperty('--splash-text', preset.text);
+      root.style.setProperty('--splash-sub', preset.sub);
+      root.style.setProperty('--splash-track', preset.track);
+      root.style.setProperty('--splash-fill', preset.fill);
+    }
+  });
+
+  // 接收主进程发送的状态更新
+  if (window.weAPI.onSplashStatus) {
+    window.weAPI.onSplashStatus((text, progress) => {
+      updateStatus(text, progress);
+    });
+  }
+
+  // 默认加载步骤（用于没有 IPC 通信的场景）
+  const defaultSteps = [
+    { text: '正在检查项目文件...', progress: 20 },
+    { text: '正在加载配置...', progress: 50 },
+    { text: '正在初始化界面...', progress: 80 },
+    { text: '正在启动...', progress: 95 },
+    { text: '加载完成', progress: 100 }
+  ];
+  let defaultStep = 0;
+  const defaultInterval = setInterval(() => {
+    if (defaultStep < defaultSteps.length) {
+      const step = defaultSteps[defaultStep++];
+      updateStatus(step.text, step.progress);
+    } else {
+      clearInterval(defaultInterval);
+    }
+  }, 600);
+</script>
+</body>
+</html>

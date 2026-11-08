@@ -5,43 +5,56 @@
 
 function destroyEmbeddedNodeGraph(safeId) {
     weLog.info('editor', '→ destroyEmbeddedNodeGraph', { safeId });
-    const inst = embeddedNodeGraphs[safeId];
-    if (!inst) return;
     const project = tabs[safeId];
-    try {
-        if (inst.engine) {
-            // 【修复切回内容消失 #1】不管 dirty 与否，一律把当前引擎数据写入 fileCache 暂存
-            // （dirty 标记可能因某些操作漏触发，宁可缓存一份"至少比磁盘旧内容新"的状态，
-            //  也不能直接丢内存数据去读磁盘）
-            if (project) {
+
+    // === 新路径：node-graph.js createNodeGraphTab(嵌入模式) ===
+    const ngEmbedTabId = 'nodegraph-embed-' + safeId;
+    if (typeof nodeGraphInstances !== 'undefined' && nodeGraphInstances[ngEmbedTabId]) {
+        const ngInst = nodeGraphInstances[ngEmbedTabId];
+        try {
+            if (ngInst.engine && project && ngInst.graphId) {
                 project.fileCache = project.fileCache || {};
                 try {
-                    const data = inst.engine.getData();
-                    const jsonStr = JSON.stringify(data, null, 2);
-                    // 【修复切回内容消失 #2】fileCache key 双写：graphFile 和 basename(graphFile) 都存一份
-                    // 因为 openEmbeddedNodeGraph 的 filename 参数有时带 subpath，有时是纯文件名
-                    // 【终极修复 #类型包裹】用 _fcWrap('ngjson', ...) 包裹，防止 Quill HTML 覆盖 key
-                    const wrapped = _fcWrap('ngjson', jsonStr);
-                    project.fileCache[inst.graphFile] = wrapped;
-                    const base = inst.graphFile.includes('/') || inst.graphFile.includes('\\')
-                        ? inst.graphFile.split(/[\\/]/).pop()
-                        : inst.graphFile;
-                    if (base !== inst.graphFile) { project.fileCache[base] = wrapped; }
-                    weLog.debug('editor', 'destroyEmbeddedNodeGraph: 数据已缓存',
-                        { graphFile: inst.graphFile, base, dirty: inst.dirty, nodes: data.nodes.length, edges: data.edges.length });
-                } catch (e) {
-                    // 【修复切回内容消失 #3】不再静默吞异常，打印便于定位
-                    weLog.error('editor', 'destroyEmbeddedNodeGraph: 缓存写入失败', e && e.stack ? e.stack : String(e));
-                }
+                    const data = ngInst.engine.getData();
+                    const wrapped = _fcWrap('ngjson', JSON.stringify(data, null, 2));
+                    const filename = ngInst.graphId + '.node.json';
+                    project.fileCache[filename] = wrapped;
+                    const base = filename.split(/[\\/]/).pop();
+                    if (base !== filename) project.fileCache[base] = wrapped;
+                } catch (e) {}
+                ngInst.engine.destroy?.();
             }
-            inst.engine.destroy?.();
+        } catch (e) {
+            weLog.warn('editor', 'destroyEmbeddedNodeGraph(node-graph): 销毁异常', String(e));
         }
-    } catch (e) {
-        weLog.warn('editor', 'destroyEmbeddedNodeGraph: 销毁异常', e && e.stack ? e.stack : String(e));
+        delete nodeGraphInstances[ngEmbedTabId];
     }
+
+    // === 旧路径：embed.js openEmbeddedNodeGraph（兼容）===
+    const inst = embeddedNodeGraphs[safeId];
+    if (inst) {
+        try {
+            if (inst.engine) {
+                if (project) {
+                    project.fileCache = project.fileCache || {};
+                    try {
+                        const data = inst.engine.getData();
+                        const wrapped = _fcWrap('ngjson', JSON.stringify(data, null, 2));
+                        project.fileCache[inst.graphFile] = wrapped;
+                        const base = inst.graphFile.split(/[\\/]/).pop();
+                        if (base !== inst.graphFile) project.fileCache[base] = wrapped;
+                    } catch (e) {}
+                }
+                inst.engine.destroy?.();
+            }
+        } catch (e) {
+            weLog.warn('editor', 'destroyEmbeddedNodeGraph(embed): 销毁异常', String(e));
+        }
+        delete embeddedNodeGraphs[safeId];
+    }
+
     const embedEl = document.getElementById(`ng-embed-${safeId}`);
     if (embedEl) embedEl.innerHTML = '';
-    delete embeddedNodeGraphs[safeId];
 }
 
 /**
@@ -287,24 +300,25 @@ async function openEmbeddedNodeGraph(safeId, filename) {
         } else if (action === 'history') {
             toggleHistoryPanel(safeId);
         } else if (action === 'layout-selector') {
-            // 切换排版下拉菜单
-            let menu = document.querySelector('.ng-layout-menu');
-            // 如果菜单还在 toolbar 内部，移到 body 并使用 fixed 定位（避免被 toolbar 的 overflow 裁剪）
-            if (menu && menu.parentNode !== document.body) {
-                document.body.appendChild(menu);
-            }
-            if (menu) {
-                const isVisible = menu.style.display !== 'none';
-                // 关闭所有排版菜单
-                document.querySelectorAll('.ng-layout-menu').forEach(m => m.style.display = 'none');
-                if (!isVisible) {
-                    // 根据按钮位置计算 fixed 定位坐标
-                    var br = btn.getBoundingClientRect();
-                    menu.style.position = 'fixed';
-                    menu.style.top = (br.bottom + 4) + 'px';
-                    menu.style.left = br.left + 'px';
-                    menu.style.display = 'block';
-                }
+            // 切换排版下拉菜单（菜单已被 append 到 body 做 fixed 定位）
+            let menu = document.querySelector('.ng-layout-menu[data-for-embed="' + safeId + '"]');
+            if (!menu) menu = document.querySelector('.ng-layout-menu');
+            if (!menu) { weLog.warn('editor', 'embed layout-selector: menu not found'); return; }
+            // 把 engine/markDirty 直接挂到 menu DOM 上
+            menu._ngEngine = engine;
+            menu._ngMarkDirty = markDirty;
+            if (!menu.dataset.forEmbed) menu.dataset.forEmbed = safeId;
+            const isVisible = menu.style.display !== 'none';
+            // 关闭其他 tab 残留的 menu
+            document.querySelectorAll('.ng-layout-menu').forEach(m => { if (m !== menu) m.style.display = 'none'; });
+            if (!isVisible) {
+                var br = btn.getBoundingClientRect();
+                menu.style.position = 'fixed';
+                menu.style.top = (br.bottom + 4) + 'px';
+                menu.style.left = br.left + 'px';
+                menu.style.display = 'block';
+            } else {
+                menu.style.display = 'none';
             }
         } else if (action === 'export') {
             if (typeof exportNodeGraphHTML === 'function') exportNodeGraphHTML(engine, safeId);
@@ -361,39 +375,52 @@ async function openEmbeddedNodeGraph(safeId, filename) {
         }
     });
 
-    // 排版下拉菜单选项
-    toolbar.addEventListener('click', (e) => {
-        if (!e || !e.target) return;
-        var target = e.target;
-        var opt = (typeof target.closest === 'function') ? target.closest('.ng-layout-option') : null;
-        if (!opt) return;
-        const layout = opt.dataset.layout;
-        if (!layout) return;
-        // 关闭菜单
-        const menu = document.querySelector('.ng-layout-menu');
-        if (menu) menu.style.display = 'none';
-        // 执行排版
-        engine.autoLayout(layout);
-        markDirty();
-    });
-    // 点击其他区域关闭排版菜单
-    document.addEventListener('click', (e) => {
-        var menu = document.querySelector('.ng-layout-menu');
-        if (!menu || menu.style.display === 'none') return;
-        // 点击菜单内部不关闭
-        if (menu.contains(e.target)) return;
-        // 点击排版按钮本身不关闭（由 toolbar 处理切换）
-        if (e.target && (typeof e.target.closest === 'function') && e.target.closest('[data-action="layout-selector"]')) return;
-        // 点击排版按钮的 SVG 子元素（兼容性回溯）
-        if (e.target) {
-            var el = e.target;
-            while (el && el !== document.body) {
-                if (el.nodeType === 1 && el.getAttribute && el.getAttribute('data-action') === 'layout-selector') return;
-                el = el.parentElement || (el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null);
+    // 工具栏隐藏滚动条后的滚轮横向滚动
+    let _toolbarHover = false;
+    toolbar.addEventListener('mouseenter', () => { _toolbarHover = true; });
+    toolbar.addEventListener('mouseleave', () => { _toolbarHover = false; });
+
+    // 左右滚动箭头
+    if (typeof addScrollArrows === 'function') addScrollArrows(toolbar);
+
+    function _handleToolbarWheel(e) {
+        if (!_toolbarHover) return;
+        const openMenu = document.querySelector('.ng-layout-menu');
+        if (openMenu && openMenu.style.display === 'none') { /* closed, fine */ }
+        else if (openMenu) return; // menu open, don't scroll toolbar
+        const dy = e.deltaY != null ? e.deltaY : (e.wheelDelta != null ? -e.wheelDelta : 0);
+        const dx = e.deltaX != null ? e.deltaX : 0;
+        const step = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+        if (step === 0) return;
+        e.preventDefault();
+        toolbar.scrollLeft += step;
+    }
+    document.addEventListener('wheel', _handleToolbarWheel, { passive: false });
+    document.addEventListener('mousewheel', _handleToolbarWheel, { passive: false });
+
+    // 排版下拉菜单选项 + 关闭：改用 document capture（menu 在 body 上，toolbar 监听不到）
+    document.addEventListener('mousedown', (e) => {
+        const menus = document.querySelectorAll('.ng-layout-menu');
+        menus.forEach(function(menu) {
+            if (!menu || menu.style.display === 'none') return;
+            if (menu.contains(e.target)) {
+                var opt = (typeof e.target.closest === 'function') ? e.target.closest('.ng-layout-option') : null;
+                if (!opt && e.target.classList && e.target.classList.contains('ng-layout-option')) opt = e.target;
+                if (opt) {
+                    const layout = opt.dataset.layout;
+                    const eng = menu._ngEngine;
+                    const md = menu._ngMarkDirty;
+                    menu.style.display = 'none';
+                    if (layout && eng) {
+                        try { eng.autoLayout(layout); if (md) md(); weLog.info('editor', 'embed autoLayout', { layout }); } catch (err) { weLog.error('editor', 'embed autoLayout 失败', err && err.stack ? err.stack : String(err)); }
+                    }
+                }
+                return;
             }
-        }
-        menu.style.display = 'none';
-    });
+            if (e.target && (typeof e.target.closest === 'function') && e.target.closest('[data-action="layout-selector"]')) return;
+            menu.style.display = 'none';
+        });
+    }, true);
 
     // 模拟标签更新
     function updateSimLabel() {

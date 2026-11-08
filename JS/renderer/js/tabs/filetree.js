@@ -1,8 +1,27 @@
+﻿// 需要过滤的系统文件/临时文件名
+const SYSTEM_FILE_PATTERNS = [
+    /^\+$/,
+    /^index\.html$/i,
+    /^_metadata\.json$/i,
+    /^~\$/,
+    /\.tmp$/i,
+    /\.temp$/i,
+    /~$/
+];
+
 function buildFileTree(files) {
     const root = {};
+    const isMobile = !document.body.classList.contains('is-desktop');
     for (const file of files) {
-        if (file.startsWith('_')) continue;
-        // 跳过 .keep 占位文件，但仍会通过路径创建文件夹节点
+        // 统一过滤：隐藏文件 + _ 开头文件夹
+        if (shouldSkipPath(file)) continue;
+        const fileName = file.split('/').pop();
+        if (isMobile && (/\.wep$/i.test(fileName) || /\.bwep$/i.test(fileName))) continue;
+        let isSystemFile = false;
+        for (const pattern of SYSTEM_FILE_PATTERNS) {
+            if (pattern.test(fileName)) { isSystemFile = true; break; }
+        }
+        if (isSystemFile) continue;
         if (file.endsWith('/.keep')) {
             const dirPath = file.slice(0, -'/.keep'.length);
             const parts = dirPath.split('/');
@@ -30,19 +49,98 @@ function buildFileTree(files) {
 }
 
 function stripExt(name) {
-    // 节点图文件：去掉 .node.json 整个后缀
     if (name.endsWith('.node.json')) return name.slice(0, -10);
     const idx = name.lastIndexOf('.');
     return idx > 0 ? name.substring(0, idx) : name;
 }
 
-// Lucide 风格 SVG 图标
+// 统一过滤：跳过隐藏文件和文件夹
+// 规则：
+// 1. . 开头的文件/文件夹 → 跳过
+// 2. _ 开头的文件夹（非 __ 开头）→ 跳过整个路径（如 _images/）
+// 3. _ 开头的文件（非 __img_/__bin_/__media_ 前缀）→ 跳过
+function shouldSkipPath(filePath) {
+    const parts = filePath.split('/');
+    // 检查路径中的所有文件夹名（中间段）
+    for (let i = 0; i < parts.length - 1; i++) {
+        const folder = parts[i];
+        if (folder.startsWith('.')) return true;
+        if (folder.startsWith('_') && !folder.startsWith('__')) return true;
+    }
+    // 检查最后的文件名
+    const fileName = parts[parts.length - 1];
+    if (fileName.startsWith('.')) return true;
+    if (fileName.startsWith('_') && !fileName.startsWith('__img_') && !fileName.startsWith('__bin_') && !fileName.startsWith('__media_')) return true;
+    return false;
+}
+
+// 存储文件前缀定义（旧架构遗留）
+const STORAGE_PREFIXES = { '__img_': 6, '__bin_': 6, '__media_': 8 };
+function getStoragePrefix(filename) {
+    for (const [prefix, length] of Object.entries(STORAGE_PREFIXES)) {
+        if (filename.startsWith(prefix)) return { prefix, length };
+    }
+    return null;
+}
+function getCleanName(filename) {
+    const info = getStoragePrefix(filename);
+    return info ? filename.slice(info.length) : filename;
+}
+
+// 扩展名常量
+const SUPPORTED_TEXT_EXTENSIONS = [
+    '.txt', '.md', '.markdown', '.rtf', '.log', '.csv', '.json', '.xml', '.html', '.htm',
+    '.css', '.js', '.ts', '.jsx', '.tsx', '.yml', '.yaml', '.ini', '.cfg', '.conf',
+    '.py', '.java', '.cpp', '.c', '.h', '.cs', '.go', '.rs', '.php', '.rb', '.lua',
+    '.sql', '.sh', '.bat', '.ps1', '.svg', '.tex', '.org', '.rst', '.wiki'
+];
+const VIEWER_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.tiff', '.tif'];
+const VIEWER_MEDIA_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.mp3', '.wav', '.flac', '.aac', '.m4a', '.avi'];
+const VIEWER_DOC_EXTENSIONS = ['.pdf'];
+const VIEWER_EXTENSIONS = [...VIEWER_IMAGE_EXTENSIONS, ...VIEWER_MEDIA_EXTENSIONS, ...VIEWER_DOC_EXTENSIONS];
+const UNSUPPORTED_EXTENSIONS = [
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+    '.exe', '.dll', '.so', '.dylib', '.jar', '.war', '.class',
+    '.apk', '.ipa', '.iso', '.img',
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'
+];
+
+// Lucide 官方图标 (lucide v1.x stroke-width=2)
 const TREE_ICONS = {
-    folder: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    folderOpen: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2v-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    file: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><path d="M6 2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 2v4h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 13h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 17h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    gitBranch: '<svg class="tree-icon" viewBox="0 0 24 24" width="16" height="16"><line x1="6" y1="3" x2="6" y2="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M18 9a9 9 0 0 1-9 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    folder: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+    folderOpen: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>',
+    file: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg>',
+    gitBranch: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>',
+    video: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
+    image: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
+    audio: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+    fileText: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>',
+    code: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>',
+    archive: '<svg class="tree-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>',
 };
+
+// ====== 标签可见性（按 safeId，默认显示）======
+const tagVisibility = {};
+function isTagsHidden(safeId) { return tagVisibility[safeId] === true; }
+function toggleTagVisibility(safeId) {
+    tagVisibility[safeId] = !tagVisibility[safeId];
+    const state = searchState[safeId];
+    if (state && state.query) {
+        // 搜索中：重新搜索以反映标签隐藏状态
+        executeSearch(safeId);
+    } else {
+        const files = tabs[safeId]?.fileList;
+        if (files) refreshFileTree(safeId, files);
+    }
+}
+function setupTagToggle(safeId) {
+    const btn = document.getElementById('tag-toggle-' + safeId);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        toggleTagVisibility(safeId);
+        btn.classList.toggle('active', tagVisibility[safeId]);
+    });
+}
 
 const ARROW_COLLAPSED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const ARROW_EXPANDED = '<svg class="tree-arrow-icon" viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -53,6 +151,88 @@ const rootDropBound = new WeakSet();
 
 // 排序顺序：'asc' 升序 | 'desc' 降序
 let fileSortOrder = 'asc';
+
+// ====== 存储前缀 & 类别 ======
+function getStoragePrefix(filename) {
+    for (const [prefix, length] of Object.entries(STORAGE_PREFIXES)) {
+        if (filename.startsWith(prefix)) {
+            return { prefix, length };
+        }
+    }
+    return null;
+}
+
+function getCleanName(filename) {
+    const info = getStoragePrefix(filename);
+    if (info) {
+        return filename.slice(info.length);
+    }
+    return filename;
+}
+
+function addStoragePrefix(cleanName, originalFilename) {
+    const info = getStoragePrefix(originalFilename);
+    if (info) {
+        return info.prefix + cleanName;
+    }
+    return cleanName;
+}
+
+function getFileCategory(filename) {
+    // 使用编辑器注册表的元数据检测（如果可用）
+    const _getMeta = window.getFileMetadata;
+    if (typeof _getMeta === 'function') {
+        const meta = _getMeta(filename);
+        // 转换为文件树使用的分类名
+        if (meta.category === 'viewer' && meta.isImage) return 'viewer-image';
+        if (meta.category === 'viewer') return 'viewer';
+        if (meta.category === 'unsupported') return 'unsupported';
+        if (meta.category === 'nodegraph') return 'nodegraph';
+        return meta.category; // 'text'
+    }
+    
+    // 回退：本地检测逻辑
+    // 提取文件名部分再检查前缀（避免路径干扰）
+    const fileNameOnly = filename ? filename.split(/[\\/]/).pop() : '';
+    const isStoredImage = fileNameOnly.startsWith('__img_');
+    const isStoredBinary = fileNameOnly.startsWith('__bin_');
+    const isStoredMedia = fileNameOnly.startsWith('__media_');
+    const cleanName = isStoredImage ? filename.slice(6) : 
+                      (isStoredBinary ? filename.slice(6) : 
+                       (isStoredMedia ? filename.slice(8) : filename));
+    const ext = cleanName.lastIndexOf('.') >= 0 ? cleanName.substring(cleanName.lastIndexOf('.')).toLowerCase() : '';
+    
+    if (isStoredImage) return 'viewer-image';
+    if (isStoredMedia) return 'viewer'; // 视频/音频文件在文件树中显示为展示类
+    if (isStoredBinary) return 'unsupported';
+    if (cleanName.endsWith('.node.json')) return 'nodegraph';
+    if (SUPPORTED_TEXT_EXTENSIONS.includes(ext) || !ext) return 'text';
+    if (VIEWER_EXTENSIONS.includes(ext)) return 'viewer';
+    if (UNSUPPORTED_EXTENSIONS.includes(ext)) return 'unsupported';
+    if (ext) return 'unsupported';
+    return 'text';
+}
+
+// 根据文件路径返回 { icon: TREE_ICONS key, badge: 徽章文本或 null }
+function getFileIconAndBadge(filePath) {
+    const fileName = filePath.split('/').pop();
+    const cleanName = getCleanName(fileName);
+    const isNodeGraph = cleanName.endsWith('.node.json');
+    const ext = isNodeGraph ? '.node.json' : 
+                (cleanName.lastIndexOf('.') >= 0 ? cleanName.substring(cleanName.lastIndexOf('.')).toLowerCase() : '');
+    
+    if (isNodeGraph) return { icon: TREE_ICONS.gitBranch, badge: '节点图' };
+    if (VIEWER_IMAGE_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.image, badge: ext.toUpperCase().replace('.', '') };
+    if (['.mp4', '.webm', '.ogg', '.mov', '.avi'].includes(ext)) return { icon: TREE_ICONS.video, badge: ext.toUpperCase().replace('.', '') };
+    if (['.mp3', '.wav', '.flac', '.aac', '.m4a'].includes(ext)) return { icon: TREE_ICONS.audio, badge: ext.toUpperCase().replace('.', '') };
+    if (VIEWER_DOC_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.fileText, badge: 'PDF' };
+    if (['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'].includes(ext)) return { icon: TREE_ICONS.archive, badge: ext.toUpperCase().replace('.', '') };
+    if (['.json', '.xml', '.html', '.htm', '.css', '.js', '.ts', '.jsx', '.tsx'].includes(ext)) return { icon: TREE_ICONS.code, badge: ext.toUpperCase().replace('.', '') };
+    if (SUPPORTED_TEXT_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.fileText, badge: ext ? ext.toUpperCase().replace('.', '') : null };
+    if (UNSUPPORTED_EXTENSIONS.includes(ext)) return { icon: TREE_ICONS.archive, badge: ext.toUpperCase().replace('.', '') };
+    if (!ext) return { icon: TREE_ICONS.fileText, badge: null };
+    return { icon: TREE_ICONS.file, badge: ext.toUpperCase().replace('.', '') };
+}
 
 // ====== 多选状态 ======
 // selectedItems: Map<path, { type: 'file'|'folder', element: HTMLElement }>
@@ -416,7 +596,7 @@ async function batchDelete(safeId, projectPath) {
     weLog.info('filetree', '← batchDelete 完成', { successCount, total: count });
 }
 
-function renderTreeNodes(container, tree, basePath = '') {
+function renderTreeNodes(container, tree, basePath = '', safeId = '') {
     const folders = Object.keys(tree).filter(k => k !== '_files');
     folders.sort();
     if (fileSortOrder === 'desc') folders.reverse();
@@ -427,9 +607,10 @@ function renderTreeNodes(container, tree, basePath = '') {
         folderDiv.dataset.folderPath = folderPath;
         const header = document.createElement('div');
         header.className = 'tree-folder-header';
-        // 显示文件夹标签
+        // 显示文件夹标签（标签隐藏时不显示）
+        const folderTagsHidden = isTagsHidden(safeId);
         const folderTags = window.tagModule?.getTagsForFile(folderPath) || [];
-        const folderTagsHtml = folderTags.length > 0
+        const folderTagsHtml = (!folderTagsHidden && folderTags.length > 0)
             ? '<span class="file-tags">' + folderTags.map(tag =>
                 `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
               ).join('') + '</span>'
@@ -465,7 +646,7 @@ function renderTreeNodes(container, tree, basePath = '') {
         const content = document.createElement('div');
         content.className = 'tree-folder-content';
         content.style.display = 'none';
-        renderTreeNodes(content, tree[folder], folderPath);
+        renderTreeNodes(content, tree[folder], folderPath, safeId);
 
         // 文件夹右键菜单
         header.oncontextmenu = (e) => {
@@ -542,22 +723,47 @@ function renderTreeNodes(container, tree, basePath = '') {
             thumbHtml = `<span class="file-thumb"><img src="${thumb}" /></span>`;
         }
 
-        const isNodeGraph = file.endsWith('.node.json');
-        // 有缩略图时优先显示缩略图，不显示图标
+        // 根据文件类型选图标（徽章拆分：extBadge 始终在 file-name 后，typeBadge 仅特殊类型在最右）
+        const { icon: fileIcon } = getFileIconAndBadge(filePath);
         const useIcon = !thumb;
-        const fileIconHtml = useIcon ? (isNodeGraph ? TREE_ICONS.gitBranch : TREE_ICONS.file) : '';
-        const badgeHtml = isNodeGraph ? `<span class="file-type-badge">${t('ui.nodegraph') || '节点图'}</span>` : '';
+        const fileIconHtml = useIcon ? fileIcon : '';
+        const tagsHidden = isTagsHidden(safeId);
+
+        // 扩展名徽章：始终显示在 file-name 后面
+        let extBadgeHtml = '';
+        const isNodeGraph = file.endsWith('.node.json');
+        let displayBaseName = stripExt(file);
+        let nameExt = '';
+        if (isNodeGraph) {
+            nameExt = '.node.json';
+        } else {
+            const dotIdx = file.lastIndexOf('.');
+            if (dotIdx >= 0 && dotIdx < file.length - 1) {
+                nameExt = file.substring(dotIdx + 1);
+            }
+        }
+        if (nameExt && nameExt.length <= 8) {
+            extBadgeHtml = `<span class="file-ext-badge">${escapeHtml(nameExt.toUpperCase())}</span>`;
+        }
+
+        // 类型徽章：仅特殊类型（如节点图）且标签隐藏时显示在最右
+        let typeBadgeHtml = '';
+        if (isNodeGraph) {
+            typeBadgeHtml = `<span class="file-type-badge">${t('ui.nodegraph') || '节点图'}</span>`;
+        }
+        const badgeHtml = (!tagsHidden || !typeBadgeHtml) ? '' : typeBadgeHtml;
+
         const fileDesc = window.tagModule?.getDesc(filePath) || '';
         const descHtml = fileDesc ? `<span class="file-desc">${escapeHtml(fileDesc)}</span>` : '';
-        // 标签限制在 1/2 宽度可滚动容器内
+        // 标签可见时渲染标签；隐藏时徽章显示在最右
         let tagsScrollerHtml = '';
-        if (tags.length > 0) {
+        if (!tagsHidden && tags.length > 0) {
             const tagsContent = tags.map(tag =>
                 `<span class="mini-tag" style="background-color:${tag.color}" title="${tag.label}">${tag.emoji || ''}${tag.label ? ' ' + tag.label : ''}</span>`
             ).join('');
             tagsScrollerHtml = `<span class="file-tags-scroller" tabindex="-1"><span class="file-tags">${tagsContent}</span></span>`;
         }
-        fileDiv.innerHTML = `${fileIconHtml ? '<span class="file-icon">' + fileIconHtml + '</span>' : ''}${thumbHtml}<span class="file-name">${stripExt(file)}</span>${badgeHtml}${descHtml}${tagsScrollerHtml}`;
+        fileDiv.innerHTML = `${fileIconHtml ? '<span class="file-icon">' + fileIconHtml + '</span>' : ''}${thumbHtml}<span class="file-name">${displayBaseName}</span>${extBadgeHtml}${descHtml}${tagsScrollerHtml}${badgeHtml}`;
         // 鼠标滚轮滚动标签
         if (tagsScrollerHtml) {
             const scroller = fileDiv.querySelector('.file-tags-scroller');
@@ -743,8 +949,8 @@ function showFileContextMenu(e, filePath, container) {
     renameItem.onclick = async () => {
         menu.remove();
         const result = await showPrompt(t('ui.rename') || '重命名', displayName);
-        if (!result) return;
-        const newName = result.trim();
+        if (!result || !result.value) return;
+        const newName = result.value.trim();
         if (!newName || newName === displayName) return;
         // 节点图文件保持 .node.json 完整后缀
         let newFileName;
@@ -797,6 +1003,46 @@ function showFileContextMenu(e, filePath, container) {
             if (window.closeProjectFile) window.closeProjectFile(safeId);
         };
     }
+
+    // "新标签页打开"：所有文件类型都支持（富文本 / Markdown / 节点图）
+    const standaloneTabId = typeof getOpenFileTabId === 'function' ? getOpenFileTabId(projectPath, filePath) : null;
+    const isInOtherTab = standaloneTabId && standaloneTabId !== safeId;  // 在别的独立标签打开
+    const isInThisProject = standaloneTabId === safeId;                   // 在本项目页打开
+
+    const openStandaloneItem = document.createElement('div');
+    openStandaloneItem.className = 'context-item';
+    if (isInThisProject) {
+        openStandaloneItem.textContent = t('ui.open_in_new_tab') || '在新标签页打开';
+    } else if (isInOtherTab) {
+        openStandaloneItem.textContent = (t('ui.file_already_open') || '已在新标签页打开') + ' → ' + (t('ui.jump_to') || '跳转');
+    } else {
+        openStandaloneItem.textContent = t('ui.open_in_new_tab') || '在新标签页打开';
+    }
+    openStandaloneItem.onclick = async () => {
+        menu.remove();
+        if (isInThisProject) {
+            // 文件在项目页打开中 → 先注销 openFileMap（否则 openFileInNewTab 冲突检测会误报）
+            if (typeof unregisterOpenFile === 'function') {
+                unregisterOpenFile(projectPath, filePath);
+            }
+            // 然后关闭项目页的编辑器
+            if (window.closeProjectFile) window.closeProjectFile(safeId);
+        }
+        if (typeof openFileInNewTab === 'function') {
+            await openFileInNewTab(projectPath, filePath, tabs[safeId]?.projectMode);
+        } else {
+            // 降级：节点图复用旧路径
+            if (isNodeGraph && typeof createNodeGraphTab === 'function') {
+                const baseName = fileName.replace(/\.node\.json$/, '');
+                const tabId = createNodeGraphTab(baseName, baseName, projectPath);
+                if (tabId) switchTab(tabId);
+            } else {
+                weLog.warn('filetree', 'openFileInNewTab 未加载');
+            }
+        }
+    };
+    menu.appendChild(openStandaloneItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
 
     menu.appendChild(descItem);
     menu.appendChild(tagItem);
@@ -872,6 +1118,15 @@ function showFolderContextMenu(e, folderPath, container) {
     const projectPath = tabs[safeId]?.projectPath;
     const folderName = folderPath.split('/').pop();
 
+    // "导入文件"：从系统文件选择器导入到该文件夹
+    const importItem = document.createElement('div');
+    importItem.className = 'context-item';
+    importItem.textContent = t('ui.import_files') || '导入文件';
+    importItem.onclick = () => {
+        menu.remove();
+        triggerImportFileDialog(safeId, projectPath, folderPath);
+    };
+
     const tagItem = document.createElement('div');
     tagItem.className = 'context-item';
     tagItem.textContent = t('ui.manage_tags') || '管理标签';
@@ -883,8 +1138,8 @@ function showFolderContextMenu(e, folderPath, container) {
     renameItem.onclick = async () => {
         menu.remove();
         const result = await showPrompt(t('ui.rename') || '重命名', folderName);
-        if (!result) return;
-        const newName = result.trim();
+        if (!result || !result.value) return;
+        const newName = result.value.trim();
         if (!newName || newName === folderName) return;
         const newFolderPath = folderPath.includes('/') ? folderPath.substring(0, folderPath.lastIndexOf('/')) + '/' + newName : newName;
         const res = await weAPI.renameFolder(projectPath, folderPath, newFolderPath);
@@ -923,12 +1178,104 @@ function showFolderContextMenu(e, folderPath, container) {
         }
     };
 
+    menu.appendChild(importItem);
+    menu.appendChild(document.createElement('div')).className = 'context-sep';
     menu.appendChild(tagItem);
     menu.appendChild(document.createElement('div')).className = 'context-sep';
     menu.appendChild(renameItem);
     menu.appendChild(deleteItem);
 
     positionContextMenu(menu, e);
+}
+
+// ====== 文件导入 ======
+function triggerImportFileDialog(safeId, projectPath, targetFolder) {
+    // 使用全局暴露的导入函数
+    if (window.importFilesFromExternal) {
+        window.importFilesFromExternal(safeId, projectPath, targetFolder);
+    } else {
+        // 后备方案：直接创建 file input
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.multiple = true;
+        fileInput.style.display = 'none';
+        
+        fileInput.onchange = async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            
+            showNotification(`正在导入 ${files.length} 个文件...`, 3000);
+            
+            let importedCount = 0;
+            let failedCount = 0;
+            
+            for (const file of files) {
+                try {
+                    const targetPath = targetFolder ? `${targetFolder}/${file.name}` : file.name;
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    const isMediaFile = ['mp4','webm','ogg','mov','avi','mp3','wav','flac','aac','m4'].includes(ext);
+                    const isImageFile = ['png','jpg','jpeg','gif','bmp','webp','ico','tiff','tif'].includes(ext);
+                    
+                    if (isMediaFile) {
+                        const mediaFilename = `__media_${file.name}`;
+                        const dataUrl = await readFileAsDataURL(file);
+                        const mimeType = file.type || (ext.startsWith('mp3') ? 'audio/mpeg' : 'video/mp4');
+                        const res = await weAPI.saveMediaFile(projectPath, mediaFilename, dataUrl, mimeType);
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    } else if (isImageFile) {
+                        const imgFilename = `__img_${file.name}`;
+                        const dataUrl = await readFileAsDataURL(file);
+                        const res = await weAPI.saveMediaFile(projectPath, imgFilename, dataUrl, file.type || 'image/png');
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    } else {
+                        const content = await readFileAsText(file);
+                        const res = await weAPI.saveFile(projectPath, targetPath, content);
+                        if (res.success) importedCount++;
+                        else failedCount++;
+                    }
+                } catch (err) {
+                    console.error('导入文件失败:', err);
+                    failedCount++;
+                }
+            }
+            
+            if (importedCount > 0) {
+                const updated = await weAPI.listFiles(projectPath);
+                if (updated.success) {
+                    tabs[safeId].fileList = updated.files;
+                    refreshFileTree(safeId, updated.files);
+                }
+            }
+            
+            showNotification(`导入完成: 成功 ${importedCount} 个${failedCount > 0 ? `, 失败 ${failedCount} 个` : ''}`, 3000);
+        };
+        
+        document.body.appendChild(fileInput);
+        fileInput.click();
+        setTimeout(() => {
+            if (fileInput.parentNode) fileInput.parentNode.removeChild(fileInput);
+        }, 10000);
+    }
+}
+
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+    });
 }
 
 function openTagManager(filePath, container) {
@@ -1006,6 +1353,37 @@ function openThumbnailManager(filePath, container) {
     });
 }
 
+function showFileTreeLoading(safeId, message = '正在加载项目...') {
+    const treeContainer = document.getElementById(`file-tree-${safeId}`);
+    if (!treeContainer) return;
+    
+    treeContainer.innerHTML = `
+        <div class="filetree-loading">
+            <div class="ft-loading-spinner"></div>
+            <div class="ft-loading-text">${message}</div>
+        </div>
+    `;
+}
+
+// 外部调用：根据文件路径在文件树里高亮（用于打开文件后同步选中状态）
+function highlightFileInTree(safeId, filePath) {
+    const container = document.getElementById(`file-tree-${safeId}`);
+    if (!container) return;
+    // 先清除旧选中
+    if (multiSelectState.safeId === safeId) clearSelection(safeId);
+    container.querySelectorAll('.tree-file.selected, .tree-folder.selected, .tree-file.active, .tree-folder.active').forEach(el => {
+        el.classList.remove('selected', 'active');
+    });
+    // 找文件项
+    const fileEl = container.querySelector(`.tree-file[data-file="${CSS.escape(filePath)}"]`);
+    if (fileEl) {
+        fileEl.classList.add('selected');
+        // 滚动到可见
+        fileEl.scrollIntoView({ block: 'nearest' });
+    }
+}
+window.highlightFileInTree = highlightFileInTree;
+
 function refreshFileTree(safeId, files) {
     weLog.info('filetree', '→ refreshFileTree 开始', { safeId, fileCount: files ? files.length : 0 });
     const treeContainer = document.getElementById(`file-tree-${safeId}`);
@@ -1017,7 +1395,7 @@ function refreshFileTree(safeId, files) {
     // 清除多选状态
     if (multiSelectState.safeId === safeId) clearSelection(safeId);
     const tree = buildFileTree(files);
-    renderTreeNodes(treeContainer, tree);
+    renderTreeNodes(treeContainer, tree, '', safeId);
 
     // 点击空白区域清除选择
     treeContainer.onclick = (e) => {
@@ -1250,7 +1628,7 @@ async function executeSearch(safeId) {
         treeContainer.classList.remove('search-mode');
         treeContainer.innerHTML = '';
         const tree = buildFileTree(tabs[safeId].fileList);
-        renderTreeNodes(treeContainer, tree);
+        renderTreeNodes(treeContainer, tree, '', safeId);
         return;
     }
 
@@ -1263,7 +1641,7 @@ async function executeSearch(safeId) {
     if (noFilter || types.has('file') || types.has('folder')) {
         const seenFolders = new Set();
         for (const file of tabs[safeId].fileList) {
-            if (file.startsWith('_')) continue;
+            if (shouldSkipPath(file)) continue;
             const parts = file.split('/');
             const fileName = parts[parts.length - 1];
             const displayName = stripExt(fileName);
@@ -1325,39 +1703,86 @@ async function executeSearch(safeId) {
             if (!state.contentCache) {
                 state.contentCache = {};
                 const promises = tabs[safeId].fileList
-                    .filter(f => !f.startsWith('_'))
+                    .filter(f => {
+                        if (shouldSkipPath(f)) return false;
+                        // 只搜索文本类文件内容：SUPPORTED_TEXT_EXTENSIONS + 节点图 JSON
+                        const fn = f.split('/').pop();
+                        const cn = getCleanName(fn);
+                        if (cn.endsWith('.node.json')) return true;
+                        const ext = cn.lastIndexOf('.') >= 0 ? cn.substring(cn.lastIndexOf('.')).toLowerCase() : '';
+                        return SUPPORTED_TEXT_EXTENSIONS.includes(ext) || !ext;
+                    })
                     .map(async (file) => {
                         const res = await weAPI.readFile(project.projectPath, file);
                         if (res.success) {
-                            const text = res.content.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
-                            state.contentCache[file] = text;
+                            // 原始文本（用于 snippet 展示）
+                            const rawText = res.content
+                                .replace(/<[^>]+>/g, ' ')
+                                .replace(/&nbsp;/g, ' ');
+                            // 清理文本（用于索引和匹配）
+                            let cleanText = rawText;
+                            if (file.endsWith('.json')) {
+                                cleanText = cleanText
+                                    .replace(/[{}[\]]/g, ' ')
+                                    .replace(/"/g, ' ')
+                                    .replace(/:/g, ' ')
+                                    .replace(/,/g, ' ')
+                                    .replace(/\s+/g, ' ')
+                                    .trim();
+                            } else {
+                                cleanText = cleanText.replace(/\s+/g, ' ').trim();
+                            }
+                            state.contentCache[file] = { clean: cleanText, raw: rawText };
                         }
                     });
                 await Promise.all(promises);
             }
 
-            for (const [filePath, text] of Object.entries(state.contentCache)) {
+            for (const [filePath, cache] of Object.entries(state.contentCache)) {
+                const text = cache.clean;
+                const rawText = cache.raw;
                 const m = matchQuery(text, query);
-                if (m.match) {
-                    const parts = filePath.split('/');
-                    const displayName = stripExt(parts[parts.length - 1]);
-                    // 找第一个匹配位置用于摘要
-                    const lowerText = text.toLowerCase();
-                    const lowerQuery = query.toLowerCase();
-                    let idx = lowerText.indexOf(lowerQuery);
-                    if (idx === -1) {
-                        // 模糊匹配：找第一个字符位置
-                        let qi = 0;
-                        for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
-                            if (lowerText[i] === lowerQuery[qi]) { qi++; if (qi === lowerQuery.length) idx = i; }
-                        }
+                if (!m.match) continue;
+
+                const parts = filePath.split('/');
+                const displayName = stripExt(parts[parts.length - 1]);
+                const lowerText = text.toLowerCase();
+                const lowerQuery = query.toLowerCase();
+
+                // 找出清理后文本中的所有精确匹配位置
+                const matchIndices = [];
+                let searchFrom = 0;
+                while (searchFrom < lowerText.length) {
+                    const idx = lowerText.indexOf(lowerQuery, searchFrom);
+                    if (idx === -1) break;
+                    matchIndices.push(idx);
+                    searchFrom = idx + lowerQuery.length;
+                    // 最多取 5 个，避免过多结果
+                    if (matchIndices.length >= 5) break;
+                }
+
+                if (matchIndices.length === 0) {
+                    // 没有精确匹配（模糊匹配成功），生成一个结果
+                    let idx = 0;
+                    let qi = 0;
+                    for (let i = 0; i < lowerText.length && qi < lowerQuery.length; i++) {
+                        if (lowerText[i] === lowerQuery[qi]) { qi++; if (qi === lowerQuery.length) idx = i; }
                     }
-                    if (idx === -1) idx = 0;
-                    const snippetStart = Math.max(0, idx - 20);
-                    const snippetEnd = Math.min(text.length, idx + query.length + 30);
-                    let snippet = text.substring(snippetStart, snippetEnd).replace(/\s+/g, ' ').trim();
+                    matchIndices.push(idx);
+                }
+
+                // 每个匹配位置生成一个 snippet（用 raw 原文截取）
+                for (const idx of matchIndices) {
+                    // idx 是清理后文本中的位置，近似用 raw 生成 snippet
+                    // 简化：在 raw 中找 query 出现位置，找不到就用 idx 作为近似
+                    let rawIdx = rawText.toLowerCase().indexOf(lowerQuery);
+                    if (rawIdx === -1) rawIdx = Math.min(idx, rawText.length - 1);
+
+                    const snippetStart = Math.max(0, rawIdx - 25);
+                    const snippetEnd = Math.min(rawText.length, rawIdx + query.length + 35);
+                    let snippet = rawText.substring(snippetStart, snippetEnd).replace(/\s+/g, ' ').trim();
                     if (snippetStart > 0) snippet = '...' + snippet;
-                    if (snippetEnd < text.length) snippet = snippet + '...';
+                    if (snippetEnd < rawText.length) snippet = snippet + '...';
                     results.push({ type: 'content', name: displayName, path: filePath, matchText: snippet, score: m.score });
                 }
             }
@@ -1420,7 +1845,8 @@ async function executeSearch(safeId) {
         const matchEl = document.createElement('div');
         matchEl.className = 'search-result-match';
         if (r.type === 'tag') {
-            matchEl.innerHTML = `<span class="mini-tag" style="background-color:${r.tagColor}">${r.tagEmoji || ''} ${r.tagLabel || ''}</span>`;
+            const hidden = isTagsHidden(safeId);
+            matchEl.innerHTML = `<span class="mini-tag${hidden ? ' tag-hidden-ref' : ''}" style="background-color:${r.tagColor}">${r.tagEmoji || ''} ${r.tagLabel || ''}</span>`;
         } else if (r.type === 'content') {
             matchEl.textContent = r.matchText;
             matchEl.classList.add('content-snippet');
@@ -1446,7 +1872,7 @@ async function executeSearch(safeId) {
                 const tree = buildFileTree(tabs[safeId].fileList);
                 treeContainer.innerHTML = '';
                 treeContainer.classList.remove('search-mode');
-                renderTreeNodes(treeContainer, tree);
+                renderTreeNodes(treeContainer, tree, '', safeId);
                 // 展开对应文件夹
                 expandFolderPath(treeContainer, r.path);
             } else {
@@ -1460,7 +1886,7 @@ async function executeSearch(safeId) {
                 treeContainer.classList.remove('search-mode');
                 treeContainer.innerHTML = '';
                 const tree = buildFileTree(tabs[safeId].fileList);
-                renderTreeNodes(treeContainer, tree);
+                renderTreeNodes(treeContainer, tree, '', safeId);
             }
         });
 
@@ -1494,3 +1920,4 @@ function expandFolderPath(container, folderPath) {
         }
     }
 }
+

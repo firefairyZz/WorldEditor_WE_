@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>文件读写测试</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            padding: 16px;
+            padding-top: calc(16px + env(safe-area-inset-top));
+            padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        }
+        h1 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #1a1a2e;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .card h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #333;
+        }
+        .card input, .card textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-family: inherit;
+        }
+        .card textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-primary { background: #0078d4; color: #fff; }
+        .btn-secondary { background: #f0f0f0; color: #333; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .log {
+            background: #1a1a2e;
+            color: #0f0;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        .log .success { color: #0f0; }
+        .log .error { color: #f44; }
+        .log .info { color: #4af; }
+        .log .warn { color: #fa0; }
+        .file-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 8px;
+            margin-top: 8px;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .file-item:nth-child(odd) { background: #f8f8f8; }
+        .file-item button {
+            padding: 4px 8px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #e74c3c;
+            color: #fff;
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        .status.ok { background: #d4edda; color: #155724; }
+        .status.err { background: #f8d7da; color: #721c24; }
+        .row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .row .btn { flex: 1; }
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .tag.mock { background: #fff3cd; color: #856404; }
+        .tag.native { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+    <h1>📁 文件读写测试工具</h1>
+    
+    <div class="card">
+        <h2>环境信息</h2>
+        <div id="env-info" style="font-size:13px;color:#666;"></div>
+        <div style="margin-top:8px;">
+            <span id="fs-mode-tag" class="tag mock">检测中...</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>创建/写入文件</h2>
+        <input id="write-path" placeholder="文件路径 (如: /test/hello.txt)" value="/test/hello.txt">
+        <textarea id="write-content" placeholder="文件内容">Hello World! 这是一个测试文件。
+创建时间: <span id="write-time"></span></textarea>
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="writeFile()">写入文件</button>
+            <button class="btn btn-secondary" onclick="appendFile()">追加内容</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>读取文件</h2>
+        <input id="read-path" placeholder="文件路径" value="/test/hello.txt">
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="readFile()">读取文件</button>
+        </div>
+        <div id="read-result" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+        <h2>列出文件</h2>
+        <input id="list-path" placeholder="目录路径" value="/test">
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="listFiles()">列出文件</button>
+        </div>
+        <div id="file-list" class="file-list"></div>
+    </div>
+
+    <div class="card">
+        <h2>删除文件</h2>
+        <input id="delete-path" placeholder="文件路径" value="/test/hello.txt">
+        <div class="btn-group">
+            <button class="btn btn-danger" onclick="deleteFile()">删除文件</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>高级测试</h2>
+        <div class="btn-group" style="flex-direction:column;">
+            <div class="row">
+                <button class="btn btn-primary" onclick="testLargeFile()">测试大文件 (1MB)</button>
+            </div>
+            <div class="row">
+                <button class="btn btn-primary" onclick="testSpecialChars()">测试特殊字符文件名</button>
+            </div>
+            <div class="row">
+                <button class="btn btn-primary" onclick="testBinaryFile()">测试二进制文件</button>
+            </div>
+            <div class="row">
+                <button class="btn btn-danger" onclick="clearAllTestFiles()">清理所有测试文件</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>日志</h2>
+        <div id="log" class="log"></div>
+        <button class="btn btn-secondary" onclick="clearLog()" style="width:100%;margin-top:8px;">清空日志</button>
+    </div>
+
+    <script>
+        // 环境检测
+        const isCapacitor = typeof window.Capacitor !== 'undefined';
+        const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const fsMode = isCapacitor ? 'Capacitor Native' : (isMobile ? 'Mobile Mock' : 'Desktop Mock');
+        
+        document.getElementById('env-info').innerHTML = 
+            `平台: ${navigator.platform || '未知'}<br>` +
+            `UA: ${navigator.userAgent.substring(0, 50)}...<br>` +
+            `Capacitor: ${isCapacitor ? '是' : '否'}<br>` +
+            `文件系统: ${fsMode}`;
+        
+        const tag = document.getElementById('fs-mode-tag');
+        tag.textContent = fsMode;
+        tag.className = 'tag ' + (isCapacitor ? 'native' : 'mock');
+        
+        document.getElementById('write-time').textContent = new Date().toISOString();
+
+        // 日志函数
+        function log(msg, type = 'info') {
+            const logEl = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `<div class="${type}">[${time}] ${msg}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function showResult(containerId, content, isError = false) {
+            const el = document.getElementById(containerId);
+            el.innerHTML = `<div class="status ${isError ? 'err' : 'ok'}">${content}</div>`;
+        }
+
+        // localStorage 存储键前缀
+        const FS_PREFIX = 'we-test:';
+
+        // 写入文件
+        async function writeFile() {
+            const path = document.getElementById('write-path').value;
+            const content = document.getElementById('write-content').value;
+            
+            try {
+                if (isCapacitor) {
+                    // 使用 Capacitor Filesystem API
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    await Filesystem.writeFile({
+                        path: path,
+                        data: btoa(content),
+                        directory: 'DOCUMENTS'
+                    });
+                    log(`✅ 写入成功: ${path} (Capacitor)`, 'success');
+                } else {
+                    // Mock 模式：使用 localStorage
+                    localStorage.setItem(FS_PREFIX + path, content);
+                    log(`✅ 写入成功: ${path} (Mock)`, 'success');
+                }
+                showResult('read-result', `✅ 文件已写入: ${path}`);
+            } catch (e) {
+                log(`❌ 写入失败: ${e.message}`, 'error');
+                showResult('read-result', `❌ 写入失败: ${e.message}`, true);
+            }
+        }
+
+        // 追加内容（Mock 模式下支持）
+        async function appendFile() {
+            const path = document.getElementById('write-path').value;
+            const newContent = document.getElementById('write-content').value;
+            
+            try {
+                let existingContent = '';
+                if (!isCapacitor) {
+                    existingContent = localStorage.getItem(FS_PREFIX + path) || '';
+                }
+                const finalContent = existingContent + '\n' + newContent;
+                
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    await Filesystem.writeFile({
+                        path: path,
+                        data: btoa(finalContent),
+                        directory: 'DOCUMENTS'
+                    });
+                    log(`✅ 追加成功: ${path} (Capacitor 重写)`, 'success');
+                } else {
+                    localStorage.setItem(FS_PREFIX + path, finalContent);
+                    log(`✅ 追加成功: ${path} (Mock)`, 'success');
+                }
+                showResult('read-result', `✅ 内容已追加: ${path}`);
+            } catch (e) {
+                log(`❌ 追加失败: ${e.message}`, 'error');
+            }
+        }
+
+        // 读取文件
+        async function readFile() {
+            const path = document.getElementById('read-path').value;
+            
+            try {
+                let content;
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    const result = await Filesystem.readFile({
+                        path: path,
+                        directory: 'DOCUMENTS'
+                    });
+                    content = atob(result.data);
+                } else {
+                    content = localStorage.getItem(FS_PREFIX + path);
+                    if (content === null) throw new Error('文件不存在');
+                }
+                
+                log(`✅ 读取成功: ${path} (${content.length} 字节)`, 'success');
+                showResult('read-result', 
+                    `<strong>文件内容:</strong><br>
+                     <pre style="background:#f0f0f0;padding:10px;border-radius:6px;margin-top:8px;white-space:pre-wrap;word-break:break-all;">${escapeHtml(content)}</pre>
+                     <small>大小: ${content.length} 字节</small>`);
+            } catch (e) {
+                log(`❌ 读取失败: ${e.message}`, 'error');
+                showResult('read-result', `❌ 读取失败: ${e.message}`, true);
+            }
+        }
+
+        // 列出文件
+        async function listFiles() {
+            const path = document.getElementById('list-path').value;
+            
+            try {
+                let files = [];
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    const result = await Filesystem.readdir({
+                        path: path,
+                        directory: 'DOCUMENTS'
+                    });
+                    files = result.files || [];
+                    files = files.map(f => ({
+                        name: f.name,
+                        type: f.type,
+                        size: f.size || 'N/A'
+                    }));
+                } else {
+                    // Mock 模式：从 localStorage 过滤
+                    const prefix = FS_PREFIX + path + '/';
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith(prefix)) {
+                            const name = key.substring(prefix.length);
+                            files.push({ name, type: 'file', size: 'Mock' });
+                        }
+                    }
+                }
+                
+                log(`✅ 列出成功: ${path} (${files.length} 个文件)`, 'success');
+                
+                const listEl = document.getElementById('file-list');
+                if (files.length === 0) {
+                    listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#999;">暂无文件</div>';
+                } else {
+                    listEl.innerHTML = files.map((f, i) => 
+                        `<div class="file-item">
+                            <span>${i+1}. ${escapeHtml(f.name)} ${f.type === 'directory' ? '📁' : '📄'}</span>
+                            <span style="color:#999;font-size:12px;">${f.size}</span>
+                        </div>`
+                    ).join('');
+                }
+            } catch (e) {
+                log(`❌ 列出失败: ${e.message}`, 'error');
+                document.getElementById('file-list').innerHTML = 
+                    `<div style="padding:16px;text-align:center;color:#e74c3c;">❌ ${e.message}</div>`;
+            }
+        }
+
+        // 删除文件
+        async function deleteFile() {
+            const path = document.getElementById('delete-path').value;
+            
+            try {
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    await Filesystem.deleteFile({
+                        path: path,
+                        directory: 'DOCUMENTS'
+                    });
+                    log(`✅ 删除成功: ${path} (Capacitor)`, 'success');
+                } else {
+                    localStorage.removeItem(FS_PREFIX + path);
+                    log(`✅ 删除成功: ${path} (Mock)`, 'success');
+                }
+                showResult('read-result', `✅ 文件已删除: ${path}`);
+            } catch (e) {
+                log(`❌ 删除失败: ${e.message}`, 'error');
+                showResult('read-result', `❌ 删除失败: ${e.message}`, true);
+            }
+        }
+
+        // 测试大文件
+        async function testLargeFile() {
+            log('🔬 开始测试大文件写入...', 'info');
+            const startTime = Date.now();
+            
+            try {
+                // 生成 1MB 的测试内容
+                const chunk = 'A'.repeat(10000);
+                let largeContent = '';
+                for (let i = 0; i < 100; i++) {
+                    largeContent += chunk + '\n';
+                }
+                const sizeMB = (largeContent.length / (1024 * 1024)).toFixed(2);
+                log(`生成测试数据: ${sizeMB} MB`, 'info');
+                
+                const testPath = `/test/large-file-${Date.now()}.txt`;
+                
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    await Filesystem.writeFile({
+                        path: testPath,
+                        data: btoa(largeContent),
+                        directory: 'DOCUMENTS'
+                    });
+                } else {
+                    localStorage.setItem(FS_PREFIX + testPath, largeContent);
+                }
+                
+                const writeTime = Date.now() - startTime;
+                log(`✅ 大文件写入成功: ${testPath} (耗时: ${writeTime}ms)`, 'success');
+                
+                // 读取验证
+                startTime = Date.now();
+                let readContent;
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    const result = await Filesystem.readFile({
+                        path: testPath,
+                        directory: 'DOCUMENTS'
+                    });
+                    readContent = atob(result.data);
+                } else {
+                    readContent = localStorage.getItem(FS_PREFIX + testPath);
+                }
+                const readTime = Date.now() - startTime;
+                
+                if (readContent && readContent.length === largeContent.length) {
+                    log(`✅ 数据校验通过！读取: ${readContent.length} 字节 (耗时: ${readTime}ms)`, 'success');
+                } else {
+                    log(`❌ 数据校验失败！预期: ${largeContent.length}, 实际: ${readContent?.length || 0}`, 'error');
+                }
+            } catch (e) {
+                log(`❌ 大文件测试失败: ${e.message}`, 'error');
+            }
+        }
+
+        // 测试特殊字符文件名
+        async function testSpecialChars() {
+            const specialNames = [
+                '/test/中文文件.txt',
+                '/test/日本語ファイル.txt',
+                '/test/file with spaces.txt',
+                '/test/special-chars-!@#$%.txt'
+            ];
+            
+            log('🔬 开始测试特殊字符文件名...', 'info');
+            
+            for (const name of specialNames) {
+                try {
+                    const content = `内容: ${name}`;
+                    if (isCapacitor) {
+                        const { Filesystem } = window.Capacitor.Plugins;
+                        await Filesystem.writeFile({
+                            path: name,
+                            data: btoa(content),
+                            directory: 'DOCUMENTS'
+                        });
+                    } else {
+                        localStorage.setItem(FS_PREFIX + name, content);
+                    }
+                    log(`✅ 创建成功: ${name}`, 'success');
+                } catch (e) {
+                    log(`❌ 创建失败: ${name} - ${e.message}`, 'error');
+                }
+            }
+            log('特殊字符文件名测试完成', 'info');
+        }
+
+        // 测试二进制文件
+        async function testBinaryFile() {
+            log('🔬 开始测试二进制文件...', 'info');
+            
+            try {
+                // 生成简单的二进制数据 (模拟图片)
+                const binaryData = new Uint8Array(1000);
+                for (let i = 0; i < binaryData.length; i++) {
+                    binaryData[i] = Math.random() * 256 | 0;
+                }
+                
+                const testPath = '/test/binary-test.bin';
+                
+                if (isCapacitor) {
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    // 转换为 base64
+                    const binaryString = Array.from(binaryData).map(b => String.fromCharCode(b)).join('');
+                    const base64 = btoa(binaryString);
+                    
+                    await Filesystem.writeFile({
+                        path: testPath,
+                        data: base64,
+                        directory: 'DOCUMENTS'
+                    });
+                    log(`✅ 二进制文件写入成功 (Capacitor): ${testPath}`, 'success');
+                } else {
+                    localStorage.setItem(FS_PREFIX + testPath, 'binary-data-placeholder');
+                    log(`✅ 二进制文件写入成功 (Mock): ${testPath}`, 'success');
+                }
+            } catch (e) {
+                log(`❌ 二进制文件测试失败: ${e.message}`, 'error');
+            }
+        }
+
+        // 清理所有测试文件
+        async function clearAllTestFiles() {
+            log('🗑️ 开始清理测试文件...', 'info');
+            
+            try {
+                if (isCapacitor) {
+                    // Capacitor 模式：尝试删除 /test 目录
+                    const { Filesystem } = window.Capacitor.Plugins;
+                    try {
+                        const result = await Filesystem.readdir({
+                            path: '/test',
+                            directory: 'DOCUMENTS'
+                        });
+                        const files = result.files || [];
+                        for (const file of files) {
+                            if (file.type === 'file') {
+                                await Filesystem.deleteFile({
+                                    path: `/test/${file.name}`,
+                                    directory: 'DOCUMENTS'
+                                });
+                                log(`删除: ${file.name}`, 'info');
+                            }
+                        }
+                    } catch (e) {
+                        log(`清理目录时出错（可能目录不存在）: ${e.message}`, 'warn');
+                    }
+                } else {
+                    // Mock 模式：清理所有测试文件
+                    const keysToDelete = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith(FS_PREFIX + '/test/')) {
+                            keysToDelete.push(key);
+                        }
+                    }
+                    keysToDelete.forEach(key => {
+                        localStorage.removeItem(key);
+                        log(`删除: ${key.replace(FS_PREFIX, '')}`, 'info');
+                    });
+                }
+                
+                log(`✅ 清理完成，共删除 ${keysToDelete?.length || '若干'} 个文件`, 'success');
+            } catch (e) {
+                log(`❌ 清理失败: ${e.message}`, 'error');
+            }
+        }
+
+        // HTML 转义
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        // 初始化
+        log('🎉 文件读写测试工具已就绪', 'success');
+        log(`当前模式: ${fsMode}`, 'info');
+        
+        if (isCapacitor) {
+            log('检测到 Capacitor 环境，将使用原生 Filesystem API', 'success');
+        } else {
+            log('非 Capacitor 环境，使用 localStorage Mock 模式', 'warn');
+        }
+    </script>
+</body>
+</html>

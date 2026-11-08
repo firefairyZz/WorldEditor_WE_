@@ -7,19 +7,21 @@ contextBridge.exposeInMainWorld('weAPI', {
     close: () => ipcRenderer.send('close-window'),
     onMaximizedChanged: (callback) => ipcRenderer.on('maximized-change', (event, isMaximized) => callback(isMaximized)),
     isMaximized: () => ipcRenderer.invoke('is-maximized'),
-    // 最大化→拖动还原：unmaximize + 按比例缩放抓取偏移重定位，返回 {grabX, grabY}
     restoreForDrag: (cursorX, cursorY, clientX, clientY, maximizedWidth) =>
         ipcRenderer.invoke('restore-for-drag', cursorX, cursorY, clientX, clientY, maximizedWidth),
-    // 逐帧跟随鼠标移动窗口
     moveWindowTo: (x, y) => ipcRenderer.send('move-window-to', x, y),
-    // Aero snap 手动触发（top/left/right）
-    aeroSnap: (snap) => ipcRenderer.invoke('aero-snap', snap),
 
     getDefaultProjectPath: (name) => ipcRenderer.invoke('get-default-project-path', name),
     createProject: (folder, name, desc, template, projectMode) =>
         ipcRenderer.invoke('create-project', folder, name, desc, template, projectMode),
     openProject: (folder) => ipcRenderer.invoke('open-project', folder),
+    closeProject: (folder, shouldSave) => ipcRenderer.invoke('close-project', folder, shouldSave),
+    saveProject: (folder) => ipcRenderer.invoke('save-project', folder),
     readFile: (folder, filename) => ipcRenderer.invoke('read-file', folder, filename),
+    readImageFile: (folder, filename) => ipcRenderer.invoke('read-image-file', folder, filename),
+    cleanupImageTemp: (filePaths) => ipcRenderer.invoke('cleanup-image-temp', filePaths),
+    readMediaFile: (folder, filename) => ipcRenderer.invoke('read-media-file', folder, filename),
+    saveMediaFile: (folder, filename, arrayBuffer, mimeType) => ipcRenderer.invoke('save-media-file', folder, filename, arrayBuffer, mimeType),
     listFiles: (folder) => ipcRenderer.invoke('list-files', folder),
     saveFile: (folder, filename, content) => ipcRenderer.invoke('save-file', folder, filename, content),
     addFile: (folder, filename) => ipcRenderer.invoke('add-file', folder, filename),
@@ -44,6 +46,7 @@ contextBridge.exposeInMainWorld('weAPI', {
     readMetadata: (folder) => ipcRenderer.invoke('read-metadata', folder),
     saveMetadata: (folder, metadata) => ipcRenderer.invoke('save-metadata', folder, metadata),
     storeImage: (folder, imageName, imageData) => ipcRenderer.invoke('store-image', folder, imageName, imageData),
+    storeBinary: (folder, filename, base64Data) => ipcRenderer.invoke('store-binary', folder, filename, base64Data),
     deleteImage: (folder, imageName) => ipcRenderer.invoke('delete-image', folder, imageName),
     getUpdateNotes: (lang) => ipcRenderer.invoke('get-update-notes', lang),
 
@@ -94,4 +97,15 @@ contextBridge.exposeInMainWorld('weAPI', {
     isMobileMode: () => ipcRenderer.invoke('is-mobile-mode'),
     // 使用 send 方式（比 invoke 更可靠，避免 Electron 33 下 handle 注册问题）
     enterMobileMode: () => ipcRenderer.send('enter-mobile-mode'),
-});
+
+    // 临时目录管理
+    clearTempDirectory: (options) => ipcRenderer.invoke('clear-temp-directory', options),
+    getTempDirectoryStatus: () => ipcRenderer.invoke('get-temp-directory-status'),
+
+    // ===== 日志相关 =====
+    getLogContent: (maxLines) => ipcRenderer.invoke('get-log-content', maxLines),
+    getLogFiles: () => ipcRenderer.invoke('get-log-files'),
+    readLogFile: (filePath, maxLines) => ipcRenderer.invoke('read-log-file', filePath, maxLines),
+    clearLogs: () => ipcRenderer.invoke('clear-logs'),
+    exportLogs: (options) => ipcRenderer.invoke('export-logs', options),
+    getLogStats: () => ipcRenderer.invoke('get-log-stats'),});

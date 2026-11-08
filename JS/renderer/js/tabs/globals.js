@@ -14,6 +14,10 @@ let markdownRender = true;
 let smartBracketsEnabled = false;
 let tabCloseConfirm = true;
 
+// 文件打开位置冲突检测：key = "projectPath|filePath", value = tabId
+// 每个文件在任一时刻只能在一个地方打开（项目页TA 或 独立OA标签页）
+const openFileMap = {};
+
 // 锁定桌面端布局（is-desktop 类移除后激活手机端 UI）
 // 如果启动时带 --mobile 参数，则默认进入手机模式
 if (document.body) {

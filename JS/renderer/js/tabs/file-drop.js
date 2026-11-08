@@ -8,9 +8,24 @@ let dragStartElement = null;
 let dragWatchdog = null;
 
 // 图片文件扩展名
-const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff', '.tif'];
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico', '.tiff', '.tif', '.avif', '.heic'];
+// 视频文件扩展名
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.3gp', '.ts'];
+// 音频文件扩展名
+const AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a', '.wma', '.opus'];
+// PDF/文档
+const DOC_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf'];
 // 文本/代码文件扩展名
-const TEXT_EXTENSIONS = ['.txt', '.md', '.doc', '.docx', '.rtf', '.log', '.csv', '.json', '.xml', '.html', '.css', '.js'];
+const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.org', '.nfo', '.log', '.csv', '.tsv',
+    '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env',
+    '.html', '.htm', '.xhtml', '.css', '.scss', '.sass', '.less',
+    '.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.vue', '.svelte',
+    '.py', '.rb', '.java', '.c', '.h', '.cpp', '.hpp', '.cs', '.go', '.rs', '.swift', '.kt',
+    '.sh', '.bash', '.ps1', '.bat', '.cmd', '.sql', '.graphql', '.gql',
+    '.tex', '.bib', '.adoc', '.asciidoc'];
+
+// 暴露到 window，让其他模块（如 filetree.js）也能访问
+window.FILE_CATEGORIES = { IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, DOC_EXTENSIONS, TEXT_EXTENSIONS };
 
 // 检测是否有真实的外部文件拖入（区别于内部拖拽）
 // 关键区分：外部文件拖放时 dataTransfer.types 包含 'Files'
@@ -386,20 +401,27 @@ function getFileExt(filename) {
 async function handleDroppedFiles(fileList, onEditor, insertIndex) {
     weLog.info('file-drop', '→ handleDroppedFiles 开始', { fileCount: fileList.length, onEditor, insertIndex });
     const imageFiles = [];
+    const videoFiles = [];
+    const audioFiles = [];
+    const docFiles = [];
     const textFiles = [];
     const skippedFiles = [];
 
     for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        if (isImageFile(file)) {
+        const ext = getFileExt(file.name).toLowerCase();
+        if (IMAGE_EXTENSIONS.includes(ext)) {
             imageFiles.push(file);
+        } else if (VIDEO_EXTENSIONS.includes(ext)) {
+            videoFiles.push(file);
+        } else if (AUDIO_EXTENSIONS.includes(ext)) {
+            audioFiles.push(file);
+        } else if (DOC_EXTENSIONS.includes(ext)) {
+            docFiles.push(file);
+        } else if (TEXT_EXTENSIONS.includes(ext) || !ext) {
+            textFiles.push(file);
         } else {
-            const ext = getFileExt(file.name);
-            if (TEXT_EXTENSIONS.includes(ext) || !ext) {
-                textFiles.push(file);
-            } else {
-                skippedFiles.push(file.name);
-            }
+            skippedFiles.push(file.name);
         }
     }
     weLog.info('file-drop', 'handleDroppedFiles: 文件分类', { imageCount: imageFiles.length, textCount: textFiles.length, skippedCount: skippedFiles.length });
@@ -464,6 +486,59 @@ async function handleDroppedFiles(fileList, onEditor, insertIndex) {
                     }
                 }
                 showNotification(`${t('ui.imported') || '已导入'} ${importedCount} ${t('ui.images') || '张图片'}${t('ui.to_project') || '到项目'}`);
+            }
+        }
+    }
+
+    // 处理视频/音频/文档二进制文件（只能导入到项目，不能插入编辑器）
+    const binaryFiles = [...videoFiles, ...audioFiles, ...docFiles];
+    if (binaryFiles.length > 0) {
+        weLog.info('file-drop', 'handleDroppedFiles: 处理二进制文件', {
+            count: binaryFiles.length,
+            video: videoFiles.length, audio: audioFiles.length, doc: docFiles.length
+        });
+        if (!project || !project.projectPath) {
+            showNotification(t('ui.open_project_first') || '请先打开一个项目');
+        } else {
+            for (const file of binaryFiles) {
+                try {
+                    const dataUrl = await readFileAsDataURL(file);
+                    const base64Data = dataUrl.split(',')[1]; // 去掉 data:xxx;base64, 前缀
+                    const filename = file.name;
+
+                    if (project.fileList && project.fileList.includes(filename)) {
+                        if (!confirm(`${t('ui.file_exists') || '文件'} "${filename}" ${t('ui.already_exists') || '已存在，是否覆盖？'}`)) {
+                            continue;
+                        }
+                    }
+
+                    const res = await weAPI.storeBinary(project.projectPath, filename, base64Data);
+                    if (res.success) {
+                        importedCount++;
+                    } else {
+                        failedCount++;
+                    }
+                } catch (err) {
+                    weLog.error('file-drop', 'handleDroppedFiles: 导入二进制文件失败', err && err.stack ? err.stack : String(err));
+                    failedCount++;
+                }
+            }
+            if (importedCount > 0 || failedCount > 0) {
+                const updated = await weAPI.openProject(project.projectPath);
+                console.log('[file-drop] binary 导入后 openProject 返回:', updated);
+                if (updated.success) {
+                    project.fileList = updated.fileList;
+                    console.log('[file-drop] 更新 fileList, 总数:', updated.fileList.length, '包含 mp4:', updated.fileList.filter(f => f.includes('mp4')));
+                    if (typeof refreshFileTree === 'function') {
+                        console.log('[file-drop] 调用 refreshFileTree, activeTabId:', activeTabId);
+                        refreshFileTree(activeTabId, updated.fileList);
+                    } else {
+                        console.warn('[file-drop] refreshFileTree 不是函数!');
+                    }
+                }
+                if (importedCount > 0) {
+                    showNotification(`已导入 ${importedCount} 个二进制文件${failedCount > 0 ? `（失败 ${failedCount}）` : ''}`);
+                }
             }
         }
     }

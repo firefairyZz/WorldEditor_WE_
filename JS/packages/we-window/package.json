@@ -1,0 +1,52 @@
+{
+  "name": "we-window",
+  "version": "0.1.0",
+  "description": "Native Windows window control for Electron: Mica/Acrylic material, rounded corners, WM_NCHITTEST subclassing for native drag/resize/Aero snap.",
+  "main": "lib/index.js",
+  "files": [
+    "lib",
+    "src",
+    "include",
+    "binding.gyp",
+    "prebuilds"
+  ],
+  "scripts": {
+    "install": "node-pre-gyp install --fallback-to-build || echo 'prebuild not available, falling back to build'",
+    "build": "node-gyp rebuild",
+    "build:electron": "node-gyp rebuild --target=33.4.11 --arch=x64 --dist-url=https://electronjs.org/headers",
+    "clean": "node-gyp clean",
+    "test": "node test/basic.js"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "electron": ">=27.0.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "keywords": [
+    "electron",
+    "windows",
+    "mica",
+    "acrylic",
+    "dwm",
+    "native",
+    "window",
+    "rounded-corners",
+    "aero-snap",
+    "napi"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "node-addon-api": "^8.9.2",
+    "node-gyp": "^13.0.2"
+  },
+  "directories": {
+    "lib": "lib"
+  },
+  "author": "",
+  "type": "commonjs"
+}

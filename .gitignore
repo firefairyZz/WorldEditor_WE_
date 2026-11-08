@@ -64,3 +64,32 @@ NEED_Node.txt
 #Design files
 Design/
 .design_library/
+
+# ===== 本地回退备份（仅保存在 backup 分支）=====
+JS/backup-*/
+JS/backup-*
+JS/*.bak
+JS/*.bak2
+JS/**/*.bak
+JS/**/*.bak2
+backup-filetree-*.js
+*.bak-*
+
+# ===== 原生模块：依赖与构建缓存 =====
+JS/packages/*/node_modules/
+JS/packages/*/build/
+JS/we-window-native/node_modules/
+JS/we-window-native/.build-cache/
+
+# ===== Capacitor / Android（只保留源码）=====
+TS/node_modules/
+TS/dist/
+TS/android/app/build/
+TS/android/build/
+TS/android/.gradle/
+TS/android/.idea/
+TS/android/local.properties
+TS/android/capacitor-cordova-android-plugins/
+
+# ===== 用户项目数据 =====
+Python_Vision/User/

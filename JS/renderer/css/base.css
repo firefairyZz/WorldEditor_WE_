@@ -92,6 +92,7 @@ input, textarea, .ql-editor, [contenteditable] {
     --editor-font-size: 16px;
 
     --bg-main: #1e1e1e;
+    --bg-secondary: #222222;
     --bg-sidebar: #252526;
     --bg-toolbar: #252526;
     --bg-card: #2a2a2a;
@@ -126,6 +127,7 @@ input, textarea, .ql-editor, [contenteditable] {
 
 body.theme-light {
     --bg-main: #ffffff;
+    --bg-secondary: #f0f0f0;
     --bg-sidebar: #f5f5f5;
     --bg-toolbar: #fafafa;
     --bg-card: #ffffff;

@@ -284,7 +284,7 @@ document.addEventListener('keydown', (e) => {
     if (matchesShortcut(e, activeShortcuts['close-tab'])) {
         weLog.info('shortcuts', 'keydown: 匹配 Ctrl+W close-tab', { activeTabId });
         e.preventDefault();
-        if (activeTabId && tabs[activeTabId]?.closable) {
+        if (activeTabId && tabs[activeTabId]?.closable && !tabs[activeTabId]?.pinned) {
             closeTab(activeTabId);
         } else {
             weLog.warn('shortcuts', 'keydown: 当前标签不可关闭', { activeTabId });

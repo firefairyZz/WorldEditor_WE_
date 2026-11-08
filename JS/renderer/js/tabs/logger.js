@@ -76,6 +76,24 @@ const weLog = {
             this.error(module, `✗ ${label} 失败`, e && e.stack ? e.stack : String(e));
             throw e;
         }
+    },
+
+    // 外部设置日志级别（接收 settings 里的 mode 字符串）
+    // 6 种模式 → 4 个基础 _minLevel 映射：
+    //   verbose / full → DEBUG(0)  全部输出
+    //   info           → INFO(1)   INFO/WARN/ERROR
+    //   problem        → WARN(2)   WARN/ERROR
+    //   error / minimal→ ERROR(3)  仅 ERROR
+    setLevel(mode) {
+        const m = (mode || 'full').toLowerCase();
+        const map = { verbose: 0, full: 0, info: 1, problem: 2, error: 3, minimal: 3 };
+        this._minLevel = map[m] ?? 0;
+        // 同时同步到 main.js（如果有 IPC）
+        try {
+            if (window.weAPI && typeof window.weAPI.setLogLevel === 'function') {
+                window.weAPI.setLogLevel(mode);
+            }
+        } catch (e) {}
     }
 };
 

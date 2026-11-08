@@ -1,0 +1,492 @@
+/* ====== 全局重置与基础 ====== */
+* { margin:0; padding:0; box-sizing:border-box; }
+
+/* ====== 移动端安全区域（刘海屏/状态栏/导航栏适配） ====== */
+:root {
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+}
+
+@supports (padding: max(0px)) {
+    :root {
+        --safe-top: max(0px, env(safe-area-inset-top));
+        --safe-bottom: max(0px, env(safe-area-inset-bottom));
+        --safe-left: max(0px, env(safe-area-inset-left));
+        --safe-right: max(0px, env(safe-area-inset-right));
+    }
+}
+
+/* ╔══════════════════════════════════════════════════════════════════╗
+   ║  ⚠️  材质渲染 — html/body 必须保持以下配置                           ║
+   ║                                                                  ║
+   ║  background: transparent   → 让 OS 材质（Mica/Acrylic）透出来      ║
+   ║  禁止设置 border-radius    → 圆角由 Win11 OS 原生处理               ║
+   ║  禁止设置 overflow: hidden → 会裁切 OS 原生圆角                     ║
+   ║                                                                 ║
+   ║  常见错误（会导致 bug）：                                           ║
+   ║    ✗ 给 html/body 加 border-radius: 8px/12px 模拟圆角             ║
+   ║      → 与 OS 原生圆角冲突，出现缝隙/错位                             ║
+   ║    ✗ 设 background: 非透明色                                      ║
+   ║      → 挡住 Mica/Acrylic 材质                                     ║
+   ║    ✗ 用 transparent: true + CSS clip-path 模拟圆角                ║
+   ║      → 丢失 OS 阴影，DWM 拖影                                      ║
+   ║                                                                  ║
+   ║  材质视觉由三层 CSS 变量控制（见 settings.js）：                      ║
+   ║    --overlay-tint    → #main 遮罩层（间隙/边框）                    ║
+   ║    --content-tint    → 内容区背景                                  ║
+   ║    --title-bar-tint  → 标题栏背景                                  ║
+   ║  材质激活时三层半透明，材质=none 时三层实心                            ║
+   ╚══════════════════════════════════════════════════════════════════╝ */
+html {
+    height: 100vh;
+    background: transparent;
+    overflow-x: hidden;
+}
+html, body {
+    color: var(--text);
+    font-family: var(--font-family, 'Microsoft YaHei'), sans-serif;
+    font-size: var(--font-size, 14px);
+    font-weight: var(--font-weight-normal, 400);
+    transition: color 0.3s;
+}
+body {
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ====== 移动端全屏适配（替代安全区域，使用固定留白） ====== */
+body:not(.is-desktop) {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 0;
+    padding-right: 0;
+    height: 100dvh;
+    height: 100vh;
+    overflow: hidden;
+}
+
+body:not(.is-desktop)::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--mobile-top-padding, 24px);
+    background: transparent;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+body:not(.is-desktop)::after {
+    content: '';
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--mobile-bottom-padding, 56px);
+    background: transparent;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+body:not(.is-desktop) #main {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* ====== 移动端隐藏不可用的功能区域 ====== */
+body:not(.is-desktop) .desktop-only,
+body:not(.is-desktop) [data-desktop-only],
+body:not(.is-desktop) .win-btn,
+body:not(.is-desktop) .pin-btn,
+body:not(.is-desktop) #btn-minimize,
+body:not(.is-desktop) #btn-maximize,
+body:not(.is-desktop) #btn-close,
+body:not(.is-desktop) #btn-always-on-top,
+body:not(.is-desktop) #btn-command-palette,
+body:not(.is-desktop) #title-bar .title-drag,
+body:not(.is-desktop) .title-separator {
+    display: none !important;
+}
+
+/* 移动端标题栏简化 */
+body:not(.is-desktop) #title-bar {
+    height: 44px;
+    min-height: 44px;
+}
+
+/* 移动端隐藏材质/透明/背景图片等桌面特有设置 */
+body:not(.is-desktop) [data-feature="material"],
+body:not(.is-desktop) [data-feature="transparency"],
+body:not(.is-desktop) [data-feature="background-material"],
+body:not(.is-desktop) [data-feature="always-on-top"],
+body:not(.is-desktop) [data-feature="background-image"],
+body:not(.is-desktop) .settings-section-material,
+body:not(.is-desktop) .settings-section-transparency,
+body:not(.is-desktop) .settings-section-advanced {
+    display: none !important;
+}
+
+/* ====== 全局滚动条美化 ====== */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, rgba(255,255,255,0.2));
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover, rgba(255,255,255,0.35));
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, rgba(255,255,255,0.2)) transparent;
+}
+
+/* 禁止文本选中（编辑器除外） */
+body {
+    user-select: none;
+    -webkit-user-select: none;
+    background: var(--gap-color, #2a2a2a);     /* 默认背景色，防止 JS 加载前闪白（fallback 暗色） */
+}
+input, textarea, .ql-editor, [contenteditable] {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+/* ====== 主题变量 ====== */
+:root {
+    --font-family: 'Microsoft YaHei';
+    --font-size: 14px;
+    --font-weight-normal: 400;
+    --editor-font-size: 16px;
+
+    --bg-main: #1e1e1e;
+    --bg-sidebar: #252526;
+    --bg-toolbar: #252526;
+    --bg-card: #2a2a2a;
+    --bg-input: #3c3c3c;
+    --border: #3c3c3c;
+    --text: #cccccc;
+    --text-secondary: #999999;
+    --hover-bg: rgba(255,255,255,0.07);
+    --active-bg: #094771;
+    --active-text: #ffffff;
+    --accent: #0078d4;
+    --accent-hover: #1a8ad4;
+    --accent-alpha: rgba(0, 120, 212, 0.2);
+    --warning-color: #f0a020;
+
+    --gap-color: #2a2a2a;
+
+    /* 三段式布局变量（对齐测试文件） */
+    --content-tint: var(--bg-sidebar);
+    /* 标题栏透明度（材质激活时由 JS 设为半透明） */
+    --title-bar-tint: var(--bg-sidebar);
+    /* 底层遮罩（覆盖边框+内容区，颜色跟随主题，透明度可调） */
+    --overlay-tint: transparent;
+    /* 边框实心色（用于 solid 边框） */
+    --border-solid: var(--border);
+    /* 禁用文字颜色 */
+    --disabled-text: rgba(204,204,204,0.4);
+    /* 文本选中高亮 */
+    --selection-bg: rgba(0,120,212,0.35);
+    /* 输入框/文本域边框聚焦色 */
+    --focus-ring: var(--accent);
+    /* 拖放覆盖层背景 */
+    --drag-overlay-bg: rgba(0,0,0,0.55);
+    /* 拖放覆盖层文字颜色 */
+    --drag-overlay-text: #ffffff;
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --shadow-sm: 0 2px 4px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.25);
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.25s ease;
+}
+
+body.theme-light {
+    --bg-main: #ffffff;
+    --bg-sidebar: #f5f5f5;
+    --bg-toolbar: #fafafa;
+    --bg-card: #ffffff;
+    --bg-input: #ffffff;
+    --border: #e0e0e0;
+    --text: #1e1e1e;
+    --text-secondary: #666666;
+    --hover-bg: rgba(0,0,0,0.04);
+    --active-bg: #0078d4;
+    --active-text: #ffffff;
+    --accent: #0078d4;
+    --accent-hover: #106ebe;
+    --accent-alpha: rgba(0, 120, 212, 0.12);
+    --warning-color: #d48806;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+    --gap-color: #e8e8e8;
+    /* 三段式布局变量随主题更新 */
+    --content-tint: var(--bg-sidebar);
+    --title-bar-tint: var(--bg-sidebar);
+    --overlay-tint: transparent;
+    /* 亮色主题新增变量 */
+    --border-solid: var(--border);
+    --disabled-text: rgba(30,30,30,0.4);
+    --selection-bg: rgba(0,120,212,0.25);
+    --focus-ring: var(--accent);
+    /* 拖放覆盖层背景 - 亮主题使用半透明深色 */
+    --drag-overlay-bg: rgba(0,0,0,0.35);
+    --drag-overlay-text: #ffffff;
+}
+
+/* ====== 文本选中高亮 ====== */
+::selection {
+    background: var(--selection-bg);
+    color: var(--text);
+}
+::-moz-selection {
+    background: var(--selection-bg);
+    color: var(--text);
+}
+
+/* ====== 输入框/文本域焦点样式 ====== */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="url"],
+input[type="search"],
+input[type="tel"],
+input[type="password"],
+textarea,
+select {
+    background: var(--bg-main, var(--bg-input, transparent));
+    color: var(--text);
+    border: 1px solid var(--border-solid, var(--border));
+    border-radius: var(--radius-sm, 4px);
+    padding: 6px 10px;
+    font-size: var(--font-size, 14px);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    outline: none;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+input[type="search"]:focus,
+input[type="tel"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--focus-ring, var(--accent));
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0,120,212,0.2));
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+    color: var(--disabled-text);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* ====== 范围滑块（range）样式 ====== */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-main);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--accent-hover);
+    transform: scale(1.1);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-main);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+    background: var(--accent-hover);
+}
+
+/* ====== Quill 编辑器选中与链接样式 ====== */
+.ql-editor::selection,
+.quill-editor ::selection {
+    background: var(--selection-bg);
+}
+
+.ql-editor a,
+.quill-editor a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+}
+
+.ql-editor a:hover,
+.quill-editor a:hover {
+    color: var(--accent-hover);
+}
+
+/* ====== 复选框样式 ====== */
+input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--border-solid, var(--border));
+    border-radius: 3px;
+    background: var(--bg-main);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.15s ease;
+}
+
+input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+/* ====== 单选按钮样式 ====== */
+input[type="radio"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--border-solid, var(--border));
+    border-radius: 50%;
+    background: var(--bg-main);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+input[type="radio"]:checked {
+    border-color: var(--accent);
+    background: var(--bg-main);
+    box-shadow: inset 0 0 0 4px var(--accent);
+}
+
+/* ====== 切换开关（Toggle）激活色 ====== */
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--accent);
+}
+
+/* ====== 进度条样式 ====== */
+progress {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    border: none;
+    background: var(--border);
+    overflow: hidden;
+}
+
+progress::-webkit-progress-bar {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+progress::-webkit-progress-value {
+    background: var(--accent);
+    border-radius: 3px;
+}
+
+progress::-moz-progress-bar {
+    background: var(--accent);
+    border-radius: 3px;
+}
+
+/* ====== 高亮标记（mark）样式 ====== */
+mark,
+::highlight {
+    background: var(--selection-bg);
+    color: var(--text);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+/* ====== 代码块内边距 ====== */
+code, pre, kbd, samp {
+    background: var(--bg-toolbar);
+    border: 1px solid var(--border-solid, var(--border));
+    border-radius: var(--radius-sm, 4px);
+    color: var(--text);
+}
+
+/* ====== 表格边框 ====== */
+table {
+    border-color: var(--border-solid, var(--border));
+}
+
+th, td {
+    border-color: var(--border-solid, var(--border));
+}
+
+/* ====== 下拉选择框聚焦 ====== */
+select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0,120,212,0.2));
+}
+
+/* ====== 颜色选择器聚焦 ====== */
+input[type="color"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-alpha, rgba(0,120,212,0.2));
+}

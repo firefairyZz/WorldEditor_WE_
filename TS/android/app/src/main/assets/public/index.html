@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: blob: we-file:; media-src 'self' data: https: blob: we-file:; default-src 'self' we-file:; connect-src 'self' https:;">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/mobile.css">
+    <link rel="stylesheet" href="css/node-graph.css">
+    <link rel="stylesheet" href="css/quill.css">
+    <!-- 本地 Quill（defer：不阻塞首屏，执行顺序仍优先于依赖它的业务脚本） -->
+    <link rel="stylesheet" href="lib/quill.snow.css">
+    <link rel="stylesheet" href="lib/katex.min.css">
+    <link rel="stylesheet" href="lib/logicflow-core.css">
+    <script src="lib/quill.js" defer></script>
+    <script src="lib/katex.min.js" defer></script>
+    <!-- 自定义卡片 Blot（图片卡片/文件链接卡片/节点图链接卡片，依赖 quill.js） -->
+    <script src="js/tabs/quill-blots.js" defer></script>
+    <script src="lib/logicflow-core.js" defer></script>
+    <script src="lib/g6.min.js" defer></script>
+    <title>WE - World Editor</title>
+</head>
+<body class="material-none">
+<script>
+    // 检测是否为移动端（Android WebView / Capacitor 环境）
+    var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+                  || window.Capacitor !== undefined
+                  || window.Ionic !== undefined
+                  || (window.innerWidth < 768 && 'ontouchstart' in window);
+    
+    if (isMobile) {
+        document.body.classList.add('is-mobile');
+    } else {
+        document.body.classList.add('is-desktop');
+    }
+</script>
+    <!-- 背景图片层（最底层，由用户在设置中选择；遮罩层 #main 覆盖其上） -->
+    <div id="background-image-layer"></div>
+    <!-- 三段式结构：title-bar / tab-bar / #main -->
+    <header id="title-bar">
+        <div class="title-left">
+            <img id="title-icon" src="resources/White.png" class="title-icon" />
+            <div class="title-separator"></div>
+            <button id="btn-file-menu" class="file-menu-btn">文件</button>
+            <button id="btn-edit-menu" class="file-menu-btn" data-i18n="ui.edit">编辑</button>
+        </div>
+        <div class="title-drag"></div>
+            <button id="btn-update-available" class="win-btn update-indicator-btn" style="display:none" title="">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4"/><path d="M12 16V8"/></svg>
+            </button>
+            <div class="title-separator" id="update-separator" style="display:none"></div>
+            <button id="btn-account" class="win-btn account-btn" title="账户">
+                <span id="account-avatar" class="account-avatar">U</span>
+            </button>
+            <div class="title-separator"></div>
+            <button id="btn-command-palette" class="win-btn search-icon-btn" data-i18n-title="ui.command_palette" title="搜索命令和设置 (Ctrl P)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+            </button>
+            <div class="title-separator"></div>
+        <button id="btn-always-on-top" class="win-btn pin-btn" data-i18n-title="ui.always_on_top" data-i18n-title-active="ui.always_on_top_off" title="窗口置顶">
+                <img class="pin-icon" src="resources/pin.svg" alt="">
+            </button>
+        <div class="window-controls">
+            <button id="btn-minimize" class="win-btn">&#xE921;</button>
+            <button id="btn-maximize" class="win-btn">&#xE922;</button>
+            <button id="btn-close" class="win-btn">&#xE8BB;</button>
+        </div>
+    </header>
+
+    <!-- ====== 移动端标题栏（仅手机端显示） ====== -->
+    <header id="mobile-header" style="display:none">
+        <button id="btn-mobile-header-back" class="mobile-header-back" title="返回" style="display:none">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="mobile-header-title" id="mobile-header-title">启程</div>
+        <div class="mobile-header-actions" id="mobile-header-actions"></div>
+    </header>
+
+    <!-- 顶部通知条（height:0 时不占空间） -->
+    <div id="notification-bar"></div>
+
+    <div id="tab-bar">
+        <div class="tabs-container"></div>
+        <button id="btn-tab-settings" class="tab-action-btn" title="设置">&#xE713;</button>
+    </div>
+
+    <div id="main">
+        <div id="content-container"></div>
+    </div>
+
+    <div id="status-bar">就绪</div>
+
+    <!-- ====== 移动端底部导航栏 ====== -->
+    <nav id="mobile-nav">
+        <button class="mobile-nav-btn active" data-mobile-tab="welcome">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>启程</span>
+        </button>
+        <button class="mobile-nav-btn" data-mobile-tab="edit">
+            <img id="mobile-nav-we-icon" src="resources/White.png" alt="WE" class="mobile-nav-we-icon" />
+            <svg id="mobile-nav-plus-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:none"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span id="mobile-nav-edit-label">编辑</span>
+        </button>
+        <button class="mobile-nav-btn" data-mobile-tab="settings">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>设置</span>
+        </button>
+    </nav>
+
+    <!-- 浮层（绝对定位，不参与布局） -->
+    <div id="file-menu-popup" class="menu-popup"></div>
+    <div id="edit-menu-popup" class="menu-popup"></div>
+
+    <!-- 脚本加载顺序很重要（defer：不阻塞 HTML 解析，按顺序执行，DOMContentLoaded 前完成） -->
+    <script src="js/capacitor-weapi.js" defer></script>
+    <script>
+    // 注入 perfTest 到 weAPI（确保在所有环境下可用）
+    (function() {
+        function makePerfTest(api) {
+            return async function perfTest(folder) {
+                const results = {};
+                const start = performance.now();
+                const listStart = performance.now();
+                const listResult = await api.listFiles(folder);
+                results.listFiles = performance.now() - listStart;
+                results.fileCount = listResult.files ? listResult.files.length : 0;
+                if (listResult.files && listResult.files.length > 0) {
+                    const testFile = listResult.files[0];
+                    const readStart = performance.now();
+                    const readResult = await api.readFile(folder, testFile);
+                    results.readFile = performance.now() - readStart;
+                    results.readSuccess = readResult.success;
+                    results.contentSize = readResult.content ? readResult.content.length : 0;
+                    results.testFile = testFile;
+                }
+                const cacheStart = performance.now();
+                await api.listFiles(folder);
+                results.listFilesCached = performance.now() - cacheStart;
+                results.totalTime = performance.now() - start;
+                results.timestamp = new Date().toISOString();
+                console.log('[PerfTest] 性能测试结果:', results);
+                return results;
+            };
+        }
+        if (window.weAPI && typeof window.weAPI.perfTest !== 'function') {
+            try {
+                // 尝试直接添加（非冻结对象时有效）
+                window.weAPI.perfTest = makePerfTest(window.weAPI);
+            } catch(e) {
+                // 如果被冻结，用 Proxy 包装
+                const original = window.weAPI;
+                const pt = makePerfTest(original);
+                window.weAPI = new Proxy(original, {
+                    get(target, prop) {
+                        if (prop === 'perfTest') return pt;
+                        const v = Reflect.get(target, prop, target);
+                        return typeof v === 'function' ? v.bind(target) : v;
+                    },
+                    has(target, prop) {
+                        if (prop === 'perfTest') return true;
+                        return Reflect.has(target, prop);
+                    }
+                });
+            }
+        }
+    })();
+    </script>
+    <script src="js/tabs/logger.js" defer></script>
+    <script src="js/tabs/globals.js" defer></script>
+    <script src="js/tabs/i18n.js" defer></script>
+    <script src="js/tabs/utils.js" defer></script>
+    <script src="js/tabs/tags.js" defer></script>
+    <script src="js/tabs/tab-manager.js" defer></script>
+    <script src="js/tabs/ui-refresh.js" defer></script>
+    <script src="js/tabs/welcome.js" defer></script>
+    <script src="js/tabs/project.js" defer></script>
+    <script src="js/tabs/filetree.js" defer></script>
+    <script src="js/tabs/editor/globals.js" defer></script>
+    <script src="js/tabs/editor/registry.js" defer></script>
+    <script src="js/tabs/editor/blots.js" defer></script>
+    <script src="js/tabs/editor/undo.js" defer></script>
+    <script src="js/tabs/editor/toolbar.js" defer></script>
+    <script src="js/tabs/editor/core.js" defer></script>
+    <script src="js/tabs/editor/export.js" defer></script>
+    <script src="js/tabs/editor/links.js" defer></script>
+    <script src="js/tabs/editor/markdown.js" defer></script>
+    <script src="js/tabs/editor/embed.js" defer></script>
+    <script src="js/tabs/editor/mode-switch.js" defer></script>
+    <script src="js/tabs/editor/smart-brackets.js" defer></script>
+    <script src="js/tabs/settings.js" defer></script>
+    <script src="js/tabs/shortcuts.js" defer></script>
+    <script src="js/tabs/command-palette.js" defer></script>
+    <script src="js/tabs/tab-context-menu.js" defer></script>
+    <script src="js/tabs/file-drop.js" defer></script>
+    <script src="js/tabs/debug.js" defer></script>
+    <script src="js/tabs/mobile-nav.js" defer></script>
+    <script src="js/tabs/account.js" defer></script>
+    <script src="js/tabs/node-graph.js" defer></script>
+    <script src="js/tabs/init.js" defer></script>
+</body>
+</html>

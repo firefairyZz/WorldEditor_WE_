@@ -43,19 +43,18 @@ document.getElementById('btn-close')?.addEventListener('click', () => weAPI.clos
         return !!el?.closest('button, input, textarea, select, [contenteditable="true"], .file-menu-btn, a, .tab');
     }
 
-    const DRAG_THRESHOLD = 5; // 拖动阈值（px），超过才触发还原，避免单击误触发
+    // 最大化时拖动还原：transparent + frameless 下 Chromium drag region 不处理还原后跟随，
+    // 改为 JS 接管：mousedown 超过阈值 → 主进程 unmaximize + 等 resize + 抓取偏移重定位
+    // → 后续 mousemove 逐帧调 moveWindowTo 跟随鼠标。Aero snap 由 edge resize 原生处理。
+    const DRAG_THRESHOLD = 5;
 
-    // mousedown：最大化时 #title-bar 已是 no-drag（CSS），事件正常到达渲染进程
-    // 不立即还原，等 mousemove 超过阈值才触发（单击不缩小）
     titleBar.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
         if (isInteractive(e.target)) return;
-        if (!isMaximized) return; // 非最大化：交给原生 drag region
+        if (!isMaximized) return;
 
-        const startX = e.screenX;
-        const startY = e.screenY;
-        const clientX = e.clientX;
-        const clientY = e.clientY;
+        const startX = e.screenX, startY = e.screenY;
+        const clientX = e.clientX, clientY = e.clientY;
         const maximizedWidth = window.innerWidth;
 
         let dragging = false;
@@ -63,49 +62,19 @@ document.getElementById('btn-close')?.addEventListener('click', () => weAPI.clos
 
         const onMove = async (ev) => {
             if (!dragging) {
-                const dx = ev.screenX - startX;
-                const dy = ev.screenY - startY;
+                const dx = ev.screenX - startX, dy = ev.screenY - startY;
                 if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
-                // 超过阈值：触发还原 + 按比例缩放重定位
                 dragging = true;
                 try {
                     const res = await window.weAPI.restoreForDrag(ev.screenX, ev.screenY, clientX, clientY, maximizedWidth);
                     if (res && typeof res.grabX === 'number') { grabX = res.grabX; grabY = res.grabY; }
-                } catch (err) {
-                    weLog.error('tab-manager', 'restoreForDrag 失败', err);
-                    cleanup();
-                    return;
-                }
+                } catch (err) { cleanup(); return; }
             }
-            // 跟随鼠标
-            const nx = ev.screenX - grabX;
-            const ny = ev.screenY - grabY;
+            const nx = ev.screenX - grabX, ny = ev.screenY - grabY;
             window.weAPI.moveWindowTo(nx, ny);
         };
 
-        const onUp = (ev) => {
-            cleanup();
-            // 拖动结束：检测是否靠近屏幕边缘 → 触发 Aero snap
-            // JS setPosition 拖动不触发系统 snap，需手动检测+触发
-            if (dragging && ev) {
-                const SNAP_THRESHOLD = 8; // 屏幕边缘吸附阈值（px）
-                // 获取鼠标所在屏幕（通过 screenX/screenY）
-                const sx = ev.screenX, sy = ev.screenY;
-                // 检测：靠近顶部 → 最大化；靠近左/右 → 半屏
-                let snap = null;
-                if (sy <= SNAP_THRESHOLD) snap = 'top';
-                else if (sx <= SNAP_THRESHOLD) snap = 'left';
-                else if (sx >= (window.screen.availWidth || screen.width) - SNAP_THRESHOLD) snap = 'right';
-                if (snap) {
-                    window.weAPI.aeroSnap(snap).catch(() => {});
-                }
-            }
-            // 拖动结束：检查还原后状态是否正确
-            setTimeout(() => {
-                const titleBarEl = document.getElementById('title-bar');
-                weLog.info('tab-manager', `[titlebar] drag end | isMaximized=${isMaximized} | win-maximized class=${document.body.classList.contains('win-maximized')} | #title-bar app-region=${titleBarEl ? getComputedStyle(titleBarEl).webkitAppRegion : 'N/A'}`);
-            }, 100);
-        };
+        const onUp = () => cleanup();
 
         function cleanup() {
             window.removeEventListener('mousemove', onMove, true);
@@ -116,7 +85,7 @@ document.getElementById('btn-close')?.addEventListener('click', () => weAPI.clos
         window.addEventListener('mouseup', onUp, true);
     });
 
-    // 双击标题栏空白 → 最大化/还原（drag region 双击系统也会触发，此处保险）
+    // 双击标题栏空白 → 最大化/还原
     let lastClick = 0;
     titleBar.addEventListener('mouseup', (e) => {
         if (e.button !== 0) return;
@@ -464,6 +433,15 @@ function setupDragAndDrop() {
     weLog.info('tab-manager', '→ setupDragAndDrop');
     const tabsContainer = document.querySelector('.tabs-container');
     if (!tabsContainer) { weLog.warn('tab-manager', 'setupDragAndDrop: tabs-container 不存在'); return; }
+    // 包装 tabs-container + 添加左右滚动箭头
+    addScrollArrows(tabsContainer);
+    // 鼠标滚轮 → 横向滚动（deltaY 映射到 scrollLeft）
+    tabsContainer.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+            e.preventDefault();
+            tabsContainer.scrollLeft += e.deltaY;
+        }
+    }, { passive: false });
     document.addEventListener('dragover', (e) => e.preventDefault());
     tabsContainer.addEventListener('dragstart', (e) => {
         const tab = e.target.closest('.tab');
@@ -513,6 +491,7 @@ function addTab(id, title, element, closable = true) {
     tab.innerHTML = title + (closable ? ' <span class="close-tab" data-id="'+id+'">×</span>' : '');
     tab.onclick = (e) => {
         if (e.target.classList.contains('close-tab')) closeTab(e.target.dataset.id);
+        else if (e.target.classList.contains('unpin-tab')) togglePinTab(e.target.dataset.id);
         else switchTab(id);
     };
     tabsContainer.appendChild(tab);
@@ -566,24 +545,47 @@ function switchTab(id) {
         }
     }
 
-    // 移动 Quill 实例
+    // 移动 Quill 实例（editor 和 scroll-arrow-wrap 是 quillWrapper 的平级子元素！）
     if (quill) {
-        weLog.debug('tab-manager', 'switchTab: 移动 Quill 实例');
+        weLog.info('tab-manager', 'switchTab: 移动 Quill 实例', { currentQuillProjectId, targetId: id });
         const quillWrapper = tabs[id]?.element.querySelector('.quill-wrapper');
-        const toolbar = quill.container.previousElementSibling;
+
+        // ★ 正确查找：editor（ql-container）和 scroll-arrow-wrap 是平级兄弟！
+        // scroll-arrow-wrap 在 editor 前面，所以用 previousElementSibling
         const editor = quill.container;
+        let wrap = editor.previousElementSibling;
+        if (wrap && !wrap.classList.contains('scroll-arrow-wrap')) wrap = null;
+        let toolbarEl = wrap ? wrap.querySelector('.ql-toolbar') : null;
+        if (!toolbarEl) {
+            // fallback：没有 scroll-arrow-wrap，toolbar 直接就是 editor 的前一个兄弟
+            const sib = editor.previousElementSibling;
+            if (sib && sib.classList.contains('ql-toolbar')) {
+                toolbarEl = sib;
+                wrap = null;
+            }
+        }
+        weLog.info('tab-manager', 'switchTab: Quill 组件状态', {
+            wrapExists: !!wrap, toolbarElExists: !!toolbarEl,
+            editorParentClass: editor.parentElement?.className || editor.parentElement?.id,
+            editorPrevSibling: editor.previousElementSibling?.className
+        });
 
         if (quillWrapper) {
-            weLog.debug('tab-manager', `switchTab: 找到 quillWrapper, 移动编辑器到 id=${id}`);
-            if (editor.parentElement !== quillWrapper) {
-                if (toolbar && toolbar.classList.contains('ql-toolbar')) {
-                    quillWrapper.appendChild(toolbar);
-                }
+            // 搬之前先清掉 quillWrapper 里的残留旧内容（因为多次切换可能堆积）
+            quillWrapper.innerHTML = '';
+
+            // 搬运顺序：wrap 先（在 editor 前面），editor 后
+            if (wrap && toolbarEl) {
+                quillWrapper.appendChild(wrap);
+                quillWrapper.appendChild(editor);
+            } else if (toolbarEl) {
+                quillWrapper.appendChild(toolbarEl);
+                quillWrapper.appendChild(editor);
+            } else {
                 quillWrapper.appendChild(editor);
             }
-            if (toolbar && toolbar.classList.contains('ql-toolbar')) {
-                toolbar.style.display = '';
-            }
+
+            if (toolbarEl) toolbarEl.style.display = '';
             editor.style.display = '';
             currentQuillProjectId = id;
             if (pendingQuillSave && pendingQuillSave.projectId === id) {
@@ -603,8 +605,11 @@ function switchTab(id) {
                 storage.style.top = '-9999px';
                 document.body.appendChild(storage);
             }
-            if (toolbar && toolbar.classList.contains('ql-toolbar')) {
-                storage.appendChild(toolbar);
+            // storage 里也保持 wrap 先 editor 后
+            if (wrap && toolbarEl) {
+                storage.appendChild(wrap);
+            } else if (toolbarEl) {
+                storage.appendChild(toolbarEl);
             }
             storage.appendChild(editor);
             currentQuillProjectId = null;
@@ -651,7 +656,7 @@ function showConfirmDialog(message, title) {
 
 function closeTab(id, skipConfirm) {
     weLog.info('tab-manager', `→ closeTab: id=${id} skipConfirm=${skipConfirm}`);
-    if (!tabs[id] || !tabs[id].closable) { weLog.warn('tab-manager', `closeTab: id=${id} 不存在或不可关闭`); return; }
+    if (!tabs[id] || !tabs[id].closable || tabs[id].pinned) { weLog.warn('tab-manager', `closeTab: id=${id} 不存在、已固定或不可关闭`); return; }
     // 关闭标签时取消选中图片卡片
     if (typeof _deselectImageCard === 'function') _deselectImageCard();
     // 异步关闭：需要先检查是否有未保存内容
@@ -670,10 +675,56 @@ function closeTab(id, skipConfirm) {
 
 function doCloseTab(id) {
     weLog.info('tab-manager', `→ doCloseTab: id=${id}`);
+
+    // 如果关闭的是项目页 tab，先收集并关闭所有关联的独立文件 tab
+    const closingProject = tabs[id];
+    if (closingProject && !closingProject.fileTab && closingProject.projectPath) {
+        const projectPathToClose = closingProject.projectPath;
+        const relatedFileTabs = Object.keys(tabs).filter(tid =>
+            tid !== id &&
+            tabs[tid]?.fileTab === true &&
+            tabs[tid]?.projectPath === projectPathToClose
+        );
+        if (relatedFileTabs.length > 0) {
+            weLog.info('tab-manager', `doCloseTab: 关闭项目关联的 ${relatedFileTabs.length} 个独立文件 tab`, { ids: relatedFileTabs });
+            // 如果项目 tab 是当前激活的，先切到右边（跳过关联 tab，避免切了又被关）
+            if (activeTabId === id) {
+                const allIds = Object.keys(tabs);
+                const closedIdx = allIds.indexOf(id);
+                let nextId = null;
+                // 找右边第一个非关联的 tab
+                for (let i = closedIdx + 1; i < allIds.length; i++) {
+                    if (!relatedFileTabs.includes(allIds[i])) { nextId = allIds[i]; break; }
+                }
+                // 右边没找到，找左边第一个非关联的
+                if (!nextId) {
+                    for (let i = closedIdx - 1; i >= 0; i--) {
+                        if (!relatedFileTabs.includes(allIds[i])) { nextId = allIds[i]; break; }
+                    }
+                }
+                if (nextId) {
+                    weLog.debug('tab-manager', `doCloseTab: 先切到非关联 tab nextId=${nextId}`);
+                    switchTab(nextId);
+                }
+            }
+            // 依次关闭关联独立文件（直接调 doCloseTab，跳过确认）
+            for (const fid of [...relatedFileTabs]) {
+                if (tabs[fid]) doCloseTab(fid);
+            }
+        }
+    }
+
     if (quill && currentQuillProjectId === id) {
-        weLog.debug('tab-manager', `doCloseTab: 移动 Quill 到 storage (当前项目=${id})`);
-        const toolbar = quill.container.previousElementSibling;
+        weLog.info('tab-manager', `doCloseTab: 移动 Quill 到 storage (当前项目=${id})`);
         const editor = quill.container;
+        // editor 和 scroll-arrow-wrap 是平级兄弟，wrap 在 editor 前面
+        let wrap = editor.previousElementSibling;
+        if (wrap && !wrap.classList.contains('scroll-arrow-wrap')) wrap = null;
+        let toolbarEl = wrap ? wrap.querySelector('.ql-toolbar') : null;
+        if (!toolbarEl) {
+            const sib = editor.previousElementSibling;
+            if (sib && sib.classList.contains('ql-toolbar')) { toolbarEl = sib; wrap = null; }
+        }
         let storage = document.getElementById('quill-storage');
         if (!storage) {
             storage = document.createElement('div');
@@ -684,10 +735,14 @@ function doCloseTab(id) {
             storage.style.top = '-9999px';
             document.body.appendChild(storage);
         }
-        if (toolbar && toolbar.classList.contains('ql-toolbar')) {
-            storage.appendChild(toolbar);
+        // storage 里保持 wrap 先 editor 后
+        if (wrap && toolbarEl) {
+            storage.appendChild(wrap);
+        } else if (toolbarEl) {
+            storage.appendChild(toolbarEl);
         }
         storage.appendChild(editor);
+        weLog.info('tab-manager', 'doCloseTab: Quill 已搬入 storage', { wrapExists: !!wrap, toolbarExists: !!toolbarEl });
         currentQuillProjectId = null;
     }
     if (tocPanel && tabs[id].element?.contains(tocPanel)) {
@@ -695,6 +750,20 @@ function doCloseTab(id) {
         tocPanel.remove();
         tocPanel = null;
     }
+
+    // ★ 必须在 delete tabs[id] 之前算 sortedIds 和 closedIdx！
+    const tabBarEl = document.getElementById('tab-bar');
+    const allTabIdsBeforeDelete = Object.keys(tabs);
+    let sortedIdsBeforeDelete;
+    if (tabBarEl) {
+        sortedIdsBeforeDelete = Array.from(tabBarEl.querySelectorAll('.tab'))
+            .map(el => el.dataset.id)
+            .filter(Boolean);
+    } else {
+        sortedIdsBeforeDelete = allTabIdsBeforeDelete;
+    }
+    const closedIdx = sortedIdsBeforeDelete.indexOf(id);
+
     tabs[id].tabElement.remove();
     tabs[id].element.remove();
     // 清理独立节点图实例
@@ -708,12 +777,221 @@ function doCloseTab(id) {
         weLog.debug('tab-manager', `doCloseTab: 清理嵌入节点图实例 (id=${id})`);
         if (typeof destroyEmbeddedNodeGraph === 'function') destroyEmbeddedNodeGraph(id);
     }
+    // 注销 openFileMap（如果是独立文件 tab 或项目页有 currentFile）
+    const closingTab = tabs[id];
+    if (closingTab) {
+        if (closingTab.fileTab && closingTab.projectPath && closingTab.currentFile) {
+            if (typeof unregisterOpenFile === 'function') {
+                unregisterOpenFile(closingTab.projectPath, closingTab.currentFile);
+            }
+        }
+        // 项目页 tab：如果有 currentFile 也注销
+        if (!closingTab.fileTab && closingTab.projectPath && closingTab.currentFile) {
+            if (typeof unregisterOpenFile === 'function') {
+                unregisterOpenFile(closingTab.projectPath, closingTab.currentFile);
+            }
+        }
+    }
     delete tabs[id];
     weLog.info('tab-manager', `← doCloseTab 完成: id=${id} 已删除`);
     if (activeTabId === id) {
-        const remaining = Object.keys(tabs);
-        weLog.debug('tab-manager', `doCloseTab: activeTabId=${id} 已关闭, 剩余 ${remaining.length} 个标签`);
-        if (remaining.length > 0) switchTab(remaining[0]);
-        else createWelcomeTab();
+        const allTabIds = Object.keys(tabs);
+        weLog.debug('tab-manager', `doCloseTab: activeTabId=${id} 已关闭, 剩余 ${allTabIds.length} 个标签`);
+        if (allTabIds.length > 0) {
+            // 用之前算好的 closedIdx 找邻近标签
+            let nextId;
+            if (closedIdx >= 0 && closedIdx + 1 < sortedIdsBeforeDelete.length && sortedIdsBeforeDelete[closedIdx + 1] !== id) {
+                nextId = sortedIdsBeforeDelete[closedIdx + 1];  // 右边
+            } else if (closedIdx > 0 && sortedIdsBeforeDelete[closedIdx - 1] !== id) {
+                nextId = sortedIdsBeforeDelete[closedIdx - 1];  // 左边
+            } else {
+                // fallback：找剩余的第一个
+                nextId = allTabIds[0];
+            }
+            weLog.debug('tab-manager', `doCloseTab: 切换到邻近标签 nextId=${nextId} (closedIdx=${closedIdx})`);
+            if (nextId && nextId !== id && tabs[nextId]) {
+                switchTab(nextId);
+            } else {
+                createWelcomeTab();
+            }
+        } else {
+            createWelcomeTab();
+        }
     }
+}
+
+/**
+ * 根据 tab 的 closable / pinned 状态更新按钮（close-tab ↔ unpin-tab）
+ * pinned 时：close-tab 隐藏，unpin-tab 显示（hover/active 时才显示，CSS 控制）
+ * 非 pinned 时：close-tab 正常，unpin-tab 移除
+ */
+function updateTabButtons(id) {
+    const tab = tabs[id];
+    if (!tab) return;
+    const tabEl = tab.tabElement;
+    if (!tabEl) return;
+
+    const closeBtn = tabEl.querySelector('.close-tab');
+    const unpinBtn = tabEl.querySelector('.unpin-tab');
+    const canShowClose = tab.closable !== false;
+
+    if (tab.pinned) {
+        // 隐藏 close-tab
+        if (closeBtn) closeBtn.remove();
+        // 添加 unpin-tab（如果还没有）
+        if (!unpinBtn) {
+            const btn = document.createElement('span');
+            btn.className = 'unpin-tab';
+            btn.dataset.id = id;
+            btn.title = t('ui.unpin_tab') || '取消固定';
+            btn.innerHTML = `<img src="../resources/pin.svg" width="10" height="14" alt="unpin" style="display:block;filter:contrast(1.2);">`;
+            tabEl.appendChild(btn);
+        }
+    } else {
+        // 移除 unpin-tab
+        if (unpinBtn) unpinBtn.remove();
+        // 如果 closable 且没有 close-tab，加回去
+        if (canShowClose && !closeBtn) {
+            const btn = document.createElement('span');
+            btn.className = 'close-tab';
+            btn.dataset.id = id;
+            btn.textContent = '×';
+            tabEl.appendChild(btn);
+        }
+    }
+}
+
+/**
+ * 切换 tab 的 pinned 状态（供右键菜单和 unpin 按钮调用）
+ * @param {string} id tab ID
+ * @param {boolean} [force] 可选，强制设为 true/false
+ */
+function togglePinTab(id, force) {
+    const tab = tabs[id];
+    if (!tab || tab.closable === false) return;
+    const willPin = typeof force === 'boolean' ? force : !tab.pinned;
+    weLog.info('tab-manager', `→ togglePinTab: id=${id}, pinned: ${tab.pinned} → ${willPin}`);
+
+    tab.pinned = willPin;
+    const tabEl = tab.tabElement;
+
+    if (willPin) {
+        tabEl.classList.add('pinned');
+        // 移动到启程页右边
+        const container = tabEl.parentElement;
+        const welcomeEl = container.querySelector('.tab[data-id="welcome"]');
+        if (welcomeEl && welcomeEl !== tabEl) {
+            container.insertBefore(tabEl, welcomeEl.nextSibling);
+        } else {
+            container.insertBefore(tabEl, container.firstChild);
+        }
+    } else {
+        tabEl.classList.remove('pinned');
+    }
+
+    // 更新按钮
+    updateTabButtons(id);
+    showNotification(willPin ? (t('ui.tab_pinned') || '标签已固定') : (t('ui.tab_unpinned') || '标签已取消固定'));
+}
+
+// ========== 横向滚动箭头工具 ==========
+// 给任意横向滚动容器添加左右三角形箭头按钮
+// 用法：addScrollArrows(scrollableElement)
+function addScrollArrows(container) {
+    if (!container || container._scrollArrowInit) return;
+    container._scrollArrowInit = true;
+
+    // 如果还没被 wrapper 包，就包一下
+    let wrapper = container.parentElement;
+    if (!wrapper || !wrapper.classList.contains('scroll-arrow-wrap')) {
+        wrapper = document.createElement('div');
+        wrapper.className = 'scroll-arrow-wrap';
+        container.parentNode.insertBefore(wrapper, container);
+        wrapper.appendChild(container);
+    }
+
+    // ★ 根据 container 类型统一设置 wrapper 背景和 border-bottom（用 inline style 打穿所有 CSS 优先级）
+    // 同时清掉 container 自己的 border-bottom（避免两层叠加 → 线变粗）
+    if (container.classList.contains('editor-toolbar')) {
+        wrapper.style.background = 'var(--bg-sidebar)';
+        wrapper.style.borderBottom = '1px solid var(--border)';
+        container.style.borderBottom = 'none';   // 清掉 .editor-toolbar 自己的 border-bottom
+        container.style.border = 'none';
+    } else if (container.classList.contains('node-graph-toolbar')) {
+        wrapper.style.background = 'var(--bg-toolbar, var(--bg-sidebar))';
+        wrapper.style.borderBottom = '1px solid var(--border, #ccc)';
+        container.style.borderBottom = 'none';
+    } else {
+        // tabs-container 等场景保持 transparent
+        wrapper.style.background = 'transparent';
+        wrapper.style.borderBottom = 'none';
+    }
+
+    // 创建箭头按钮（用 span 避免 button 样式覆盖 + 内联 style 彻底打穿）
+    const leftBtn = document.createElement('span');
+    leftBtn.className = 'scroll-arrow-btn';
+    leftBtn.setAttribute('role', 'button');
+    leftBtn.setAttribute('aria-label', '向左滚动');
+    leftBtn.style.background = 'transparent';
+    leftBtn.style.border = 'none';
+    leftBtn.style.boxShadow = 'none';
+    leftBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>';
+    wrapper.insertBefore(leftBtn, container);
+
+    const rightBtn = document.createElement('span');
+    rightBtn.className = 'scroll-arrow-btn';
+    rightBtn.setAttribute('role', 'button');
+    rightBtn.setAttribute('aria-label', '向右滚动');
+    rightBtn.style.background = 'transparent';
+    rightBtn.style.border = 'none';
+    rightBtn.style.boxShadow = 'none';
+    rightBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
+    wrapper.appendChild(rightBtn);
+
+    // 点击 → smooth scroll
+    const scrollStep = () => Math.max(40, container.clientWidth * 0.7);
+    leftBtn.addEventListener('click', () => {
+        container.scrollBy({ left: -scrollStep(), behavior: 'smooth' });
+    });
+    rightBtn.addEventListener('click', () => {
+        container.scrollBy({ left: scrollStep(), behavior: 'smooth' });
+    });
+
+    // 连续按住快速滚动（hold repeat）
+    let holdTimer = null;
+    const startHold = (dir) => {
+        if (holdTimer) return;
+        holdTimer = setInterval(() => {
+            container.scrollBy({ left: dir * scrollStep(), behavior: 'auto' });
+        }, 100);
+    };
+    const stopHold = () => { if (holdTimer) { clearInterval(holdTimer); holdTimer = null; } };
+    leftBtn.addEventListener('mousedown', () => startHold(-1));
+    rightBtn.addEventListener('mousedown', () => startHold(1));
+    [leftBtn, rightBtn].forEach(b => {
+        b.addEventListener('mouseup', stopHold);
+        b.addEventListener('mouseleave', stopHold);
+    });
+
+    // 更新 disabled 状态
+    const updateArrows = () => {
+        const { scrollLeft, scrollWidth, clientWidth } = container;
+        const atStart = scrollLeft <= 1;
+        const atEnd = scrollLeft + clientWidth >= scrollWidth - 1;
+        const noOverflow = scrollWidth <= clientWidth + 1;
+        // 只给箭头按钮设 disabled，不要给整个 wrapper 设 opacity
+        // 否则 tabs-container 里的 .tab 会一起被压暗
+        leftBtn.classList.toggle('disabled', atStart || noOverflow);
+        rightBtn.classList.toggle('disabled', atEnd || noOverflow);
+    };
+
+    container.addEventListener('scroll', updateArrows, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(updateArrows);
+        ro.observe(container);
+    }
+    // 首次 + 延迟一次（让布局完成）
+    updateArrows();
+    requestAnimationFrame(updateArrows);
+    setTimeout(updateArrows, 200);
 }

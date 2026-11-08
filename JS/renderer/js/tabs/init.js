@@ -1,4 +1,4 @@
-// 全局通知
+﻿// 全局通知
 let notificationTimer = null;
 function showNotification(message, duration = 2000) {
     weLog.debug('init', `showNotification: "${message}" duration=${duration}`);
@@ -38,14 +38,51 @@ window.onload = async () => {
         }
 
         weLog.info('init', '→ 应用背景材质/遮罩/图片');
+        // 读取系统主题（缓存到 window._systemDark 供 checkMaterialThemeCompat 用）
+        let sysIsDark = false;
+        try {
+            const sysTheme = await weAPI.getSystemTheme();
+            sysIsDark = !!(sysTheme && sysTheme.isDark);
+            window._systemDark = sysIsDark;
+            weLog.info('init', `系统主题 isDark=${sysIsDark}`);
+        } catch (e) {
+            weLog.warn('init', '读取系统主题失败，默认暗色', e);
+            window._systemDark = false;
+        }
+
         // 应用背景材质（Mica/Acrylic/Tabbed）
-        // 注意：OS 层面材质由主进程在 ready-to-show 时通过 setBackgroundMaterial 设置，
-        // 渲染进程不再通过 IPC 调用 setBackgroundMaterial（对齐 mica-test.js）。
-        // 之前的渲染进程 IPC 调用会触发 DWM 重新合成，导致最大化时崩溃。
-        const bgMaterial = settings.backgroundMaterial || 'none';
-        weLog.info('init', `背景材质=${bgMaterial}（OS 层已由主进程设置，此处仅应用 CSS）`);
+        const userMaterial = settings.backgroundMaterial || 'none';
+        window._userMaterialChoice = userMaterial; // 保存用户原始选择（不降级）
+        const savedTint = settings.materialTint ?? 78;
+        const savedOverlay = settings.materialOverlay ?? 30;
+        const savedBarTint = settings.materialBarTint ?? 100;
+        window.savedTint = savedTint;
+        window.savedOverlay = savedOverlay;
+        window.savedBarTint = savedBarTint;
+
+        // 检查主题-材质兼容性
+        let effectiveMaterial = userMaterial;
+        if (typeof checkMaterialThemeCompat === 'function') {
+            const autoAdapt = settings.materialAutoAdaptTheme !== false;
+            window._autoAdaptTheme = autoAdapt; // 同步到全局，供其他回调读取
+            const result = checkMaterialThemeCompat(userMaterial, currentTheme, autoAdapt);
+            effectiveMaterial = result.effective;
+            if (result.downgraded) {
+                weLog.warn('init', `材质降级: ${userMaterial} → none（主题不匹配），原始选择已保存`);
+                // OS 层也同步降级（覆盖 main.js ready-to-show 时设的材质）
+                try { await weAPI.setBackgroundMaterial('none'); } catch (e) {}
+                // 弹通知提醒用户
+                setTimeout(() => {
+                    if (typeof showNotification === 'function') {
+                        showNotification(`⚠ ${result.reason}`, 4000);
+                    }
+                }, 2000); // 延迟 2s，等启动画面加载完再弹
+            }
+        }
+        weLog.info('init', `材质: 用户选择=${userMaterial} 生效=${effectiveMaterial}`);
+
         if (typeof applyBackgroundMaterial === 'function') {
-            applyBackgroundMaterial(bgMaterial, settings.materialTint ?? 78, settings.materialOverlay ?? 30, settings.materialBarTint ?? 100);
+            applyBackgroundMaterial(effectiveMaterial, savedTint, savedOverlay, savedBarTint);
         }
         // 应用背景遮罩透明度（独立于材质，始终生效，用于覆盖背景图片）
         if (typeof applyOverlay === 'function') {
@@ -314,3 +351,4 @@ function updateStatusBarStats() {
 // 暴露到全局以便其他模块调用
 window.initStatusBar = initStatusBar;
 window.updateStatusBarStats = updateStatusBarStats;
+

@@ -689,14 +689,18 @@ class NGEngine {
     // ========== 自动排版入口（按模式分发） ==========
     autoLayout(layoutType) {
         if (this._isReadonly()) return;
-        // 默认（手动拖拽）：跳过排版
         if (layoutType === 'manual') return;
-        if (layoutType === 'force' || (!layoutType && this.mode !== 'flow' && this.mode !== 'timeline')) {
+        if (layoutType === 'force') {
             this._forceLayout();
-        } else if (layoutType === 'chapter' || layoutType === 'timestamp' || this.mode === 'timeline') {
+        } else if (layoutType === 'chapter' || layoutType === 'timestamp') {
             this._timelineLayout(layoutType);
-        } else if (this.mode === 'flow') {
+        } else if (layoutType === 'hierarchical') {
             this._hierarchicalLayout();
+        } else if (!layoutType) {
+            // 未指定 layoutType：按当前 mode 自动选择
+            if (this.mode === 'timeline') this._timelineLayout();
+            else if (this.mode === 'flow') this._hierarchicalLayout();
+            else this._forceLayout();
         } else {
             this._forceLayout();
         }
@@ -1182,8 +1186,21 @@ class NGEngine {
             }
         }, { passive: false });
 
-        // 鼠标移动（用于坐标显示）
-        c.addEventListener('mousemove', (e) => this._onCoordsUpdate(e.clientX, e.clientY));
+        // 鼠标移动（用于坐标显示 + hover 兜底清除）
+        c.addEventListener('mousemove', (e) => {
+            this._onCoordsUpdate(e.clientX, e.clientY);
+            // 兜底：如果鼠标不在任何节点 hit 上，清除 hover
+            if (this._hoveredNodeId !== null) {
+                const tgt = e.target;
+                const overNode = tgt && tgt.closest && tgt.closest('[data-node-id]');
+                const overHit = tgt && tgt.hasAttribute && tgt.hasAttribute('data-node-id');
+                if (!overNode && !overHit) {
+                    this._hoveredNodeId = null;
+                    this._hoveredEdgeIds.clear();
+                    this._renderAll();
+                }
+            }
+        });
         c.addEventListener('mouseleave', () => { if (this.coordsEl) this.coordsEl.textContent = ''; });
 
         // 容器级 mousedown（画布空白 → 平移 或 框选 或 创建节点起点）
@@ -3006,7 +3023,7 @@ function buildNodeGraphToolbarHTML(statusId, mode) {
         zoomReset: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
         save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
         continuous: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
-        autoLayout: '<path d="M4 20h4v-4H4v4z"/><path d="M16 4h4v4h-4V4z"/><path d="M4 8h4V4H4v4z"/><path d="M16 16h4v-4h-4v4z"/><path d="M8 10l4-4 4 4"/><path d="M8 14l4 4 4-4"/>',
+        autoLayout: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     };
     const S = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 
@@ -3029,8 +3046,6 @@ function buildNodeGraphToolbarHTML(statusId, mode) {
             <select class="ng-mode-select" title="${t('ui.ng_mode') || '图模式'}">
                 <option value="relation">${t('ui.ng_mode_relation') || '关系图模式'}</option>
                 <option value="flow">${t('ui.ng_mode_flow') || '流程模式'}</option>
-                <option value="timeline">${t('ui.ng_mode_timeline') || '时间线模式'}</option>
-                <option value="view">${t('ui.ng_mode_view') || '观察模式'}</option>
             </select>
             <div class="ng-toolbar-divider"></div>
             <button class="ng-btn active" data-tool="select" title="${t('ui.ng_select') || '选择/拖拽'}"><svg viewBox="0 0 24 24" width="15" height="15" ${S}>${ICON.select}</svg></button>
@@ -3066,11 +3081,12 @@ function buildNodeGraphToolbarHTML(statusId, mode) {
             <div class="ng-toolbar-divider"></div>
             <div class="ng-layout-selector-wrap">
                 <button class="ng-btn" data-action="layout-selector" title="${t('ui.ng_layout') || '排版'}">
-                    <svg viewBox="0 0 24 24" width="15" height="15" ${S}><path d="M4 20h4v-4H4v4z"/><path d="M16 4h4v4h-4V4z"/><path d="M4 8h4V4H4v4z"/><path d="M16 16h4v-4h-4v4z"/><path d="M8 10l4-4 4 4"/><path d="M8 14l4 4 4-4"/></svg>
+                    <svg viewBox="0 0 24 24" width="15" height="15" ${S}>${ICON.autoLayout}</svg>
                     <svg viewBox="0 0 24 24" width="10" height="10" ${S}><path d="M6 9l6 6 6-6"/></svg>
                 </button>
                 <div class="ng-layout-menu" style="display:none">
                     <div class="ng-layout-option" data-layout="manual">${t('ui.ng_layout_manual') || '默认（手动拖拽）'}</div>
+                    <div class="ng-layout-option" data-layout="hierarchical">${t('ui.ng_layout_hierarchical') || '从始到终排序'}</div>
                     <div class="ng-layout-option" data-layout="force">${t('ui.ng_layout_force') || '力度图'}</div>
                     <div class="ng-layout-option" data-layout="chapter">${t('ui.ng_layout_chapter') || '按章节顺序'}</div>
                     <div class="ng-layout-option" data-layout="timestamp">${t('ui.ng_layout_timestamp') || '按时间戳顺序'}</div>
@@ -3939,39 +3955,62 @@ function setupPropertyPanelToggle(panelEl) {
 }
 
 // ========== 创建节点图标签页（主程序入口） ==========
-function createNodeGraphTab(graphId, title, projectFolder) {
-    weLog.info('node-graph', '→ createNodeGraphTab', { graphId, title, hasFolder: !!projectFolder });
-    const tabId = 'nodegraph-' + sanitizeId(graphId);
-    if (tabs[tabId]) { switchTab(tabId); return; }
+function createNodeGraphTab(graphId, title, projectFolder, opts) {
+    opts = opts || {};
+    const isEmbedded = !!opts.container;
+    const tabId = opts.tabId || ('nodegraph-' + sanitizeId(graphId));
+    weLog.info('node-graph', '→ createNodeGraphTab', { graphId, title, hasFolder: !!projectFolder, embedded: isEmbedded });
+    if (!isEmbedded && tabs[tabId]) { switchTab(tabId); return; }
 
-    // OA 模板：area-root.oa > 单个 area-card > node-graph-layout(inner)
-    const root = document.createElement('div');
-    root.className = 'area-root oa';
-    const block = document.createElement('div');
-    block.className = 'area-card';
+    let content, root;
+    const canvasId = opts.canvasId || `ng-canvas-${tabId}`;
+    const coordsId = opts.coordsId || `ng-coords-${tabId}`;
 
-    const content = document.createElement('div');
-    content.className = 'node-graph-layout';
-    content.innerHTML = `
-        ${buildNodeGraphToolbarHTML()}
-        <div class="node-graph-body">
-            <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
-                <div class="node-graph-canvas" id="ng-canvas-${tabId}"></div>
+    if (isEmbedded) {
+        // 嵌入模式：直接使用传入的容器（由调用方负责隐藏其他编辑器）
+        root = opts.container;
+        root.innerHTML = '';
+        content = document.createElement('div');
+        content.className = 'node-graph-layout';
+        content.innerHTML = `
+            ${buildNodeGraphToolbarHTML()}
+            <div class="node-graph-body">
+                <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
+                    <div class="node-graph-canvas" id="${canvasId}"></div>
+                </div>
+                ${buildNodeGraphPropertyPanelHTML()}
             </div>
-            ${buildNodeGraphPropertyPanelHTML()}
-        </div>
-    `;
-    block.appendChild(content);
-    root.appendChild(block);
-    addTab(tabId, title || graphId, root, true);
+        `;
+        root.appendChild(content);
+    } else {
+        // OA 独立 tab：创建 area-root.oa 包装
+        root = document.createElement('div');
+        root.className = 'area-root oa';
+        const block = document.createElement('div');
+        block.className = 'area-card';
+        content = document.createElement('div');
+        content.className = 'node-graph-layout';
+        content.innerHTML = `
+            ${buildNodeGraphToolbarHTML()}
+            <div class="node-graph-body">
+                <div class="node-graph-canvas-wrapper" style="position:relative;flex:1;overflow:hidden;">
+                    <div class="node-graph-canvas" id="${canvasId}"></div>
+                </div>
+                ${buildNodeGraphPropertyPanelHTML()}
+            </div>
+        `;
+        block.appendChild(content);
+        root.appendChild(block);
+        addTab(tabId, title || graphId, root, true);
+    }
 
-    const canvasEl = content.querySelector(`#ng-canvas-${tabId}`);
+    const canvasEl = content.querySelector(`#${canvasId}`);
     const wrapperEl = content.querySelector('.node-graph-canvas-wrapper');
     const toolbar = content.querySelector('.node-graph-toolbar');
     const panelEl = content.querySelector('.ng-property-panel');
     const coordsEl = document.createElement('div');
     coordsEl.className = 'ng-coords';
-    coordsEl.id = `ng-coords-${tabId}`;
+    coordsEl.id = coordsId;
     coordsEl.style.cssText = 'position:absolute;left:8px;bottom:8px;font-size:11px;font-family:monospace;color:var(--text-secondary,#888);pointer-events:none;z-index:3;background:rgba(0,0,0,0.03);padding:2px 6px;border-radius:3px;';
     wrapperEl.appendChild(coordsEl);
 
@@ -4041,8 +4080,30 @@ function createNodeGraphTab(graphId, title, projectFolder) {
     engine.onToolChange = syncToolbarButtons;
     setActiveTool('select');
 
+    // 工具栏隐藏滚动条后的滚轮横向滚动
+    // 策略：mouseenter/mouseleave 设标记，全局 wheel/mousewheel 监听据此触发
+    let _toolbarHover = false;
+    toolbar.addEventListener('mouseenter', () => { _toolbarHover = true; });
+    toolbar.addEventListener('mouseleave', () => { _toolbarHover = false; });
+
+    // 左右滚动箭头
+    if (typeof addScrollArrows === 'function') addScrollArrows(toolbar);
+
+    function _handleToolbarWheel(e) {
+        if (!_toolbarHover) return;
+        const openMenu = document.querySelector('.ng-layout-menu');
+        if (openMenu && openMenu.style.display === 'block') return;
+        const dy = e.deltaY != null ? e.deltaY : (e.wheelDelta != null ? -e.wheelDelta : 0);
+        const dx = e.deltaX != null ? e.deltaX : 0;
+        const step = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+        if (step === 0) return;
+        e.preventDefault();
+        toolbar.scrollLeft += step;
+    }
+    document.addEventListener('wheel', _handleToolbarWheel, { passive: false });
+    document.addEventListener('mousewheel', _handleToolbarWheel, { passive: false });
+
     toolbar.addEventListener('click', async (e) => {
-        console.log('[NG] 工具栏点击', e.target.tagName, e.target.className, e.target.nodeType);
         if (!e || !e.target) return;
         // SVG 元素在旧版 Electron 中可能没有 closest 方法，用安全调用
         var target = e.target;
@@ -4055,7 +4116,7 @@ function createNodeGraphTab(graphId, title, projectFolder) {
                 el = el.parentElement || (el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null);
             }
         }
-        if (!closestBtn) { console.log('[NG] 未找到 .ng-btn 父元素', e.target); return; }
+        if (!closestBtn) return;
         const btn = closestBtn;
         const tool = btn.dataset.tool, edge = btn.dataset.edge, action = btn.dataset.action;
         // 观察模式：只允许缩放和模式切换
@@ -4093,24 +4154,23 @@ function createNodeGraphTab(graphId, title, projectFolder) {
         } else if (action === 'save') {
             await saveNodeGraph(tabId);
         } else if (action === 'layout-selector') {
-            // 切换排版下拉菜单
-            let menu = document.querySelector('.ng-layout-menu');
-            // 如果菜单还在 toolbar 内部，移到 body 并使用 fixed 定位（避免被 toolbar 的 overflow 裁剪）
-            if (menu && menu.parentNode !== document.body) {
-                document.body.appendChild(menu);
-            }
-            if (menu) {
-                const isVisible = menu.style.display !== 'none';
-                // 关闭所有排版菜单
-                document.querySelectorAll('.ng-layout-menu').forEach(m => m.style.display = 'none');
-                if (!isVisible) {
-                    // 根据按钮位置计算 fixed 定位坐标
-                    var br = btn.getBoundingClientRect();
-                    menu.style.position = 'fixed';
-                    menu.style.top = (br.bottom + 4) + 'px';
-                    menu.style.left = br.left + 'px';
-                    menu.style.display = 'block';
-                }
+            // 切换排版下拉菜单：用当前 toolbar 作用域内的 menu
+                        let menu = toolbar.querySelector('.ng-layout-menu') || document.querySelector('.ng-layout-menu[data-for-tab="' + tabId + '"]');
+            if (!menu) { console.warn('[NG] layout-selector: menu not found for tab', tabId); return; }
+            // 把 engine/markDirty 直接挂到 menu DOM 上（避免闭包/作用域问题）
+            menu._ngEngine = engine;
+            menu._ngMarkDirty = markDirty;
+            if (menu.parentNode !== document.body) document.body.appendChild(menu);
+            if (!menu.dataset.forTab) menu.dataset.forTab = tabId;
+            const isVisible = menu.style.display !== 'none';
+            // 隐藏其他 tab 残留的 menu
+            document.querySelectorAll('.ng-layout-menu').forEach(m => { if (m !== menu) m.style.display = 'none'; });
+            menu.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                var br = btn.getBoundingClientRect();
+                menu.style.position = 'fixed';
+                menu.style.top = (br.bottom + 4) + 'px';
+                menu.style.left = br.left + 'px';
             }
         } else if (action === 'export') {
             exportNodeGraphHTML(engine, tabId);
@@ -4171,39 +4231,32 @@ function createNodeGraphTab(graphId, title, projectFolder) {
         }
     });
 
-    // 排版下拉菜单选项
-    toolbar.addEventListener('click', (e) => {
-        if (!e || !e.target) return;
-        var target = e.target;
-        var opt = (typeof target.closest === 'function') ? target.closest('.ng-layout-option') : null;
-        if (!opt) return;
-        const layout = opt.dataset.layout;
-        if (!layout) return;
-        // 关闭菜单
-        const menu = document.querySelector('.ng-layout-menu');
-        if (menu) menu.style.display = 'none';
-        // 执行排版
-        engine.autoLayout(layout);
-        markDirty();
-    });
-    // 点击其他区域关闭排版菜单
-    document.addEventListener('click', (e) => {
-        var menu = document.querySelector('.ng-layout-menu');
-        if (!menu || menu.style.display === 'none') return;
-        // 点击菜单内部不关闭
-        if (menu.contains(e.target)) return;
-        // 点击排版按钮本身不关闭（由 toolbar 处理切换）
-        if (e.target && (typeof e.target.closest === 'function') && e.target.closest('[data-action="layout-selector"]')) return;
-        // 点击排版按钮的 SVG 子元素（兼容性回溯）
-        if (e.target) {
-            var el = e.target;
-            while (el && el !== document.body) {
-                if (el.nodeType === 1 && el.getAttribute && el.getAttribute('data-action') === 'layout-selector') return;
-                el = el.parentElement || (el.parentNode && el.parentNode.nodeType === 1 ? el.parentNode : null);
+    // 排版下拉菜单统一处理（菜单被 append 到 document.body）
+    document.addEventListener('mousedown', (e) => {
+        // 遍历所有可见的排版菜单
+        const menus = document.querySelectorAll('.ng-layout-menu');
+        menus.forEach(function(menu) {
+            if (!menu || menu.style.display === 'none') return;
+            // 点击菜单内部 → 执行排版
+            if (menu.contains(e.target)) {
+                var opt = (typeof e.target.closest === 'function') ? e.target.closest('.ng-layout-option') : null;
+                if (!opt && e.target.classList && e.target.classList.contains('ng-layout-option')) opt = e.target;
+                if (opt) {
+                    const layout = opt.dataset.layout;
+                    const eng = menu._ngEngine;
+                    const md = menu._ngMarkDirty;
+                                        menu.style.display = 'none';
+                    if (layout && eng) {
+                        try { eng.autoLayout(layout); if (md) md(); weLog.info('node-graph', 'autoLayout', { layout }); } catch (err) { weLog.error('node-graph', 'autoLayout 失败', err && err.stack ? err.stack : String(err)); }
+                    }
+                }
+                return;
             }
-        }
-        menu.style.display = 'none';
-    });
+            // 点击排版按钮本身不关闭（由 toolbar 处理切换）
+            if (e.target && (typeof e.target.closest === 'function') && e.target.closest('[data-action="layout-selector"]')) return;
+            menu.style.display = 'none';
+        });
+    }, true);
 
     // 模拟标签更新
     function updateSimLabel() {
@@ -4938,6 +4991,12 @@ function refreshNodeGraphTheme() {
             if (inst && inst.engine) { try { inst.engine._renderAll(); count++; } catch (e) {} }
         }
     }
+    // 同时刷新 Quill 里嵌入的节点图卡片缩略图（缩略图背景色跟随主题）
+    if (typeof refreshNodeGraphThumbnails === 'function' && typeof tabs !== 'undefined') {
+        for (const safeId in tabs) {
+            try { refreshNodeGraphThumbnails(safeId); } catch (e) {}
+        }
+    }
     if (count > 0) weLog.debug('node-graph', 'refreshNodeGraphTheme 完成', { count });
 }
 
@@ -4946,5 +5005,40 @@ function toG6Data() { return null; }
 function fromG6Data(d) { return d; }
 function getLogicFlowClass() { return null; }
 function getLogicFlowEx() { return null; }
+
+// ========== Tab 切换时同步节点图 engine 状态 ==========
+// 防止跨 tab 残留：hover 高亮、拖拽状态、选中状态泄漏到其他 tab
+window.addEventListener('tab-activated', (e) => {
+    const activeTabId = e.detail && e.detail.tabId;
+    // OA 模式节点图
+    for (const tabId in nodeGraphInstances) {
+        const inst = nodeGraphInstances[tabId];
+        if (!inst || !inst.engine) continue;
+        const engine = inst.engine;
+        if (tabId === activeTabId) {
+            // 激活中的 tab：清理残留交互状态 + 重绘
+            engine._interactState = null;
+            engine._hoveredNodeId = null;
+            engine._hoveredEdgeIds && engine._hoveredEdgeIds.clear();
+            try { engine._renderAll(); } catch (err) {}
+        } else {
+            // 非激活 tab：清理交互/hover 残留，但保留选中
+            engine._interactState = null;
+            engine._hoveredNodeId = null;
+            engine._hoveredEdgeIds && engine._hoveredEdgeIds.clear();
+        }
+    }
+    // TA 模式嵌入节点图（安全兜底：全部清理交互残留）
+    if (typeof embeddedNodeGraphs !== 'undefined') {
+        for (const safeId in embeddedNodeGraphs) {
+            const inst = embeddedNodeGraphs[safeId];
+            if (!inst || !inst.engine) continue;
+            const engine = inst.engine;
+            engine._interactState = null;
+            engine._hoveredNodeId = null;
+            engine._hoveredEdgeIds && engine._hoveredEdgeIds.clear();
+        }
+    }
+});
 
 weLog.info('node-graph', '节点图模块已加载（纯 SVG 引擎）');

@@ -1,4 +1,4 @@
-let APP_VERSION = '...'; // 由 weAPI.getVersion() 动态填充
+﻿let APP_VERSION = '...'; // 由 weAPI.getVersion() 动态填充
 
 // 简易 Markdown 渲染器（无需外部依赖）
 let __mdAnchors = [];
@@ -359,12 +359,7 @@ function refreshSettingsI18n() {
     // General section
     const generalSection = panel.querySelector('#section-general');
     if (generalSection) {
-        const rows = generalSection.querySelectorAll('.setting-row > span');
-        if (rows[0]) rows[0].textContent = t('ui.language') || rows[0].textContent;
-        if (rows[1]) rows[1].textContent = t('ui.auto_save') || rows[1].textContent;
-        if (rows[2]) rows[2].textContent = t('ui.tab_close_confirm') || rows[2].textContent;
-        if (rows[3]) rows[3].textContent = t('ui.always_on_top') || rows[3].textContent;
-        if (rows[4]) rows[4].textContent = t('ui.default_open_first') || rows[4].textContent;
+        // 所有设置行 label 已加 data-i18n，由全局自动刷新，不再使用硬编码索引
 
         const autoSaveSelect = generalSection.querySelector('#auto-save-select');
         if (autoSaveSelect) {
@@ -389,6 +384,38 @@ function refreshSettingsI18n() {
             const v = t('ui.update_check_idle');
             if (v) updateStatus.textContent = v;
         }
+        // ===== 日志设置组翻译刷新 =====
+        const logGrpTitle = generalSection.querySelector('#log-settings-group .setting-group-title');
+        if (logGrpTitle) { const v = t('ui.log_settings'); if (v) logGrpTitle.textContent = v; }
+        const logLevelLabel = generalSection.querySelector('#log-settings-group .setting-row:first-child span');
+        if (logLevelLabel) { const v = t('ui.log_level'); if (v) logLevelLabel.textContent = v; }
+        const logHint = generalSection.querySelector('#log-settings-group .log-level-hint');
+        if (logHint) { const v = t('ui.log_level_hint'); if (v) logHint.textContent = v; }
+        const btnViewLog = generalSection.querySelector('#btn-view-logs');
+        if (btnViewLog) { const v = t('ui.view_logs'); if (v) btnViewLog.textContent = v; }
+        const btnClearLog = generalSection.querySelector('#btn-clear-logs');
+        if (btnClearLog) { const v = t('ui.clear_logs'); if (v) btnClearLog.textContent = v; }
+        const btnExportLog = generalSection.querySelector('#btn-export-logs');
+        if (btnExportLog) { const v = t('ui.export_logs'); if (v) btnExportLog.textContent = v; }
+        const logPreviewTitle = generalSection.querySelector('#log-preview-header span');
+        if (logPreviewTitle) { const v = t('ui.log_preview'); if (v) logPreviewTitle.textContent = v; }
+        // 更新 log-level-desc
+        const logSel = generalSection.querySelector('#log-level-select');
+        const logDesc = generalSection.querySelector('#log-level-desc');
+        if (logSel && logDesc) logDesc.textContent = t(`ui.log_desc_${logSel.value}`) || `日志模式：${logSel.value}`;
+        // ===== 临时文件组翻译刷新 =====
+        const tempGrpTitle = generalSection.querySelector('#temp-cleanup-group .setting-group-title');
+        if (tempGrpTitle) { const v = t('ui.temp_cleanup'); if (v) tempGrpTitle.textContent = v; }
+        const btnRefreshTemp = generalSection.querySelector('#btn-refresh-temp-status');
+        if (btnRefreshTemp) { const v = t('ui.refresh'); if (v) btnRefreshTemp.textContent = v; }
+        const btnCleanupTemp = generalSection.querySelector('#btn-cleanup-temp');
+        if (btnCleanupTemp) { const v = t('ui.cleanup_temp'); if (v) btnCleanupTemp.textContent = v; }
+        const tempHint = generalSection.querySelector('#temp-cleanup-group .temp-cleanup-hint');
+        if (tempHint) { const v = t('ui.temp_cleanup_hint'); if (v) tempHint.textContent = v; }
+        // 临时文件统计标签
+        const tempLabels = generalSection.querySelectorAll('#temp-cleanup-group .temp-stat-label');
+        const tempLabelKeys = ['ui.temp_projects', 'ui.temp_size', 'ui.temp_idle'];
+        tempLabels.forEach((el, i) => { const v = t(tempLabelKeys[i]); if (v) el.textContent = v; });
     }
 
     // Account section
@@ -398,11 +425,7 @@ function refreshSettingsI18n() {
         if (uploadBtn) uploadBtn.textContent = t('ui.upload_avatar') || uploadBtn.textContent;
         const removeBtn = accountSection.querySelector('#btn-remove-avatar');
         if (removeBtn) removeBtn.textContent = t('ui.remove_avatar') || removeBtn.textContent;
-        const labels = accountSection.querySelectorAll('.settings-account-label');
-        if (labels[0]) labels[0].textContent = 'ID';
-        if (labels[1]) labels[1].textContent = t('ui.account_name') || labels[1].textContent;
-        if (labels[2]) labels[2].textContent = t('ui.display_name') || labels[2].textContent;
-        if (labels[3]) labels[3].textContent = t('ui.bio') || labels[3].textContent;
+        // settings-account-label 已加 data-i18n，由全局自动刷新
         const editBtns = accountSection.querySelectorAll('.settings-account-edit-btn');
         editBtns.forEach(btn => { btn.textContent = t('ui.edit') || btn.textContent; });
         const copyBtn = accountSection.querySelector('#btn-copy-id');
@@ -430,8 +453,7 @@ function refreshSettingsI18n() {
     // Appearance section
     const appearanceSection = panel.querySelector('#section-appearance');
     if (appearanceSection) {
-        const firstRow = appearanceSection.querySelector('.setting-row > span');
-        if (firstRow) firstRow.textContent = t('ui.color_scheme') || firstRow.textContent;
+        // setting-row > span 已加 data-i18n，由全局自动刷新
         const optgroups = appearanceSection.querySelectorAll('optgroup');
         if (optgroups[0]) optgroups[0].label = t('ui.group_light') || optgroups[0].label;
         if (optgroups[1]) optgroups[1].label = t('ui.group_dark') || optgroups[1].label;
@@ -450,15 +472,7 @@ function refreshSettingsI18n() {
         const resetBtn = appearanceSection.querySelector('#btn-reset-colors');
         if (resetBtn) resetBtn.textContent = t('ui.reset_colors') || resetBtn.textContent;
 
-        // Color labels
-        const colorLabels = appearanceSection.querySelectorAll('.color-picker-item > label');
-        const colorKeys = ['ui.color_bg_main', 'ui.color_bg_sidebar', 'ui.color_bg_toolbar',
-                          'ui.color_text', 'ui.color_text_secondary', 'ui.color_accent',
-                          'ui.color_border', 'ui.color_gap'];
-        colorLabels.forEach((lbl, i) => {
-            const translated = t(colorKeys[i]);
-            if (translated) lbl.textContent = translated;
-        });
+        // Color picker labels 已加 data-i18n，由全局自动刷新
 
         // Group title "自定义颜色"
         const customColorsTitle = appearanceSection.querySelector('#custom-colors-group .setting-group-title');
@@ -637,7 +651,7 @@ function createSettingsTab() {
     generalSection.innerHTML = `
         <h3>${t('ui.general')}</h3>
         <div class="setting-row">
-            <span>${t('ui.language')}</span>
+            <span data-i18n="ui.language">${t('ui.language')}</span>
             <select id="lang-select">
                 <option value="zh_CN">中文</option>
                 <option value="en">English</option>
@@ -646,7 +660,7 @@ function createSettingsTab() {
             </select>
         </div>
         <div class="setting-row">
-            <span>${t('ui.auto_save') || '自动保存'}</span>
+            <span data-i18n="ui.auto_save">${t('ui.auto_save') || '自动保存'}</span>
             <select id="auto-save-select">
                 <option value="0">${t('ui.off') || '关'}</option>
                 <option value="5">5 ${t('ui.minutes') || '分钟'}</option>
@@ -655,16 +669,79 @@ function createSettingsTab() {
             </select>
         </div>
         <div class="setting-row">
-            <span>${t('ui.tab_close_confirm') || '关闭标签确认'}</span>
+            <span data-i18n="ui.tab_close_confirm">${t('ui.tab_close_confirm') || '关闭标签确认'}</span>
             <label class="toggle-switch"><input type="checkbox" id="tab-close-confirm" checked><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-            <span>${t('ui.always_on_top') || '窗口置顶'}</span>
+            <span data-i18n="ui.always_on_top">${t('ui.always_on_top') || '窗口置顶'}</span>
             <label class="toggle-switch"><input type="checkbox" id="always-on-top-toggle"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-            <span>${t('ui.default_open_first') || '默认打开第一项'}</span>
+            <span data-i18n="ui.default_open_first">${t('ui.default_open_first') || '默认打开第一项'}</span>
             <label class="toggle-switch"><input type="checkbox" id="default-open-first-toggle"><span class="toggle-slider"></span></label>
+        </div>
+        <!-- ===== 日志设置组 ===== -->
+        <div class="setting-group" id="log-settings-group">
+            <div class="setting-group-title">${t('ui.log_settings') || '日志'}</div>
+            <div class="setting-row">
+                <span>${t('ui.log_level') || '日志级别'}</span>
+                <select id="log-level-select">
+                    <option value="verbose">${t('ui.log_mode_verbose') || '详细日志'} ${t('ui.log_desc_short_verbose') || '（全部+时间+堆栈）'}</option>
+                    <option value="full">${t('ui.log_mode_full') || '完整日志'} ${t('ui.log_desc_short_full') || '（全部级别）'}</option>
+                    <option value="info">${t('ui.log_mode_info') || '信息日志'} ${t('ui.log_desc_short_info') || '（INFO+WARN+ERROR）'}</option>
+                    <option value="problem">${t('ui.log_mode_problem') || '问题日志'} ${t('ui.log_desc_short_problem') || '（WARN+ERROR，含堆栈）'}</option>
+                    <option value="error">${t('ui.log_mode_error') || '错误日志'} ${t('ui.log_desc_short_error') || '（仅 ERROR）'}</option>
+                    <option value="minimal">${t('ui.log_mode_minimal') || '精简日志'} ${t('ui.log_desc_short_minimal') || '（仅严重错误）'}</option>
+                </select>
+            </div>
+            <div class="log-level-desc" id="log-level-desc">${t('ui.log_desc_full') || '完整日志：记录所有级别日志，适合开发调试'}</div>
+            <div class="log-level-hint">${t('ui.log_level_hint') || '选择日志级别以控制日志详细程度。修改后立即生效。'}</div>
+            <div class="log-stats-row">
+                <span class="log-stat-item">
+                    <span class="log-stat-value" id="log-current-mode">full</span>
+                    <span class="log-stat-label">${t('ui.log_current_mode') || '当前模式'}</span>
+                </span>
+                <span class="log-stat-item">
+                    <span class="log-stat-value" id="log-file-size">0 KB</span>
+                    <span class="log-stat-label">${t('ui.log_file_size') || '日志大小'}</span>
+                </span>
+            </div>
+            <div class="log-actions-row">
+                <button id="btn-view-logs" class="btn-secondary btn-log-action">${t('ui.view_logs') || '查看日志'}</button>
+                <button id="btn-clear-logs" class="btn-secondary btn-log-action">${t('ui.clear_logs') || '清空日志'}</button>
+                <button id="btn-export-logs" class="btn-export-logs">${t('ui.export_logs') || '导出日志'}</button>
+            </div>
+            <div class="log-preview" id="log-preview" style="display:none">
+                <div class="log-preview-header">
+                    <span>${t('ui.log_preview') || '日志预览'}</span>
+                    <button id="btn-close-log-preview" class="btn-close-preview">×</button>
+                </div>
+                <div class="log-preview-content" id="log-preview-content"></div>
+            </div>
+        </div>
+        <!-- ===== 临时文件清理组 ===== -->
+        <div class="setting-group" id="temp-cleanup-group">
+            <div class="setting-group-title">${t('ui.temp_cleanup') || '临时文件'}</div>
+            <div class="setting-row temp-cleanup-actions">
+                <button id="btn-refresh-temp-status" class="btn-secondary">${t('ui.refresh') || '刷新'}</button>
+                <button id="btn-cleanup-temp" class="btn-primary btn-danger">${t('ui.cleanup_temp') || '清理临时文件'}</button>
+            </div>
+            <div class="temp-cleanup-stats" id="temp-cleanup-stats">
+                <span class="temp-stat-item">
+                    <span class="temp-stat-value" id="temp-project-count">-</span>
+                    <span class="temp-stat-label">${t('ui.temp_projects') || '项目'}</span>
+                </span>
+                <span class="temp-stat-item">
+                    <span class="temp-stat-value" id="temp-total-size">-</span>
+                    <span class="temp-stat-label">${t('ui.temp_size') || '占用空间'}</span>
+                </span>
+                <span class="temp-stat-item">
+                    <span class="temp-stat-value" id="temp-idle-count">-</span>
+                    <span class="temp-stat-label">${t('ui.temp_idle') || '可清理'}</span>
+                </span>
+            </div>
+            <div class="temp-cleanup-hint">${t('ui.temp_cleanup_hint') || '清理已关闭项目的临时文件缓存。清理后下次打开项目会重新解包。'}</div>
+            <div class="temp-cleanup-result" id="temp-cleanup-result" style="display:none"></div>
         </div>
         <div class="setting-group" id="update-check-group">
             <div class="setting-group-title">${t('ui.update_check') || '检查更新'}</div>
@@ -731,16 +808,16 @@ function createSettingsTab() {
             <div class="settings-account-fields">
                 <div class="settings-account-row" data-field="id">
                     <span class="settings-account-label">ID</span>
-                    <span class="settings-account-value" id="display-account-id" style="font-family:monospace;font-size:11px;">${currentAccount?.id || '—'}</span>
+                    <span class="settings-account-value account-id" id="display-account-id">${currentAccount?.id || '—'}</span>
                     <button class="settings-account-copy-btn" id="btn-copy-id" title="${t('ui.copy') || 'Copy'}">${t('ui.copy') || '复制'}</button>
                 </div>
                 <div class="settings-account-row" data-field="name">
-                    <span class="settings-account-label">${t('ui.account_name') || '账户名称'}</span>
+                    <span class="settings-account-label" data-i18n="ui.account_name">${t('ui.account_name') || '账户名称'}</span>
                     <span class="settings-account-value" id="display-account-name">${accountName || (t('ui.not_set') || '未设置')}</span>
                     <button class="settings-account-edit-btn" id="btn-edit-name">${t('ui.edit') || '修改'}</button>
                 </div>
                 <div class="settings-account-row" data-field="display">
-                    <span class="settings-account-label">${t('ui.display_name') || '显示名称'}</span>
+                    <span class="settings-account-label" data-i18n="ui.display_name">${t('ui.display_name') || '显示名称'}</span>
                     <span class="settings-account-value" id="display-account-display">${accountDisplayName || (t('ui.not_set') || '未设置')}</span>
                     <button class="settings-account-edit-btn" id="btn-edit-display">${t('ui.edit') || '修改'}</button>
                 </div>
@@ -760,9 +837,9 @@ function createSettingsTab() {
     appearanceSection.innerHTML = `
         <h3>${t('ui.appearance') || '外观'}</h3>
         <div class="setting-group">
-            <div class="setting-group-title">${t('ui.color_preset') || '主题配色'}</div>
+            <div class="setting-group-title" data-i18n="ui.color_preset">${t('ui.color_preset') || '主题配色'}</div>
             <div class="setting-row">
-                <span>${t('ui.color_scheme') || '配色方案'}</span>
+                <span data-i18n="ui.color_scheme">${t('ui.color_scheme') || '配色方案'}</span>
                 <select id="color-preset-select">
                     <option value="auto">${t('ui.theme_auto') || '自动'}</option>
                     <optgroup label="${t('ui.group_light') || '亮色主题'}">
@@ -786,38 +863,38 @@ function createSettingsTab() {
             </div>
         </div>
         <div class="setting-group" id="custom-colors-group" style="display:none">
-            <div class="setting-group-title">${t('ui.custom_colors') || '自定义颜色'}</div>
+            <div class="setting-group-title" data-i18n="ui.custom_colors">${t('ui.custom_colors') || '自定义颜色'}</div>
             <div class="color-picker-grid">
                 <div class="color-picker-item">
-                    <label>${t('ui.color_bg_main') || '主背景'}</label>
+                    <label data-i18n="ui.color_bg_main">${t('ui.color_bg_main') || '主背景'}</label>
                     <input type="color" id="color-bg-main" data-var="--bg-main">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_bg_sidebar') || '侧边栏'}</label>
+                    <label data-i18n="ui.color_bg_sidebar">${t('ui.color_bg_sidebar') || '侧边栏'}</label>
                     <input type="color" id="color-bg-sidebar" data-var="--bg-sidebar">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_bg_toolbar') || '工具栏'}</label>
+                    <label data-i18n="ui.color_bg_toolbar">${t('ui.color_bg_toolbar') || '工具栏'}</label>
                     <input type="color" id="color-bg-toolbar" data-var="--bg-toolbar">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_text') || '文字'}</label>
+                    <label data-i18n="ui.color_text">${t('ui.color_text') || '文字'}</label>
                     <input type="color" id="color-text" data-var="--text">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_text_secondary') || '次要文字'}</label>
+                    <label data-i18n="ui.color_text_secondary">${t('ui.color_text_secondary') || '次要文字'}</label>
                     <input type="color" id="color-text-secondary" data-var="--text-secondary">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_accent') || '强调色'}</label>
+                    <label data-i18n="ui.color_accent">${t('ui.color_accent') || '强调色'}</label>
                     <input type="color" id="color-accent" data-var="--accent">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_border') || '边框'}</label>
+                    <label data-i18n="ui.color_border">${t('ui.color_border') || '边框'}</label>
                     <input type="color" id="color-border" data-var="--border">
                 </div>
                 <div class="color-picker-item">
-                    <label>${t('ui.color_gap') || '间隙'}</label>
+                    <label data-i18n="ui.color_gap">${t('ui.color_gap') || '间隙'}</label>
                     <input type="color" id="color-gap" data-var="--gap-color">
                 </div>
             </div>
@@ -826,9 +903,9 @@ function createSettingsTab() {
             </div>
         </div>
         <div class="setting-group" id="bg-material-group">
-            <div class="setting-group-title">${t('ui.background_material') || '背景材质'}</div>
+            <div class="setting-group-title" data-i18n="ui.background_material">${t('ui.background_material') || '背景材质'}</div>
             <div class="setting-row">
-                <span>${t('ui.bg_material') || '材质'}</span>
+                <span data-i18n="ui.bg_material">${t('ui.bg_material') || '材质'}</span>
                 <select id="bg-material-select">
                     <option value="none">${t('ui.bg_none') || '无'}</option>
                     <option value="mica">${t('ui.bg_mica') || '云母 (Mica)'}</option>
@@ -836,22 +913,26 @@ function createSettingsTab() {
                     <option value="tabbed">${t('ui.bg_tabbed') || '标签式 (Tabbed)'}</option>
                 </select>
             </div>
+            <div class="setting-row" id="bg-auto-adapt-row">
+                <span data-i18n="ui.bg_auto_adapt" title="${t('ui.bg_auto_adapt_hint') || '应用主题与系统亮/暗模式不匹配时，自动降级材质为无，避免视觉冲突'}">${t('ui.bg_auto_adapt') || '自动适配系统主题'}</span>
+                <label class="toggle-switch"><input type="checkbox" id="bg-auto-adapt-toggle" checked><span class="toggle-slider"></span></label>
+            </div>
             <div class="setting-row" id="bg-tint-row">
-                <span>${t('ui.bg_tint') || '内容区透明度'}</span>
+                <span data-i18n="ui.bg_tint">${t('ui.bg_tint') || '内容区透明度'}</span>
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="bg-tint-slider" min="0" max="100" value="78" style="width:120px">
                     <span id="bg-tint-val" style="min-width:36px;text-align:right">78%</span>
                 </div>
             </div>
             <div class="setting-row" id="bg-overlay-row">
-                <span>${t('ui.bg_overlay') || '背景遮罩透明度'}</span>
+                <span data-i18n="ui.bg_overlay">${t('ui.bg_overlay') || '背景遮罩透明度'}</span>
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="bg-overlay-slider" min="0" max="100" value="30" style="width:120px">
                     <span id="bg-overlay-val" style="min-width:36px;text-align:right">30%</span>
                 </div>
             </div>
             <div class="setting-row" id="bg-bar-tint-row">
-                <span>${t('ui.bg_bar_tint') || '标题栏透明度'}</span>
+                <span data-i18n="ui.bg_bar_tint">${t('ui.bg_bar_tint') || '标题栏透明度'}</span>
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="bg-bar-tint-slider" min="0" max="100" value="100" style="width:120px">
                     <span id="bg-bar-tint-val" style="min-width:36px;text-align:right">100%</span>
@@ -859,13 +940,13 @@ function createSettingsTab() {
             </div>
         </div>
         <div class="setting-group" id="bg-image-group">
-            <div class="setting-group-title">${t('ui.background_image') || '背景图片'}</div>
+            <div class="setting-group-title" data-i18n="ui.background_image">${t('ui.background_image') || '背景图片'}</div>
             <div class="setting-row">
-                <span>${t('ui.show_background_image') || '显示背景图片'}</span>
+                <span data-i18n="ui.show_background_image">${t('ui.show_background_image') || '显示背景图片'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="bg-image-toggle"><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row" id="bg-image-file-row">
-                <span>${t('ui.bg_image_file') || '图片'}</span>
+                <span data-i18n="ui.bg_image_file">${t('ui.bg_image_file') || '图片'}</span>
                 <div style="display:flex;align-items:center;gap:8px">
                     <button type="button" id="btn-select-bg-image" style="padding:4px 12px;border:1px solid var(--border);background:var(--hover-bg);color:var(--text);border-radius:4px;cursor:pointer;font-size:12px">${t('ui.select_image') || '选择图片'}</button>
                     <span id="bg-image-name" style="font-size:12px;color:var(--text-secondary);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t('ui.no_image_selected') || '未选择'}</span>
@@ -888,9 +969,9 @@ function createSettingsTab() {
     editorSection.innerHTML = `
         <h3>${t('ui.editor')}</h3>
         <div class="setting-group">
-            <div class="setting-group-title">${t('ui.font_group') || '字体'}</div>
+            <div class="setting-group-title" data-i18n="ui.font_group">${t('ui.font_group') || '字体'}</div>
             <div class="setting-row">
-                <span>${t('ui.font')}</span>
+                <span data-i18n="ui.font">${t('ui.font')}</span>
                 <select id="font-family-select">
                     <option value="Microsoft YaHei">${t('ui.yahei')}</option>
                     <option value="SimSun">${t('ui.simsun')}</option>
@@ -901,7 +982,7 @@ function createSettingsTab() {
                 </select>
             </div>
             <div class="setting-row">
-                <span>${t('ui.font_size')}</span>
+                <span data-i18n="ui.font_size">${t('ui.font_size')}</span>
                 <select id="font-size-select">
                     <option value="12">12px</option>
                     <option value="14">14px</option>
@@ -913,28 +994,28 @@ function createSettingsTab() {
             </div>
         </div>
         <div class="setting-group">
-            <div class="setting-group-title">${t('ui.tools_group') || '工具'}</div>
+            <div class="setting-group-title" data-i18n="ui.tools_group">${t('ui.tools_group') || '工具'}</div>
             <div class="setting-row">
-                <span>${t('ui.word_count')}</span>
+                <span data-i18n="ui.word_count">${t('ui.word_count')}</span>
                 <label class="toggle-switch"><input type="checkbox" id="word-count-toggle" checked><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
-                <span>${t('ui.toolbar_show') || '显示工具栏'}</span>
+                <span data-i18n="ui.toolbar_show">${t('ui.toolbar_show') || '显示工具栏'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="toolbar-show-toggle" checked><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
-                <span>${t('ui.markdown_render') || '启用 Markdown 渲染'}</span>
+                <span data-i18n="ui.markdown_render">${t('ui.markdown_render') || '启用 Markdown 渲染'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="md-render-toggle" checked><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
-                <span>${t('ui.smart_brackets') || '智能括号/引号补全'}</span>
+                <span data-i18n="ui.smart_brackets">${t('ui.smart_brackets') || '智能括号/引号补全'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="smart-brackets-toggle"><span class="toggle-slider"></span></label>
             </div>
         </div>
         <div class="setting-group">
-            <div class="setting-group-title">${t('ui.node_graph_group') || '节点图'}</div>
+            <div class="setting-group-title" data-i18n="ui.node_graph_group">${t('ui.node_graph_group') || '节点图'}</div>
             <div class="setting-row">
-                <span>${t('ui.ng_hide_arrow_default') || '默认创建隐藏箭头连线'}</span>
+                <span data-i18n="ui.ng_hide_arrow_default">${t('ui.ng_hide_arrow_default') || '默认创建隐藏箭头连线'}</span>
                 <label class="toggle-switch"><input type="checkbox" id="ng-hide-arrow-toggle"><span class="toggle-slider"></span></label>
             </div>
         </div>
@@ -1201,6 +1282,10 @@ function createSettingsTab() {
         const aot = content.querySelector('#always-on-top-toggle'); if (aot) aot.checked = s.alwaysOnTop === true;
         const dof = content.querySelector('#default-open-first-toggle'); if (dof) dof.checked = s.defaultOpenFirst === true;
         const bgm = content.querySelector('#bg-material-select'); if (bgm) bgm.value = s.backgroundMaterial || 'none';
+        // 同步滑块灰化状态（line 1707 的 updateMaterialRowsState 在 .then 外同步执行，
+        // 那时 bgm.value 还是 HTML 默认值 "none"，所以这里在设置完真实值后再刷一次）
+        if (typeof updateMaterialRowsState === 'function') updateMaterialRowsState(s.backgroundMaterial || 'none');
+        const bgAutoAdapt = content.querySelector('#bg-auto-adapt-toggle'); if (bgAutoAdapt) bgAutoAdapt.checked = s.materialAutoAdaptTheme !== false;
         const bgTint = content.querySelector('#bg-tint-slider'); if (bgTint) { bgTint.value = s.materialTint ?? 78; content.querySelector('#bg-tint-val').textContent = bgTint.value + '%'; }
         const bgOverlay = content.querySelector('#bg-overlay-slider'); if (bgOverlay) { bgOverlay.value = s.materialOverlay ?? 30; content.querySelector('#bg-overlay-val').textContent = bgOverlay.value + '%'; }
         const bgBarTint = content.querySelector('#bg-bar-tint-slider'); if (bgBarTint) { bgBarTint.value = s.materialBarTint ?? 100; content.querySelector('#bg-bar-tint-val').textContent = bgBarTint.value + '%'; }
@@ -1224,6 +1309,42 @@ function createSettingsTab() {
             weAPI.getBackgroundImage(s.backgroundImage).then(dataUrl => {
                 if (dataUrl) applyBackgroundImage(dataUrl, s.backgroundImageOpacity ?? 100);
             });
+        }
+        // ===== 日志设置初始化 =====
+        const logLevelSelect = content.querySelector('#log-level-select');
+        if (logLevelSelect) {
+            logLevelSelect.value = s.logLevel || 'full';
+            // 更新描述
+            const descEl = content.querySelector('#log-level-desc');
+            if (descEl) {
+                const mode = logLevelSelect.value;
+                descEl.textContent = t(`ui.log_desc_${mode}`) || `日志模式：${mode}`;
+            }
+            // 更新 weLog 级别
+            if (typeof weLog !== 'undefined' && weLog.setLevel) weLog.setLevel(logLevelSelect.value);
+            // 显示当前级别到统计行
+            const curMode = content.querySelector('#log-current-mode');
+            if (curMode) curMode.textContent = logLevelSelect.value;
+        }
+        // 异步加载日志统计
+        if (weAPI.getLogStats) {
+            weAPI.getLogStats().then(res => {
+                if (res && res.success) {
+                    const sizeEl = content.querySelector('#log-file-size');
+                    if (sizeEl) sizeEl.textContent = res.totalSizeFormatted || '0 B';
+                }
+            }).catch(() => {});
+        }
+        // ===== 临时文件状态初始化 =====
+        if (weAPI.getTempDirectoryStatus) {
+            weAPI.getTempDirectoryStatus().then(res => {
+                const cntEl = content.querySelector('#temp-project-count');
+                const sizeEl = content.querySelector('#temp-total-size');
+                const idleEl = content.querySelector('#temp-idle-count');
+                if (cntEl) cntEl.textContent = res.projects ? res.projects.length : 0;
+                if (sizeEl) sizeEl.textContent = res.totalSizeFormatted || '0 B';
+                if (idleEl) idleEl.textContent = res.idleCount ?? 0;
+            }).catch(() => {});
         }
         const wc = content.querySelector('#word-count-toggle'); if (wc) wc.checked = s.wordCount !== false;
         const tb = content.querySelector('#toolbar-show-toggle'); if (tb) tb.checked = s.toolbarShow !== false;
@@ -1353,6 +1474,145 @@ function createSettingsTab() {
             };
         }
     });
+
+    // ===== 日志设置事件绑定 =====
+    const logLevelSel = content.querySelector('#log-level-select');
+    if (logLevelSel) {
+        logLevelSel.addEventListener('change', () => {
+            const mode = logLevelSel.value;
+            const desc = content.querySelector('#log-level-desc');
+            if (desc) desc.textContent = t(`ui.log_desc_${mode}`) || `日志模式：${mode}`;
+            const curMode = content.querySelector('#log-current-mode');
+            if (curMode) curMode.textContent = mode;
+            if (typeof weLog !== 'undefined' && weLog.setLevel) weLog.setLevel(mode);
+        });
+    }
+    const btnViewLogs = content.querySelector('#btn-view-logs');
+    if (btnViewLogs) {
+        btnViewLogs.addEventListener('click', async () => {
+            const preview = content.querySelector('#log-preview');
+            const previewContent = content.querySelector('#log-preview-content');
+            if (!preview || !previewContent) return;
+            preview.style.display = 'block';
+            previewContent.textContent = t('ui.loading') || '加载中...';
+            try {
+                if (weAPI.getLogContent) {
+                    const res = await weAPI.getLogContent(500);
+                    if (res && res.success) {
+                        previewContent.textContent = res.content || (t('ui.no_log') || '暂无日志');
+                    } else {
+                        previewContent.textContent = res?.error || (t('ui.log_read_failed') || '读取日志失败');
+                    }
+                }
+            } catch (e) {
+                previewContent.textContent = e.message || (t('ui.log_read_failed') || '读取日志失败');
+            }
+        });
+    }
+    const btnCloseLogPreview = content.querySelector('#btn-close-log-preview');
+    if (btnCloseLogPreview) {
+        btnCloseLogPreview.addEventListener('click', () => {
+            const preview = content.querySelector('#log-preview');
+            if (preview) preview.style.display = 'none';
+        });
+    }
+    const btnClearLogs = content.querySelector('#btn-clear-logs');
+    if (btnClearLogs) {
+        btnClearLogs.addEventListener('click', async () => {
+            if (!confirm(t('ui.clear_logs_confirm') || '确定要清空所有日志吗？此操作不可恢复。')) return;
+            try {
+                if (weAPI.clearLogs) {
+                    const res = await weAPI.clearLogs();
+                    if (res && res.success) {
+                        showNotification(t('ui.logs_cleared') || '日志已清空');
+                        // 刷新统计
+                        if (weAPI.getLogStats) {
+                            const stats = await weAPI.getLogStats();
+                            if (stats && stats.success) {
+                                const sizeEl = content.querySelector('#log-file-size');
+                                if (sizeEl) sizeEl.textContent = stats.totalSizeFormatted || '0 B';
+                            }
+                        }
+                    } else {
+                        alert(t('ui.log_clear_failed') || '清空日志失败：' + (res?.error || '未知错误'));
+                    }
+                }
+            } catch (e) { alert(e.message); }
+        });
+    }
+    const btnExportLogs = content.querySelector('#btn-export-logs');
+    if (btnExportLogs) {
+        btnExportLogs.addEventListener('click', async () => {
+            try {
+                if (weAPI.exportLogs) {
+                    const res = await weAPI.exportLogs();
+                    if (res && res.success && res.filePath) {
+                        showNotification((t('ui.log_exported') || '日志已导出到') + ': ' + res.filePath);
+                    } else if (res && res.canceled) {
+                        // 用户取消保存对话框
+                    } else {
+                        alert(t('ui.log_export_failed') || '导出失败：' + (res?.error || '未知错误'));
+                    }
+                }
+            } catch (e) { alert(e.message); }
+        });
+    }
+
+    // ===== 临时文件清理事件绑定 =====
+    async function refreshTempStatus() {
+        if (!weAPI.getTempDirectoryStatus) return;
+        try {
+            const res = await weAPI.getTempDirectoryStatus();
+            const cntEl = content.querySelector('#temp-project-count');
+            const sizeEl = content.querySelector('#temp-total-size');
+            const idleEl = content.querySelector('#temp-idle-count');
+            const resultEl = content.querySelector('#temp-cleanup-result');
+            if (cntEl) cntEl.textContent = res.projects ? res.projects.length : 0;
+            if (sizeEl) sizeEl.textContent = res.totalSizeFormatted || '0 B';
+            if (idleEl) idleEl.textContent = res.idleCount ?? 0;
+            if (resultEl) resultEl.style.display = 'none';
+        } catch (e) {}
+    }
+    const btnRefreshTemp = content.querySelector('#btn-refresh-temp-status');
+    if (btnRefreshTemp) btnRefreshTemp.addEventListener('click', refreshTempStatus);
+    const btnCleanupTemp = content.querySelector('#btn-cleanup-temp');
+    if (btnCleanupTemp) {
+        btnCleanupTemp.addEventListener('click', async () => {
+            const resultEl = content.querySelector('#temp-cleanup-result');
+            if (!confirm(t('ui.cleanup_temp_confirm') || '确定要清理已关闭项目的临时文件吗？（当前打开的项目会被保留）')) return;
+            btnCleanupTemp.disabled = true;
+            btnCleanupTemp.textContent = t('ui.cleaning') || '清理中...';
+            try {
+                if (weAPI.clearTempDirectory) {
+                    const res = await weAPI.clearTempDirectory({ excludeActive: true });
+                    if (res && res.success) {
+                        showNotification((t('ui.temp_cleanup_done') || '已清理') + ` ${res.cleared} ` + (t('ui.items') || '项'));
+                        if (resultEl) {
+                            resultEl.style.display = 'block';
+                            resultEl.className = 'temp-cleanup-result success';
+                            resultEl.textContent = (t('ui.temp_cleanup_done') || '已清理') + ` ${res.cleared} ` + (t('ui.items') || '项');
+                        }
+                        await refreshTempStatus();
+                    } else {
+                        if (resultEl) {
+                            resultEl.style.display = 'block';
+                            resultEl.className = 'temp-cleanup-result error';
+                            resultEl.textContent = (t('ui.cleanup_failed') || '清理失败') + ': ' + (res?.error || '未知错误');
+                        }
+                    }
+                }
+            } catch (e) {
+                if (resultEl) {
+                    resultEl.style.display = 'block';
+                    resultEl.className = 'temp-cleanup-result error';
+                    resultEl.textContent = e.message;
+                }
+            } finally {
+                btnCleanupTemp.disabled = false;
+                btnCleanupTemp.textContent = t('ui.cleanup_temp') || '清理临时文件';
+            }
+        });
+    }
 
     // 实时同步窗口置顶开关
     const aotToggle = content.querySelector('#always-on-top-toggle');
@@ -1753,6 +2013,7 @@ function createSettingsTab() {
         const bgTintVal = parseInt(content.querySelector('#bg-tint-slider')?.value ?? '78');
         const bgOverlayVal = parseInt(content.querySelector('#bg-overlay-slider')?.value ?? '30');
         const bgBarTintVal = parseInt(content.querySelector('#bg-bar-tint-slider')?.value ?? '100');
+        const bgAutoAdaptVal = content.querySelector('#bg-auto-adapt-toggle')?.checked !== false;
         // 背景图片
         const bgImgEnabledVal = content.querySelector('#bg-image-toggle')?.checked ?? false;
         const bgImgOpacityVal = parseInt(content.querySelector('#bg-image-opacity-slider')?.value ?? '100');
@@ -1763,6 +2024,7 @@ function createSettingsTab() {
         const sbVal = content.querySelector('#smart-brackets-toggle')?.checked ?? false;
         const haVal = content.querySelector('#ng-hide-arrow-toggle')?.checked ?? false;
         const dofVal = content.querySelector('#default-open-first-toggle')?.checked ?? false;
+        const logLevelVal = content.querySelector('#log-level-select')?.value || 'full';
 
         // 收集自定义快捷键
         const customShortcuts = collectCustomShortcuts(content);
@@ -1777,10 +2039,14 @@ function createSettingsTab() {
             colorPreset: colorPreset, customColors: customColors,
             'font-family': fontFamily, fontSize: fontSize,
             autoSave: autoSave,
-            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, defaultOpenFirst: dofVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal, ngHideArrowByDefault: haVal,
+            tabCloseConfirm: tcVal, alwaysOnTop: aotVal, defaultOpenFirst: dofVal, backgroundMaterial: bgmVal, materialTint: bgTintVal, materialOverlay: bgOverlayVal, materialBarTint: bgBarTintVal, materialAutoAdaptTheme: bgAutoAdaptVal, wordCount: wcVal, toolbarShow: tbVal, markdownRender: mdVal, smartBrackets: sbVal, ngHideArrowByDefault: haVal,
             backgroundImageEnabled: bgImgEnabledVal, backgroundImage: bgImgNameVal, backgroundImageOpacity: bgImgOpacityVal,
-            customShortcuts: customShortcuts
+            customShortcuts: customShortcuts,
+            logLevel: logLevelVal
         });
+
+        // 应用日志级别
+        if (typeof weLog !== 'undefined' && weLog.setLevel) weLog.setLevel(logLevelVal);
 
         // 同步节点图全局设置（保存后立即生效，无需重启）
         if (typeof ngDefaultSettings !== 'undefined') {
@@ -1831,10 +2097,27 @@ function createSettingsTab() {
         refreshSettingsI18n();
 
         // 应用背景材质（必须在 applyTheme/applyColorPreset 之后，否则背景色会被覆盖）
-        console.log(`[renderer] 设置页"应用"按钮 → weAPI.setBackgroundMaterial('${bgmVal}')`);
-        await weAPI.setBackgroundMaterial(bgmVal);
-        console.log(`[renderer] 设置页"应用"按钮 → applyBackgroundMaterial('${bgmVal}', tint=${bgTintVal}, overlay=${bgOverlayVal}, barTint=${bgBarTintVal})`);
-        applyBackgroundMaterial(bgmVal, bgTintVal, bgOverlayVal, bgBarTintVal);
+        // 1) 先保存用户原始选择
+        window._userMaterialChoice = bgmVal;
+        window.savedTint = bgTintVal;
+        window.savedOverlay = bgOverlayVal;
+        window.savedBarTint = bgBarTintVal;
+        // 2) 兼容性检查：应用主题 vs 系统主题
+        window._autoAdaptTheme = bgAutoAdaptVal; // 同步到全局，供其他回调读取
+        let effectiveMaterial = bgmVal;
+        if (typeof checkMaterialThemeCompat === 'function') {
+            const result = checkMaterialThemeCompat(bgmVal, currentTheme, bgAutoAdaptVal);
+            effectiveMaterial = result.effective;
+            if (result.downgraded) {
+                showNotification(`⚠ ${result.reason}`);
+            }
+        }
+        // 3) OS 层 + CSS 层同步应用 effectiveMaterial
+        if (effectiveMaterial !== bgmVal) {
+            console.log(`[renderer] 材质降级: 用户=${bgmVal} → 生效=${effectiveMaterial}`);
+        }
+        await weAPI.setBackgroundMaterial(effectiveMaterial);
+        applyBackgroundMaterial(effectiveMaterial, bgTintVal, bgOverlayVal, bgBarTintVal);
 
         // 保存账户变更
         if (accountChanged && tempAccountName) {
@@ -2012,6 +2295,7 @@ function readThemeColors() {
     const colors = {
         bgSidebar: styles.getPropertyValue('--bg-sidebar').trim(),
         bgMain: styles.getPropertyValue('--bg-main').trim(),
+        bgToolbar: styles.getPropertyValue('--bg-toolbar').trim(),
         gapColor: styles.getPropertyValue('--gap-color').trim(),
         border: styles.getPropertyValue('--border').trim()
     };
@@ -2028,15 +2312,17 @@ function clearThemeColorsCache() {
 // tint: 0-100，100=完全不透明，0=完全透明
 function applyTint(tint) {
     weLog.debug('settings', '→ applyTint 开始（只读日志）', { tint });
-    const { bgSidebar, bgMain, border } = readThemeColors();
+    const { bgSidebar, bgMain, bgToolbar, border } = readThemeColors();
     const alpha = (tint ?? 78) / 100;
     // 保存原始不透明值供开关、输入框等需要实色的组件使用
     document.body.style.setProperty('--bg-sidebar-solid', bgSidebar);
     document.body.style.setProperty('--bg-main-solid', bgMain);
+    document.body.style.setProperty('--bg-toolbar-solid', bgToolbar);
     document.body.style.setProperty('--border-solid', border);
     document.body.style.setProperty('--content-tint', hexToRgba(bgSidebar, alpha));
     document.body.style.setProperty('--bg-sidebar', hexToRgba(bgSidebar, alpha));
     document.body.style.setProperty('--bg-main', hexToRgba(bgMain, alpha));
+    document.body.style.setProperty('--bg-toolbar', hexToRgba(bgToolbar, alpha));
     document.body.style.setProperty('--border', hexToRgba(border, alpha));
 }
 
@@ -2080,10 +2366,11 @@ window.applyBackgroundImage = applyBackgroundImage;
 
 // 恢复不透明状态（材质为"无"时调用）
 function resetMaterialStyles() {
-    const { bgSidebar, bgMain, gapColor, border } = readThemeColors();
+    const { bgSidebar, bgMain, bgToolbar, gapColor, border } = readThemeColors();
     document.body.style.setProperty('--content-tint', bgSidebar);
     document.body.style.setProperty('--bg-sidebar', bgSidebar);
     document.body.style.setProperty('--bg-main', bgMain);
+    document.body.style.setProperty('--bg-toolbar', bgToolbar);
     document.body.style.setProperty('--border', border);
     document.body.style.setProperty('--gap-color', gapColor);
     document.body.style.setProperty('--overlay-tint', gapColor);
@@ -2091,9 +2378,94 @@ function resetMaterialStyles() {
     // 同步更新实色变量
     document.body.style.setProperty('--bg-sidebar-solid', bgSidebar);
     document.body.style.setProperty('--bg-main-solid', bgMain);
+    document.body.style.setProperty('--bg-toolbar-solid', bgToolbar);
     document.body.style.setProperty('--border-solid', border);
     const titleBar = document.getElementById('title-bar');
     if (titleBar) titleBar.style.removeProperty('border-bottom');
+}
+
+// ========== 材质-主题兼容性检查 ==========
+// Windows Mica/Acrylic 自动跟随系统主题（亮/暗）。
+// 当应用主题与系统主题不匹配时，材质会造成灰蒙蒙的视觉冲突。
+// 返回 { effective, downgraded, reason, canRestore }
+// 可以通过 optAutoAdapt=false 跳过（用户在设置里关掉"自动适配系统主题"开关时）。
+function checkMaterialThemeCompat(userMaterial, appTheme, optAutoAdapt) {
+    // none/transparent 无需检查
+    if (!userMaterial || userMaterial === 'none' || userMaterial === 'transparent') {
+        return { effective: 'none', downgraded: false, reason: '' };
+    }
+    // 没开自动适配 → 用户要求保留原始选择
+    if (optAutoAdapt === false) {
+        weLog.info('material-compat', '自动适配开关关闭，保留用户原始材质选择');
+        return { effective: userMaterial, downgraded: false, reason: '', canRestore: false };
+    }
+    // 先从 CSS 变量读（最可靠，配色预设已应用）
+    let appIsDark;
+    try {
+        const styles = getComputedStyle(document.body);
+        const bg = styles.getPropertyValue('--bg-sidebar').trim();
+        if (bg.startsWith('#')) {
+            const hex = bg.slice(1);
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            appIsDark = brightness < 128;
+        } else {
+            appIsDark = !!(appTheme && appTheme.includes('dark'));
+        }
+    } catch (e) {
+        appIsDark = !!(appTheme && appTheme.includes('dark'));
+    }
+    const sysIsDark = !!window._systemDark;
+    const match = appIsDark === sysIsDark;
+    if (match) {
+        return { effective: userMaterial, downgraded: false, reason: '' };
+    } else {
+        const reason = `应用${appIsDark ? '暗' : '亮'}主题 与 系统${sysIsDark ? '暗' : '亮'}主题 不匹配，材质已降级为"无"以避免视觉冲突`;
+        weLog.warn('material-compat', reason);
+        return { effective: 'none', downgraded: true, reason, canRestore: true };
+    }
+}
+
+// 运行时系统主题变化 → 自动重新检查材质兼容性
+if (window.weAPI && window.weAPI.onSystemThemeChanged) {
+    window.weAPI.onSystemThemeChanged(({ isDark }) => {
+        window._systemDark = isDark;
+        weLog.info('material-compat', `系统主题变了: isDark=${isDark} → 重新检查材质`);
+        // 延迟一帧等 CSS 变量稳定
+        setTimeout(() => {
+            const curMaterial = document.body.dataset.bgMaterial || 'none';
+            // 读保存的设置值（用户选的原始值，不是 effective）
+            const savedUserMaterial = window._userMaterialChoice || curMaterial;
+            const result = checkMaterialThemeCompat(savedUserMaterial, currentTheme, window._autoAdaptTheme);
+            const effective = result.effective;
+            if (effective !== curMaterial) {
+                weLog.info('material-compat', `材质调整: ${curMaterial} → ${effective}`);
+                // 降级时通知用户（升级恢复时也简单通知）
+                if (typeof showNotification === 'function') {
+                    if (result.downgraded) {
+                        showNotification(`⚠ ${result.reason}`, 4000);
+                    } else if (curMaterial === 'none' && effective !== 'none') {
+                        const modeLabel = window._systemDark ? '暗' : '亮';
+                        showNotification(`系统已切到${modeLabel}模式，应用主题已匹配，材质已恢复为"${savedUserMaterial}"`);
+                    }
+                }
+                // OS 层也要同步
+                const applyAndSync = () => {
+                    applyBackgroundMaterial(effective, 
+                        parseInt(window.savedTint ?? '78'), 
+                        parseInt(window.savedOverlay ?? '30'), 
+                        parseInt(window.savedBarTint ?? '100'));
+                };
+                if (window.weAPI && window.weAPI.setBackgroundMaterial) {
+                    window.weAPI.setBackgroundMaterial(effective).then(applyAndSync);
+                } else {
+                    applyAndSync();
+                }
+            }
+        }, 100);
+    });
 }
 
 // 应用背景材质（总入口）
@@ -2197,18 +2569,29 @@ function applyColorPreset(presetName, customColors) {
 
     // 主题切换后，若材质已激活则重新读取新主题颜色并应用半透明值
     // 否则 body 上的旧内联 rgba 会覆盖新主题颜色
-    if (target.classList.contains('material-active') && typeof applyBackgroundMaterial === 'function') {
-        const m = target.dataset.bgMaterial || 'none';
-        if (m && m !== 'none') {
-            const saved = window.__lastMaterialSettings || {};
-            console.log(`[renderer] applyColorPreset 主题切换 → 重新应用材质 applyBackgroundMaterial('${m}')`);
-            applyBackgroundMaterial(m, saved.tint ?? 78, saved.overlay ?? 30, saved.barTint ?? 100);
+    // 同时检查主题-材质兼容性（可能因主题切换导致之前兼容的组合现在不兼容）
+    const userMaterial = window._userMaterialChoice || target.dataset.bgMaterial || 'none';
+    if (userMaterial && userMaterial !== 'none' && typeof applyBackgroundMaterial === 'function') {
+        const saved = window.__lastMaterialSettings || {};
+        // 先根据新主题判断兼容性
+        let effective = userMaterial;
+        if (typeof checkMaterialThemeCompat === 'function') {
+            currentTheme = isLightTheme ? 'light' : 'dark'; // 先更新
+            const result = checkMaterialThemeCompat(userMaterial, currentTheme, window._autoAdaptTheme);
+            effective = result.effective;
+            if (result.downgraded) {
+                weLog.warn('material-compat', `主题切换触发材质降级: ${userMaterial} → none`);
+                if (typeof showNotification === 'function') {
+                    showNotification(`⚠ ${result.reason}`);
+                }
+                // 同步 OS 层
+                if (window.weAPI && window.weAPI.setBackgroundMaterial) {
+                    window.weAPI.setBackgroundMaterial('none');
+                }
+            }
         }
+        applyBackgroundMaterial(effective, saved.tint ?? 78, saved.overlay ?? 30, saved.barTint ?? 100);
     }
-    // 注意：此处不再调用 weAPI.setBackgroundMaterial。
-    // applyColorPreset 的职责是应用配色预设（CSS），不应覆盖材质设置。
-    // body 上无 data-bg-material 属性，旧代码会用 'none' 覆盖已保存的材质值，导致重启后丢失。
-    // 材质的 OS 层面应用由窗口构造时和"应用"按钮的 setBackgroundMaterial 调用负责。
 
     // 同步 currentTheme 和 applyTheme（用于 auto 模式实时切换）
     currentTheme = isLightTheme ? 'light' : 'dark';
@@ -2216,6 +2599,40 @@ function applyColorPreset(presetName, customColors) {
 
     // 主题切换后刷新节点图样式
     if (typeof refreshNodeGraphTheme === 'function') refreshNodeGraphTheme();
+
+    // 同步 accent-alpha：从 --accent 派生带 alpha 版本（纯 CSS 无法从 hex 生成 rgba）
+    const accentVal = getComputedStyle(target).getPropertyValue('--accent').trim();
+    if (accentVal) {
+        const alpha = isLightTheme ? 0.2 : 0.3;
+        const withAlpha = hexToRgba(accentVal, alpha);
+        if (withAlpha) target.style.setProperty('--accent-alpha', withAlpha);
+        // active 背景 = accent（确保文件高亮、tab 激活等跟随主题 accent 色）
+        target.style.setProperty('--active-bg', accentVal);
+        // active-text = 对比色（黑/白）
+        const rgb = hexToRgb(accentVal);
+        if (rgb) {
+            const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+            target.style.setProperty('--active-text', brightness > 128 ? '#000000' : '#ffffff');
+        }
+    }
+}
+
+// hex → {r, g, b}（支持 #rgb、#rrggbb）
+function hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    if (h.length === 3) {
+        return { r: parseInt(h[0] + h[0], 16), g: parseInt(h[1] + h[1], 16), b: parseInt(h[2] + h[2], 16) };
+    } else if (h.length === 6) {
+        return { r: parseInt(h.substr(0, 2), 16), g: parseInt(h.substr(2, 2), 16), b: parseInt(h.substr(4, 2), 16) };
+    }
+    return null;
+}
+
+// hex → rgba（支持 #rgb、#rrggbb）
+function hexToRgba(hex, alpha) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return null;
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
 // 计算颜色相对亮度（用于判断亮/暗主题）

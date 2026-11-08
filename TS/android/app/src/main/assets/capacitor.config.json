@@ -1,0 +1,28 @@
+{
+	"appId": "com.worldeditor.app",
+	"appName": "World Editor",
+	"webDir": "dist/renderer",
+	"bundledWebRuntime": false,
+	"android": {
+		"allowMixedContent": true
+	},
+	"server": {
+		"androidScheme": "http",
+		"cleartext": true
+	},
+	"plugins": {
+		"SplashScreen": {
+			"launchShowDuration": 2000,
+			"backgroundColor": "#1a1a2e",
+			"showSpinner": false,
+			"splashFullScreen": true,
+			"splashImmersive": true,
+			"layoutName": "AppTheme.NoActionBarLaunch"
+		},
+		"StatusBar": {
+			"style": "LIGHT",
+			"backgroundColor": "#1a1a2e",
+			"overlaysWebView": true
+		}
+	}
+}

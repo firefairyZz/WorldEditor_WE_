@@ -142,28 +142,15 @@ function refreshSettingsTexts(container) {
     if (shortcutsNav) updateNavItemText('.nav-item[data-section="shortcuts"]', t('ui.shortcuts') || '快捷键');
     updateNavItemText('.nav-item[data-section="about"]', t('ui.about'));
 
-    // 通用区
-    const general = container.querySelector('#section-general');
-    general.querySelector('h3').textContent = t('ui.general');
-    const generalSpans = general.querySelectorAll('.setting-row > span');
-    generalSpans[0].textContent = t('ui.language');
-    generalSpans[1].textContent = t('ui.auto_save') || '自动保存';
-    generalSpans[2].textContent = t('ui.tab_close_confirm') || '关闭标签确认';
-    generalSpans[3].textContent = t('ui.always_on_top') || '窗口置顶';
+    // 通用区：所有设置行 label 已加 data-i18n，由全局自动刷新
+    // 不再使用硬编码索引
 
-    // 外观区：背景材质组
+    // 外观区：背景材质组 —— 所有 label 已加 data-i18n，由全局自动刷新
     const appearance = container.querySelector('#section-appearance');
     if (appearance) {
-        const bgGroupTitle = appearance.querySelector('#bg-material-group .setting-group-title');
-        if (bgGroupTitle) bgGroupTitle.textContent = t('ui.background_material') || '背景材质';
-        const appearanceSpans = appearance.querySelectorAll('#bg-material-group .setting-row > span');
-        if (appearanceSpans[0]) appearanceSpans[0].textContent = t('ui.bg_material') || '材质';
-        if (appearanceSpans[1]) appearanceSpans[1].textContent = t('ui.bg_tint') || '内容区透明度';
-        if (appearanceSpans[2]) appearanceSpans[2].textContent = t('ui.bg_overlay') || '遮罩透明度';
-        if (appearanceSpans[3]) appearanceSpans[3].textContent = t('ui.bg_bar_tint') || '标题栏透明度';
+        // 只保留材质 select 的 option 刷新（option 没有 data-i18n）
         const bgmSelect = appearance.querySelector('#bg-material-select');
         if (bgmSelect) {
-            // option 顺序：none / mica / acrylic / tabbed（无 transparent）
             bgmSelect.options[0].text = t('ui.bg_none') || '无';
             bgmSelect.options[1].text = t('ui.bg_mica') || '云母 (Mica)';
             bgmSelect.options[2].text = t('ui.bg_acrylic') || '亚克力 (Acrylic)';
@@ -187,7 +174,7 @@ function refreshSettingsTexts(container) {
         if (addTagBtn) addTagBtn.textContent = t('ui.add') || '添加';
     }
 
-    // 账户区
+    // 账户区：label 已加 data-i18n（settings.js 里 accountSection 的 label 用了 t()）
     const accountSection = container.querySelector('#section-account');
     if (accountSection) {
         accountSection.querySelector('h3').textContent = t('ui.account') || '账户';
@@ -197,11 +184,7 @@ function refreshSettingsTexts(container) {
         if (removeBtn) removeBtn.textContent = t('ui.remove_avatar') || '移除头像';
         const copyBtn = accountSection.querySelector('#btn-copy-id');
         if (copyBtn) { copyBtn.textContent = t('ui.copy') || '复制'; copyBtn.title = t('ui.copy') || '复制'; }
-        const accLabels = accountSection.querySelectorAll('.settings-account-label');
-        if (accLabels.length >= 3) {
-            accLabels[1].textContent = t('ui.account_name') || '账户名称';
-            accLabels[2].textContent = t('ui.display_name') || '显示名称';
-        }
+        // settings-account-label 用 data-i18n，由全局自动刷新
         const editBtns = accountSection.querySelectorAll('.settings-account-edit-btn');
         editBtns.forEach(btn => btn.textContent = t('ui.edit') || '修改');
         const accNameVal = accountSection.querySelector('#display-account-name');
@@ -233,46 +216,16 @@ function refreshSettingsTexts(container) {
             const customOpt = presetSelect.querySelector('option[value="custom"]');
             if (customOpt) customOpt.textContent = t('ui.theme_custom') || '自定义';
         }
-        const colorLabels = appearanceSection.querySelectorAll('.color-picker-item label');
-        const colorKeys = ['color_bg_main', 'color_bg_sidebar', 'color_bg_toolbar', 'color_text', 'color_text_secondary', 'color_accent', 'color_border', 'color_gap'];
-        colorLabels.forEach((label, i) => {
-            if (i < colorKeys.length) label.textContent = t('ui.' + colorKeys[i]) || label.textContent;
-        });
+        // 颜色 picker label 已加 data-i18n，由全局自动刷新
         const resetBtn = appearanceSection.querySelector('#btn-reset-colors');
         if (resetBtn) resetBtn.textContent = t('ui.reset_colors') || '重置为默认';
     }
 
-    // 编辑器区
+    // 编辑器区：所有设置行 label 和 group title 已加 data-i18n，由全局自动刷新
     const editor = container.querySelector('#section-editor');
     if (editor) {
         editor.querySelector('h3').textContent = t('ui.editor');
-        // 刷新分组标题
-        const groupTitles = editor.querySelectorAll('.setting-group-title');
-        groupTitles.forEach((el, i) => {
-            const keys = ['font_group', 'tools_group', 'node_graph_group'];
-            if (i < keys.length) el.textContent = t('ui.' + keys[i]) || el.textContent;
-        });
-        // 刷新各设置项标签
-        const groups = editor.querySelectorAll('.setting-group');
-        // 字体组: 字体, 字体大小
-        if (groups[0]) {
-            const fontSpans = groups[0].querySelectorAll('.setting-row > span');
-            if (fontSpans[0]) fontSpans[0].textContent = t('ui.font');
-            if (fontSpans[1]) fontSpans[1].textContent = t('ui.font_size');
-        }
-        // 工具组: 字数统计, 显示工具栏, 启用 Markdown, 智能括号
-        if (groups[1]) {
-            const toolSpans = groups[1].querySelectorAll('.setting-row > span');
-            const toolKeys = ['word_count', 'toolbar_show', 'markdown_render', 'smart_brackets'];
-            toolSpans.forEach((span, i) => {
-                if (i < toolKeys.length) span.textContent = t('ui.' + toolKeys[i]) || span.textContent;
-            });
-        }
-        // 节点图组: 默认创建隐藏箭头连线
-        if (groups[2]) {
-            const ngSpans = groups[2].querySelectorAll('.setting-row > span');
-            if (ngSpans[0]) ngSpans[0].textContent = t('ui.ng_hide_arrow_default') || ngSpans[0].textContent;
-        }
+        // setting-group-title 用 data-i18n，由全局自动刷新
     }
 
     // 关于区
